@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="Ob3dSpEG8BlibnN2Z5Sd2A">
+<head data-page-node-id="HCgbGwCEW86SlmKOZxe2JA">
+<meta charset="UTF-8" data-page-node-id="QgXsRZVCbP5pwz8Mj6Y5iF" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="Gy9bTEoCFugAuNNZMLIoSQ" />
+<title>SDP Console · IA v2 原型（服务树单入口 + 全屏组件详情 + 运行中心 + 权限双轨）</title>
+<style>
+  :root{
+    --action-blue:#0066CC; --action-blue-soft:#E8F0FE; --ink:#1D1D1F;
+    --near-black:#272729; --parchment:#F5F5F7; --hairline:#E0E0E0;
+    --sub-hairline:#F0F0F2; --sub:#5F6368;
+    --succeeded-bg:#E6F4EA; --succeeded-fg:#1E8E3E;
+    --running-bg:#E8F0FE; --running-fg:#0066CC;
+    --failed-bg:#FCE8E6; --failed-fg:#D93025;
+    --pending-bg:#F1F3F4; --pending-fg:#5F6368;
+    --radius-card:12px; --radius-badge:9999px;
+    --font:"Inter","Noto Sans SC",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{font-family:var(--font);background:var(--parchment);color:var(--ink);
+    font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;}
+
+  .topnav{height:56px;background:#fff;border-bottom:1px solid var(--hairline);
+    display:flex;align-items:center;padding:0 20px;gap:16px;position:sticky;top:0;z-index:50;}
+  .logo{font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px;}
+  .logo .dot{width:18px;height:18px;border-radius:5px;background:var(--action-blue);}
+  .ia-tag{font-size:12px;font-weight:600;color:var(--action-blue);background:var(--action-blue-soft);
+    padding:3px 10px;border-radius:9999px;}
+  .nav-right{margin-left:auto;display:flex;align-items:center;gap:12px;color:var(--sub);font-size:13px;}
+  .avatar{width:32px;height:32px;border-radius:50%;background:var(--near-black);color:#fff;
+    display:grid;place-items:center;font-size:13px;font-weight:600;}
+
+  .shell{display:flex;height:calc(100vh - 56px);}
+  .menu{width:216px;flex:0 0 216px;background:var(--near-black);padding:14px 8px;overflow:auto;}
+  .menu .group{font-size:11px;color:rgba(255,255,255,.4);text-transform:uppercase;
+    letter-spacing:.06em;margin:14px 10px 4px;font-weight:600;}
+  .menu .group:first-child{margin-top:0;}
+  .mi{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:8px;
+    color:rgba(255,255,255,.75);font-size:14px;cursor:pointer;position:relative;transition:.15s;}
+  .mi:hover{background:rgba(255,255,255,.08);color:#fff;}
+  .mi.active{background:rgba(77,163,255,.22);color:#fff;font-weight:600;}
+  .mi.active::before{content:"";position:absolute;left:-8px;top:6px;bottom:6px;width:3px;
+    border-radius:2px;background:#4da3ff;}
+  .mi .ic{width:20px;text-align:center;flex:0 0 20px;font-size:14px;}
+  .mi .cnt{margin-left:auto;font-size:11px;color:#ffb4a9;background:rgba(217,48,37,.25);
+    padding:1px 7px;border-radius:9999px;font-weight:600;}
+
+  .main{flex:1;overflow:auto;padding:26px 32px;}
+  .page{display:none;max-width:1180px;margin:0 auto;animation:fade .22s ease;}
+  .page.active{display:block;}
+  .page.wide{max-width:none;}
+  @keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+
+  .crumb{font-size:13px;color:var(--sub);margin-bottom:12px;}
+  .crumb b{color:var(--ink);font-weight:600;}
+  .crumb a{color:var(--action-blue);cursor:pointer;text-decoration:none;}
+  h1.title{font-size:26px;font-weight:600;letter-spacing:-.01em;display:inline-block;}
+  .sub{color:var(--sub);font-size:13px;margin-top:3px;}
+  .headrow{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;}
+
+  .badge{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:var(--radius-badge);
+    font-size:12px;font-weight:600;}
+  .badge .pt{width:7px;height:7px;border-radius:50%;}
+  .b-succ{background:var(--succeeded-bg);color:var(--succeeded-fg);}
+  .b-run{background:var(--running-bg);color:var(--running-fg);}
+  .b-fail{background:var(--failed-bg);color:var(--failed-fg);}
+  .b-pend{background:var(--pending-bg);color:var(--pending-fg);}
+  .b-role{background:#F3E8FD;color:#9334E6;}
+
+  .btn{padding:8px 16px;border-radius:9999px;border:none;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font);}
+  .btn-primary{background:var(--action-blue);color:#fff;}
+  .btn-primary:hover{background:#0058b0;}
+  .btn-pearl{background:#fff;color:var(--ink);border:1px solid var(--hairline);}
+  .btn-pearl:hover{background:var(--parchment);}
+  .btn-sm{padding:5px 12px;font-size:13px;}
+  .btn-danger{background:#fff;color:var(--failed-fg);border:1px solid #F6C9C5;}
+  .btn-danger:hover{background:var(--failed-bg);}
+  .btn-back{display:inline-flex;align-items:center;gap:6px;background:none;border:none;cursor:pointer;
+    color:var(--sub);font-size:13px;font-family:var(--font);padding:4px 8px;border-radius:6px;}
+  .btn-back:hover{background:#ECECF0;color:var(--ink);}
+
+  .card{background:#fff;border:1px solid var(--hairline);border-radius:var(--radius-card);padding:18px;}
+  table{width:100%;border-collapse:collapse;font-size:14px;}
+  th{text-align:left;font-size:12px;color:var(--sub);font-weight:600;padding:10px 12px;border-bottom:1px solid var(--sub-hairline);}
+  td{padding:11px 12px;border-bottom:1px solid var(--sub-hairline);}
+  tr:last-child td{border-bottom:none;}
+  tr.clickable{cursor:pointer;}
+  tr.clickable:hover td{background:#FAFBFC;}
+  td .mono{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12.5px;color:var(--sub);}
+
+  .filters{display:flex;gap:8px;margin:16px 0 12px;}
+  .chip{padding:6px 14px;border-radius:9999px;font-size:13px;cursor:pointer;background:#fff;
+    border:1px solid var(--hairline);color:var(--sub);}
+  .chip:hover{border-color:var(--action-blue);color:var(--action-blue);}
+  .chip.on{background:var(--near-black);border-color:var(--near-black);color:#fff;font-weight:600;}
+
+  /* 服务树页 */
+  .split{display:grid;grid-template-columns:380px 1fr;gap:18px;margin-top:16px;align-items:start;}
+  .tree{background:#fff;border:1px solid var(--hairline);border-radius:var(--radius-card);padding:12px;}
+  .tnode{padding:7px 10px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:7px;font-size:14px;}
+  .tnode:hover{background:#F5F5F7;}
+  .tnode.child{padding-left:28px;font-size:13.5px;}
+  .tnode.leaf{padding-left:48px;font-size:13.5px;color:var(--sub);}
+  .tnode.leaf:hover{color:var(--action-blue);background:var(--action-blue-soft);font-weight:600;}
+  .caret{color:var(--sub);font-size:10px;width:12px;flex:0 0 12px;}
+  .tree .hint{font-size:12px;color:var(--sub);padding:10px 10px 4px;border-top:1px dashed var(--hairline);margin-top:10px;}
+  .start{padding:60px 30px;text-align:center;}
+  .start .big{font-size:40px;}
+  .start .t{font-size:16px;font-weight:600;margin-top:10px;}
+  .start .d{font-size:13px;color:var(--sub);margin-top:6px;line-height:1.8;}
+
+  /* 全屏组件详情 */
+  .dhead{display:flex;align-items:center;gap:14px;}
+  .dhead .avatar2{width:44px;height:44px;border-radius:12px;background:var(--action-blue-soft);
+    display:grid;place-items:center;font-size:20px;}
+  .dhead h2{font-size:20px;font-weight:600;}
+  .dhead .meta{font-size:12.5px;color:var(--sub);}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--hairline);margin:16px 0 18px;flex-wrap:wrap;}
+  .tab{padding:9px 13px;font-size:13.5px;color:var(--sub);cursor:pointer;border-bottom:2px solid transparent;}
+  .tab:hover{color:var(--ink);}
+  .tab.active{color:var(--action-blue);border-bottom-color:var(--action-blue);font-weight:600;}
+  .tabpane{display:none;}
+  .tabpane.active{display:block;animation:fade .2s ease;}
+
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+  .kpi{background:#fff;border:1px solid var(--hairline);border-radius:var(--radius-card);padding:14px 16px;}
+  .kpi .label{font-size:12.5px;color:var(--sub);}
+  .kpi .num{font-size:26px;font-weight:700;margin-top:4px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;}
+  h2.h2{font-size:16px;font-weight:600;margin:22px 0 10px;}
+
+  .bindrow{display:flex;gap:10px;align-items:center;}
+  select.input,input.input{padding:8px 12px;border:1px solid var(--hairline);border-radius:8px;
+    font-size:14px;font-family:var(--font);background:#fff;color:var(--ink);outline:none;}
+  select.input:focus,input.input:focus{border-color:var(--action-blue);}
+
+  .note{background:var(--action-blue-soft);border:1px solid #C6DAFC;border-radius:var(--radius-card);
+    padding:14px 18px;font-size:13px;color:var(--ink);margin-bottom:18px;}
+  .note b{color:var(--action-blue);}
+  .empty{padding:34px;text-align:center;color:var(--sub);font-size:13.5px;
+    border:1px dashed var(--hairline);border-radius:var(--radius-card);background:#fff;}
+  .foot{margin-top:22px;font-size:12px;color:var(--sub);}
+</style>
+</head>
+<body data-page-node-id="P5h1pdDVpMz6CFdz001vQL">
+
+<div class="topnav" data-page-node-id="Y7X1OwD0SHhnRqHzBqTnsh">
+  <div class="logo" data-page-node-id="piKQUdzkLjzmaAVIXrZHpg"><span class="dot" data-page-node-id="WKZnMCTNYnF8652rm0lCF9"></span>SDP Console</div>
+  <span class="ia-tag" data-page-node-id="XaKYzJVNE0HKkeG9QRjy98">IA v2 · 原型预览</span>
+  <div class="nav-right" data-page-node-id="JI5fEAEMKg2OxxZQqauGEY">
+    <span data-page-node-id="8TjmtRT9Z9J1DEdy5rx0TF">🔍</span><span data-page-node-id="yf2gHmZRVNMqAB2AkKYEnE">🔔</span>
+    <span class="avatar" data-page-node-id="V1qHJEgfOChubS4f9yEXHD">OP</span><span data-page-node-id="WyqlBzNpcgXFKaj63xy1bR">operator</span>
+  </div>
+</div>
+
+<div class="shell" data-page-node-id="QAexVQ9GE3vN6HUELaQaie">
+  <!-- ============ 左侧菜单：4 项 ============ -->
+  <aside class="menu" data-page-node-id="fldgKI4compUiEFk7rvBgO">
+    <div class="group" data-page-node-id="ArecHqclcnq3x5jOK7ScRg">工作台</div>
+    <div class="mi" data-page="dashboard" onclick="go('dashboard')" data-page-node-id="ygqZrGfwmi8zFLDbhif7ku"><span class="ic" data-page-node-id="iu538ymOyrzpQcscLEGtNN">▦</span>总览</div>
+    <div class="mi" data-page="tree" onclick="go('tree')" data-page-node-id="xSU1NEG2LBxzvzw505h73h"><span class="ic" data-page-node-id="VCD87AJB7HisdfzOUP8FLS">🌲</span>服务树</div>
+    <div class="mi" data-page="runs" onclick="go('runs')" data-page-node-id="JrKFvSXCtxUJKeXU6vXIwG"><span class="ic" data-page-node-id="nWK3mgQwDuC63jsXgQzJYr">▶</span>运行中心<span class="cnt" data-page-node-id="3lycEM6RURM2Ul9x4kTaLV">2 失败</span></div>
+    <div class="group" data-page-node-id="HJvBL7HMRoji4Uybma5iTh">平台管理</div>
+    <div class="mi" data-page="admin" onclick="go('admin')" data-page-node-id="KDfF0yE3Wy0Fcx1jpWoP1R"><span class="ic" data-page-node-id="nsUG8BHnnCRXZXhwxcNeAC">🔑</span>用户与平台权限</div>
+    <div class="mi" data-page="admin" onclick="go('admin','clusters')" data-page-node-id="KpYgrsAbWd3fYGshAgHoxn"><span class="ic" data-page-node-id="4g37ASPtZS9I0YYAZ3kKhF">☁</span>集群</div>
+    <div class="group" style="margin-top:26px" data-page-node-id="P0CvYsEf6UOSrqWGXGGBDD">已收敛</div>
+    <div style="padding:4px 12px;font-size:12px;color:rgba(255,255,255,.45);line-height:1.7" data-page-node-id="vqB5q2TCARQVwV6S3fPFkp">
+      组件 / 流水线 / 发布 / 制品库 / 环境 / 日志 / 权限(组件级)<br data-page-node-id="djVJErRmren5gN9kYXChw5">→ 点击组件后<b style="color:rgba(255,255,255,.75)" data-page-node-id="grWc8k4PV8ikGTwX4ITkja">全屏详情页 Tab</b>
+    </div>
+  </aside>
+
+  <main class="main" data-page-node-id="uzVgCf4xgQmOQydOOLkTKm">
+
+    <!-- ============ 总览 ============ -->
+    <section class="page" id="page-dashboard" data-page-node-id="GNCjyVvrDj6ybKJ6Wp8XZh">
+      <h1 class="title" data-page-node-id="lTV9RgXvqo2jxTpcDKAEkK">总览</h1>
+      <div class="sub" data-page-node-id="dinYCMk2GIRNqbvE948Wm3">平台运行概览 · 统计卡片维持现状，暂不做工作台</div>
+      <div class="kpis" style="margin-top:18px" data-page-node-id="YEEGLdsBcecNnpOhCgoHnX">
+        <div class="kpi" data-page-node-id="cVX3LdL5li9jid9iEKNH2y"><div class="label" data-page-node-id="vyKEHq05X915Aium0FqRqn">组件总数</div><div class="num" data-page-node-id="wSrkQE6zItD2ekYTpeSpSG">12</div></div>
+        <div class="kpi" data-page-node-id="OLzql917X9uj6ACDZRt0iD"><div class="label" data-page-node-id="x5evqQpxXdiGZLFP2IoCgT">今日运行</div><div class="num" data-page-node-id="FHZL0O5emWdHuFhx0DYNas">47</div></div>
+        <div class="kpi" data-page-node-id="Hywsd1xB8GGJvPzjOL5BkM"><div class="label" data-page-node-id="l7S4F0wfo84zdWZQe64TSu">失败运行</div><div class="num" style="color:var(--failed-fg)" data-page-node-id="YXFwFH5rUDoHep8k0ftA7Y">2</div></div>
+        <div class="kpi" data-page-node-id="UaThWuCRy9MFeA8GkquznX"><div class="label" data-page-node-id="ZkN84bzGLHfOMYmT8c1RIY">进行中发布</div><div class="num" style="color:var(--running-fg)" data-page-node-id="mmiFQcCPzM8dK8yv6ExZwV">1</div></div>
+      </div>
+      <div class="grid2" data-page-node-id="CCLyaMCEGv0KGGn8NiMDcx">
+        <div class="card" style="margin-top:16px" data-page-node-id="VCUUU7JzXXKcLHlR3hvzp2"><b data-page-node-id="mC7DbXxD5k8gO3reywraUA">最近运行</b>
+          <table style="margin-top:8px" data-page-node-id="p0OHtbfG22zvqDTkDhSWwi">
+            <tr data-page-node-id="j03wtohEviq1OS8F0X93WG"><td data-page-node-id="8uMDXJBX1wX9Gmx9mF9KLZ"><span class="badge b-succ" data-page-node-id="0hDXpxETh07BCNvtDAOczh"><span class="pt" data-page-node-id="bAHvDZ0p738AyMEIaZmotZ"></span>Succeeded</span></td><td data-page-node-id="Gzi7XAnsL1bzmg8GM7IJgL">ledger · build-main</td><td class="mono" data-page-node-id="YeBUIEgBdflDzSQaAy5NBK">8m12s</td></tr>
+            <tr data-page-node-id="Kcksbz8GT7a3AFyJSwrIbd"><td data-page-node-id="UCR1lefrk15hq2lNOUaPJI"><span class="badge b-fail" data-page-node-id="QVFwFVLIabGNF7130UsiBJ"><span class="pt" data-page-node-id="COn8gmUjypALSy8RpF3W72"></span>Failed</span></td><td data-page-node-id="jpYQQPfDoV7IJZMtHRHQaf">gateway · release-prod</td><td class="mono" data-page-node-id="16nz0dVLEpAdWNmxpRg5DO">3m40s</td></tr>
+          </table>
+          <div style="margin-top:10px;font-size:12.5px;color:var(--sub)" data-page-node-id="ycixU4CDDcCf0tMnL2vE3N">全局巡视 → <a style="color:var(--action-blue);cursor:pointer" onclick="go('runs')" data-page-node-id="BRUgNzEiwKzSPtjltsxK5u">运行中心</a></div>
+        </div>
+        <div class="card" style="margin-top:16px" data-page-node-id="R7L8nJb38Hy8mErnEo6bjq"><b data-page-node-id="M785ltrknU0aet3nauOPxn">集群健康</b>
+          <table style="margin-top:8px" data-page-node-id="5TNDWnEswBguT0hS4pHZzk">
+            <tr data-page-node-id="EjqSFDp0zG3wG5WjCznF7g"><td data-page-node-id="5xExnd0Bfzf6Ohkumriu8n"><span style="color:var(--succeeded-fg)" data-page-node-id="pIkvLJ21Svt7OtmZU8FF9p">●</span> local-dev</td><td class="mono" data-page-node-id="9gUpRzx1TyF3gn5BmHdy3S">kind</td><td data-page-node-id="KS4oYoed3vrIfC5JPFGmV9"><span class="badge b-succ" data-page-node-id="zUv5egmGWP0TVOsliz0N5G"><span class="pt" data-page-node-id="P81DGjcFJHYeseYnZxaLVz"></span>online</span></td></tr>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 服务树（单一定位入口） ============ -->
+    <section class="page active" id="page-tree" data-page-node-id="crumTMzMNp3cExSCEcVshD">
+      <div class="note" data-page-node-id="ipUKjbUDr7KFIUmHMr3Tx7">
+        <b data-page-node-id="3Qz5HKrEy8ON7R1Ri3khmm">IA 变化：</b>左侧 10 项菜单收敛为 4 项。点击服务树中的组件 → <b data-page-node-id="Hj4qu0OPqD7tITLlfstBtD">跳转全屏组件详情页</b>（占满主内容区，顶部仅保留面包屑可返回）。
+        <span style="color:var(--sub);display:block;margin-top:6px" data-page-node-id="jmp15SX3Ql0SEZRQ9uH5HT">
+          旧：<s data-page-node-id="L9RULEjJD7pXqtLsiGLEhW">左侧「流水线/运行/发布/制品库/环境」菜单 → 页面内再选组件</s>
+          → 新：树定位一次，详情全屏承接，Tab 上下文贯穿。
+        </span>
+      </div>
+      <div class="headrow" data-page-node-id="nqX2dWGkp5DHidHcmadM2W">
+        <div data-page-node-id="AsF4OPjdYjGJnGfQ50hNiG"><h1 class="title" data-page-node-id="X6d4wlZKcXdsPbW8uhpTe2">服务树</h1><div class="sub" data-page-node-id="LHICaRDhaerfzikm24fvOS">组织 → 服务 → 组件 · 唯一资源定位入口</div></div>
+        <div data-page-node-id="64j27UsqcxGHULpEAIM9Z1"><button class="btn btn-primary" data-page-node-id="QFAiaK1enC5OPiI33ecBzZ">+ 创建组织</button></div>
+      </div>
+      <div class="split" data-page-node-id="V68ol5Q04zUq3ovTF0pHM9">
+        <div class="tree" data-page-node-id="QWDdKzWxbuGAw7xWV4ih3f">
+          <div class="tnode" data-page-node-id="Clq0pNEEIlXHb0DoULwuxr"><span class="caret" data-page-node-id="HY5skDzQPbuV09LN5jsgso">▾</span>🏢 default-org</div>
+          <div class="tnode child" data-page-node-id="1tnfQiAMCM4CK1mJ7Llqf8"><span class="caret" data-page-node-id="AaNYLbmAQewrUZCBRONvRu">▾</span>🧭 支付平台</div>
+          <div class="tnode child" data-page-node-id="EuDYosRwCl3kFY4n4vBbQP"><span class="caret" data-page-node-id="JML9eRYkarzDYgwesdEDeH">▸</span>🧩 核心服务</div>
+          <div class="tnode leaf" onclick="openComponent('ledger')" data-page-node-id="fSJykQFv97w13wSLalLpMy">📦 ledger</div>
+          <div class="tnode leaf" onclick="openComponent('gateway')" data-page-node-id="EVmM1aT3wOSy8zD65pSap9">📦 gateway</div>
+          <div class="tnode child" data-page-node-id="Ihjy95lNuiX9x4B6WfEiH5"><span class="caret" data-page-node-id="NWBEju3YbW0PuTEnf6hoQy">▸</span>🧩 风控服务</div>
+          <div class="hint" data-page-node-id="ootPLUHgK7kKjkfc9OdGHC">💡 点击组件节点 → 全屏组件详情页（对应路由 /components/:id）</div>
+        </div>
+        <div data-page-node-id="Fk5pM2pQt3yrx58EnZVtBB">
+          <div class="empty start" data-page-node-id="b7PpElO4OlEZeEzch8ZCCM">
+            <div class="big" data-page-node-id="nTilHPhGQMwgUMJelEwuVZ">🌳</div>
+            <div class="t" data-page-node-id="MiXr5oHMOCJJO3r1E31otA">从左侧服务树选择一个组件</div>
+            <div class="d" data-page-node-id="JAqeCsvdMuihgN8pE84z8H">点击组件（如 <b data-page-node-id="b4KwHEwETDMND2mIg8T0l2">ledger</b>）→ 打开全屏组件详情页<br data-page-node-id="bwodO0QwQAqFfkCWI5aIoA">概览 / 配置 / 流水线 / 运行 / 发布 / 制品 / 环境 / 权限 / 日志</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 全屏组件详情（/components/:id） ============ -->
+    <section class="page wide" id="page-component" data-page-node-id="2kMNP4afF3MDiBKt3Qlu5X">
+      <div class="crumb" data-page-node-id="8ohNB6VbbmVaEJpjztrNjT">
+        <button class="btn-back" onclick="go('tree')" data-page-node-id="7Lh8S5qwV6HGis8Ds45cUu">← 服务树</button>
+        &nbsp;/&nbsp; default-org &nbsp;/&nbsp; 支付平台 &nbsp;/&nbsp; 核心服务 &nbsp;/&nbsp; <b data-page-node-id="QS81bKsdUCaLDi0X8oK87p">ledger</b>
+      </div>
+      <div class="card" data-page-node-id="L7HmbweEjEE5FOmFd8UXG7">
+        <div class="dhead" data-page-node-id="Myj3pKHvvIJDw21k3EFOvD">
+          <div class="avatar2" data-page-node-id="cwuYUcTy50ViV2qGDHrH7G">📦</div>
+          <div data-page-node-id="AupEWygiukDLcrzcOMaCno">
+            <h2 data-page-node-id="sCGzFeQpLEBRoT0kGf3CMA">ledger</h2>
+            <div class="meta" data-page-node-id="gpJupb9d7yR5LQ0purFyVG">git@repo:pay/ledger.git · 创建于 2026-08-12</div>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:8px" data-page-node-id="HFdYFn7anLMiP1LoasssTX">
+            <span class="badge b-run" data-page-node-id="C3meXi2DZ5iFgXkxoYbdU0"><span class="pt" data-page-node-id="QRQzANIVlONS5WFzdPmr3N"></span>1 运行中</span>
+            <button class="btn btn-primary btn-sm" data-page-node-id="oMfFBZmdGpBDXLNusMx16q">▶ 触发流水线</button>
+          </div>
+        </div>
+        <div class="tabs" data-page-node-id="xecmCiM4FwGtdIHQMdb2AL">
+          <div class="tab" data-tab="ov" onclick="tab('ov')" data-page-node-id="bE5DeECYHHikSMsgabS86V">概览</div>
+          <div class="tab" data-tab="cfg" onclick="tab('cfg')" data-page-node-id="dhUTlom2aeE8lLaJinhBeF">配置</div>
+          <div class="tab" data-tab="pl" onclick="tab('pl')" data-page-node-id="lQsBuoDsxA070Cc5rNcju2">流水线</div>
+          <div class="tab" data-tab="rn" onclick="tab('rn')" data-page-node-id="BL3d8Lf3WWxrvhGoK3p1Vl">运行</div>
+          <div class="tab" data-tab="rl" onclick="tab('rl')" data-page-node-id="51RfZETZxUGhGx8FwEbmlM">发布</div>
+          <div class="tab" data-tab="ar" onclick="tab('ar')" data-page-node-id="XtJQGHRNBavtFPwMvOAALs">制品</div>
+          <div class="tab" data-tab="env" onclick="tab('env')" data-page-node-id="VEFDWU3Jk3GbgZccBRrpbi">环境</div>
+          <div class="tab" data-tab="pm" onclick="tab('pm')" data-page-node-id="44crkUijJhFO62KwRGTp2d">权限 🔑</div>
+          <div class="tab" data-tab="lg" onclick="tab('lg')" data-page-node-id="uobGiNbOWmrGNSruTs3PI4">日志</div>
+        </div>
+
+        <!-- 概览 -->
+        <div class="tabpane" id="tp-ov" data-page-node-id="AGPMLMAMPvfDcTTVim0FmR">
+          <div class="kpis" data-page-node-id="VKajbX16RpoJJmJ2KqBSYa">
+            <div class="kpi" data-page-node-id="rf217oFrwPWIhXUZskNnGq"><div class="label" data-page-node-id="4gD8TfVwgpvAIbbgs3TbsX">流水线</div><div class="num" data-page-node-id="J7rCgsTBAR8qPaFeDv9uQC">3</div></div>
+            <div class="kpi" data-page-node-id="cvp1Cz8L7gtr8yOEiySvTa"><div class="label" data-page-node-id="V4Cd5faD5wljS9DreluJsB">近7天运行</div><div class="num" data-page-node-id="GtV89O8DBslulcV8fJAhIR">18</div></div>
+            <div class="kpi" data-page-node-id="P8gSvnJAfDsOlQTzeEgNll"><div class="label" data-page-node-id="KZ8DRAPfXb32qq1YEA2KUx">成功率</div><div class="num" style="color:var(--succeeded-fg)" data-page-node-id="m4l8XGYD3krwKdMCyMEbBU">94%</div></div>
+            <div class="kpi" data-page-node-id="oW9pXZyNmkrw0zSCJQtiLt"><div class="label" data-page-node-id="zXBAqVVWr5yd9ZvkFZCVNy">环境</div><div class="num" data-page-node-id="Bv5w4hl92a0wxJ55cR0CGB">2</div></div>
+          </div>
+          <div class="grid2" data-page-node-id="aObgUMCoMiMl0E5blysSM5">
+            <div class="card" style="margin-top:0" data-page-node-id="cVrDhhWGTCf7ccY8GcH90U"><b data-page-node-id="q3xyKAJAldW9dwHFf9MmDc">最近运行</b>
+              <table style="margin-top:6px" data-page-node-id="exVS7a6sxnmvhMraiSavCV">
+                <tr data-page-node-id="aDWzwYYrjIbarUwpTnrAHe"><td data-page-node-id="dZyBMOIFou7OvWEC5Mjpfj"><span class="badge b-succ" data-page-node-id="WOD0isB16lFNXEaSuglH1A"><span class="pt" data-page-node-id="txz3ZTabcWsnQ7LbOVS0YJ"></span>Succeeded</span></td><td data-page-node-id="TfKZeuHx5KpJBDqyKRLfdo">build-main</td><td class="mono" data-page-node-id="edcfbx6RRDl10yFHTD3Djh">8m12s</td></tr>
+                <tr data-page-node-id="WD6cmpWXuBYUrZmPwEFZWp"><td data-page-node-id="AE2ZAeP8MQ4pcQZbuBJmS9"><span class="badge b-run" data-page-node-id="1zz21396WS17kMUdv7ae4a"><span class="pt" data-page-node-id="6I4HuSEh7mvE19MehRIQHD"></span>Running</span></td><td data-page-node-id="Et5SvFLG6FjAlMMHe5E4rT">release-staging</td><td class="mono" data-page-node-id="CTEiIFbR800BQMCqrwC2Cj">2m05s</td></tr>
+              </table>
+            </div>
+            <div class="card" style="margin-top:0" data-page-node-id="Iznw51qCNk7kAbLWspEEW4"><b data-page-node-id="u5XRVOrKnBiETbPX33SjdQ">最新制品</b>
+              <table style="margin-top:6px" data-page-node-id="xbPb4ew0jOWmQSqA6FYgha">
+                <tr data-page-node-id="d8vsBzjaicJYcHLy2OJ3OF"><td class="mono" data-page-node-id="6Kx6LZz4cjxRL8aPpxCfCo">ledger:1.4.2</td><td data-page-node-id="TJX4ftmgObzEBcppyU75OX">main@a1b2c3d</td><td data-page-node-id="iegJll38BtCcug6AC4TmXw">2h ago</td></tr>
+                <tr data-page-node-id="GDJfSbyAYZWHp9N062HtSM"><td class="mono" data-page-node-id="BuyyomkZxXhhNf9zdIdCyW">ledger:1.4.1</td><td data-page-node-id="OM31DeOaPwMTMo6ICvMBEb">main@9f8e7d6</td><td data-page-node-id="J7PXyOB1NzomQAq7wRwnPY">1d ago</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- 配置 -->
+        <div class="tabpane" id="tp-cfg" data-page-node-id="2ADNA01jH8EFX9I4xNyaoE">
+          <table data-page-node-id="Za3J1a4BzrM4ILfp333M8n">
+            <tr data-page-node-id="9rf4hLMaWGieag0sTUX4Fa"><th data-page-node-id="2NbhPEx2EseftRA7X2tDB4">Key</th><th data-page-node-id="OW45n0tldAVwqjr0ssYaQJ">Value</th><th data-page-node-id="WoanYJVj0iVY1rBVc2Pve3">作用域</th></tr>
+            <tr data-page-node-id="U9JNgcrbaPSFFqZ4KK4Ra6"><td class="mono" data-page-node-id="58Q1W2z5tWINYXGMsRdN1W">DB_URL</td><td class="mono" data-page-node-id="s2vJxS23cPWT8okqsPgvk6">postgres://…</td><td data-page-node-id="AnqsvA1l4YO1gRIxwnYv6l">全局</td></tr>
+            <tr data-page-node-id="HpNOOm2l0eEjY24uVEA3Tj"><td class="mono" data-page-node-id="axCEXYXWTWelvbCJIrNxIu">REDIS_ADDR</td><td class="mono" data-page-node-id="12MGnvwfTMzIRBZHqMspgO">redis:6379</td><td data-page-node-id="FDpo0TTsafUBgFQFXMcytk">test</td></tr>
+          </table>
+        </div>
+
+        <!-- 流水线 -->
+        <div class="tabpane" id="tp-pl" data-page-node-id="QrLRibzWGCy8Ue0s3HIgA1">
+          <div style="margin-bottom:10px" data-page-node-id="k7DAiWTenSMGjeqnAgyhUV"><button class="btn btn-primary btn-sm" data-page-node-id="7XynOQU6GEhcSAA3kl39k9">+ 新建流水线</button></div>
+          <table data-page-node-id="UP9ohI6olDDDAQCro0PDXT">
+            <tr data-page-node-id="Ra80muanTEikDSGMvWQo5K"><th data-page-node-id="j3PlEiaOm6N98mAzKE1JdW">名称</th><th data-page-node-id="FDsQxiMpJ3sMJ3aFbjaopB">类型</th><th data-page-node-id="OZm9OA8I7XXvawxI8Yjvzc">阶段</th><th data-page-node-id="SVmmE1JbS0HYIcD0sdAdlw"></th></tr>
+            <tr class="clickable" data-page-node-id="TyLGBpBcRstOUDJdaA5bMq"><td data-page-node-id="FTU8i4SIuBz2oPW5ZzxthR"><b data-page-node-id="HSjSc5aDQKjuDmyjE9YbBI">build-main</b></td><td data-page-node-id="jeyeJSCveyuh7oq2OXD5Pv">build</td><td data-page-node-id="D8J1FkySGLzb3nMHxZRuEz">构建 → 单测 → 推送制品</td><td data-page-node-id="lPmEc7nzKtMNFW3X7chkoq"><button class="btn btn-pearl btn-sm" data-page-node-id="JMRiZDY0A7MiqUl9mdsn6U">编排</button></td></tr>
+            <tr class="clickable" data-page-node-id="ytlXSTCC9i2xdySzM8zqmL"><td data-page-node-id="xHDp3t9Hs8IIFIyToEGcQs"><b data-page-node-id="QZ67sowjOQD96uHLAc7nd9">release-staging</b></td><td data-page-node-id="yacy1lqxQz3o6sLBGoGQz4">release</td><td data-page-node-id="GqepeZwsWLVGVghaDSwUCa">部署 test → 冒烟</td><td data-page-node-id="xFxEi3E5GLXvjHTNjt60Se"><button class="btn btn-pearl btn-sm" data-page-node-id="HdEdPtenmyUTXKA6lfiHkW">编排</button></td></tr>
+            <tr class="clickable" data-page-node-id="918T6ROxZuMn4K3DNjgXNu"><td data-page-node-id="wouHPJSV107lihdJPL99YL"><b data-page-node-id="BShBEfmGEQGpqgFDjVV33B">release-prod</b></td><td data-page-node-id="tyd6bHuWCSUWDl09VWeauK">release</td><td data-page-node-id="h5uv3v5POH2KWPXvQj5tAw">审批 → 部署 prod → 灰度</td><td data-page-node-id="XHdpbpv9FDBf2wuGdju2NC"><button class="btn btn-pearl btn-sm" data-page-node-id="jz6cWouc2Hb1ge5TMzWxUJ">编排</button></td></tr>
+          </table>
+        </div>
+
+        <!-- 运行 -->
+        <div class="tabpane" id="tp-rn" data-page-node-id="SWl6XrczsuQjuCyUggnpBb">
+          <table data-page-node-id="KFfHv3VIGsfOHSbv8BszRa">
+            <tr data-page-node-id="kxiAc5H5NZ1JAqdx6q1CeA"><th data-page-node-id="FDu1TaftIGsu6wbifpubgz">状态</th><th data-page-node-id="BQJg1GBpMlGcbYzeJIcN7G">流水线</th><th data-page-node-id="8Z12z2ANJMkGoHdEhxoPoK">触发</th><th data-page-node-id="C4OgdmxL4jyVbqrr4RPQ47">耗时</th></tr>
+            <tr class="clickable" data-page-node-id="Q4U2bsAbmxCfWBm3wCjIem"><td data-page-node-id="r8R4UJRu96uC21rbWS5wOo"><span class="badge b-succ" data-page-node-id="o0NerRkumF8nEvekQPubxk"><span class="pt" data-page-node-id="qur4S5sd7a9GlaeCWaN1ro"></span>Succeeded</span></td><td data-page-node-id="Gxm9K51ZbeW07V7XmSKhxF">build-main #218</td><td data-page-node-id="nrjFzPCvCTF7DQAlTZU7qY">push main</td><td class="mono" data-page-node-id="gn4Aff9qub8mK6ENAubVT9">8m12s</td></tr>
+            <tr class="clickable" data-page-node-id="DTYKDFkOCMXUi07r7kf1tv"><td data-page-node-id="0xo8XFuzcJrJfj4Ne22LQU"><span class="badge b-run" data-page-node-id="ZCNOZJa0NFkV1LB9DHfsxC"><span class="pt" data-page-node-id="dOsKzudjd1zyOqMCJD03J9"></span>Running</span></td><td data-page-node-id="eoWIoAyPUuzLYvjv7WhC2J">release-staging #57</td><td data-page-node-id="XISVECrHvK1TdEmPMPiQ7O">手动 · operator</td><td class="mono" data-page-node-id="h4UfjESmaVWJX4X4UOjrPp">2m05s</td></tr>
+            <tr class="clickable" data-page-node-id="JoAQn1HP4prAFb78D4aqaS"><td data-page-node-id="79QDpkvkHX77vSwEwpG9T1"><span class="badge b-fail" data-page-node-id="2DBMVARsbCbSN9scZNoOoT"><span class="pt" data-page-node-id="ecoFEfQD6ZqE6cpX2Pi6qu"></span>Failed</span></td><td data-page-node-id="NaG2FA2rrvkRsk84Pt1Il6">release-prod #31</td><td data-page-node-id="DTJoBbYAF6Z8TC3J9RrYhz">手动 · operator</td><td class="mono" data-page-node-id="WC2tXwDtBTJ7flB59iKKAJ">3m40s</td></tr>
+          </table>
+        </div>
+
+        <!-- 发布 -->
+        <div class="tabpane" id="tp-rl" data-page-node-id="ce0QYPXgE1ESg18KyOpAYx">
+          <table data-page-node-id="Fv003BNCbFh52zpPELy3MH">
+            <tr data-page-node-id="aS8R7PAvgER72mopOvzU9I"><th data-page-node-id="bVKCBZCa0uWEAqk6Sa9SLy">发布单</th><th data-page-node-id="mhncSmkhtajRnYITdGHH0D">制品</th><th data-page-node-id="j6LAqQuAmT5izagm7PX9yJ">环境</th><th data-page-node-id="iAwlquldgBRMy9oF0sXjVP">状态</th></tr>
+            <tr data-page-node-id="HRkYrPHAjXSRRK0kXBWmcU"><td data-page-node-id="UOyAGKvG4NCSXAA021E8gK">RLS-57</td><td class="mono" data-page-node-id="ph0TOm2ehCAnuavRdLzyzI">ledger:1.4.2</td><td data-page-node-id="IFtnFScHmDUqEia3HuBOOp">test</td><td data-page-node-id="kY4BtosTxDGfj9emfHlFjb"><span class="badge b-run" data-page-node-id="npO1rGfV6hIUrE0OPK7AiE"><span class="pt" data-page-node-id="ZC0cQsl3MFsRUPodhRkFct"></span>灰度 30%</span></td></tr>
+            <tr data-page-node-id="5h6w8lEQeCGmLkF4NTZalY"><td data-page-node-id="9GtLGd2DMBSufozBwtvqkG">RLS-31</td><td class="mono" data-page-node-id="BSufeAcoAC5TGYSP4sSGM7">ledger:1.4.1</td><td data-page-node-id="W4f1BAPVnDvGkZRtRoaXBw">prod</td><td data-page-node-id="qTQ1lDJXxTe1oDq9c8bARS"><span class="badge b-fail" data-page-node-id="xUbSCggHyyUFgAA1qPtf6e"><span class="pt" data-page-node-id="ihNOJBLZMF9KbV2xxUwcb4"></span>Failed</span></td></tr>
+          </table>
+        </div>
+
+        <!-- 制品 -->
+        <div class="tabpane" id="tp-ar" data-page-node-id="ulrhWupCZlDw4lYbFacfVK">
+          <table data-page-node-id="M5nYhj4nDLcpHUKJIfCkwN">
+            <tr data-page-node-id="OUA6C2iAMPHWCb2Fq9GEVj"><th data-page-node-id="H4tAL6cFXZ8Y1aIUChKA1A">制品</th><th data-page-node-id="0K9AumxbVx9mVZp80EkXZW">来源</th><th data-page-node-id="3DwVkCchiTXbjPNT4pT2m3">产出时间</th></tr>
+            <tr data-page-node-id="APwYYDM540xlo7JCQONLEB"><td class="mono" data-page-node-id="xRFJbt2v7lyHBcjxsmY8O8">ledger:1.4.2</td><td data-page-node-id="yqMaIZyNpUMtWjA2kyh4Ut">build-main #218</td><td data-page-node-id="IxOj4RAiIvg57mkfZiR3Yq">2h ago</td></tr>
+            <tr data-page-node-id="pgCgDRgAErevrHKC5XhX48"><td class="mono" data-page-node-id="ggbrVeM5wHMoe2SQMmN3Yc">ledger:1.4.1</td><td data-page-node-id="hHnAEzDxCVS4NY83HzgEly">build-main #217</td><td data-page-node-id="Haw44ii9iyFBbOaheAmU2P">1d ago</td></tr>
+            <tr data-page-node-id="0BuwIZMufiRkWbCECL88DC"><td class="mono" data-page-node-id="ZPbIHiKQFDxiKfpG3eIzeL">ledger:1.4.0</td><td data-page-node-id="NOYV4kRHFVYWFNKOCT8L5b">build-main #215</td><td data-page-node-id="xzJolxdcOOEspumGhVRnhm">3d ago</td></tr>
+          </table>
+        </div>
+
+        <!-- 环境 -->
+        <div class="tabpane" id="tp-env" data-page-node-id="mvPa9kYILpinrB9GAF4cYa">
+          <div style="margin-bottom:10px" data-page-node-id="u3hsps7SDvVcJTWThFQ0mq"><button class="btn btn-primary btn-sm" data-page-node-id="Q7vndakGPDCUZQptXGwpEH">+ 新建环境</button></div>
+          <table data-page-node-id="UqMFRm5kBui74McVXEk4os">
+            <tr data-page-node-id="LubqiFe6V0G7AyrAqNBQKo"><th data-page-node-id="IumjxQIDBTnoqdphdmsH7H">Key</th><th data-page-node-id="x3tqoNBwDi5czDcFDOOOlm">名称</th><th data-page-node-id="OQzA2KkP2xcHXUwFibxAfJ">类型</th><th data-page-node-id="2ShybiAmXcPHAMgeBQq5M3">集群 / 命名空间</th></tr>
+            <tr data-page-node-id="ehJRfiPgsEHNJzzjETxlo6"><td class="mono" data-page-node-id="9MFKC8HQlacvGsBJ8lBy84">test</td><td data-page-node-id="DUJ0yHZGH90lBNTF3hD4AJ">测试环境</td><td data-page-node-id="CTSKpe49cd9GYbIbGlcmdI">test</td><td class="mono" data-page-node-id="fyb4xrEIZWvZzJX9GHv3GG">local-dev / ledger-test</td></tr>
+            <tr data-page-node-id="L6tTKSyTmKqoOyCZlEQTVe"><td class="mono" data-page-node-id="Pr9UhHHlrPh1klAlHuHgOy">prod</td><td data-page-node-id="Gsy0FosgDZ3R0ACNUWgeON">生产环境</td><td data-page-node-id="OSb9zsFEVsAIToQenECGDz">production</td><td class="mono" data-page-node-id="DhD8z0JZKzY92RVe1Xc9XU">local-dev / ledger-prod</td></tr>
+          </table>
+        </div>
+
+        <!-- 权限（组件级 RBAC） -->
+        <div class="tabpane" id="tp-pm" data-page-node-id="4n926QGGEU9XsML04G7e1Z">
+          <div class="note" style="margin-bottom:14px" data-page-node-id="lXyjaxSITKACgtoA0EBw9Z">
+            <b data-page-node-id="rqNNA6aVr0njGIRMntYvHQ">权限双轨</b>：这里管理「对这个组件」的授权（role-bindings）；
+            平台级用户/角色管理在左侧 <b data-page-node-id="8yqYVxJD8WEGFTqgcYM0lM">平台管理 → 用户与平台权限</b>。模型与 hub 一致。
+          </div>
+          <div class="bindrow" style="margin-bottom:14px" data-page-node-id="SvPkaaegPcFeMAE2g1YKAO">
+            <select class="input" style="min-width:200px" data-page-node-id="hpJIlNly9bIWn2CEm5YHbE"><option data-page-node-id="u6zbKgFRW5IBHSVFByZFI8">选择用户…</option><option data-page-node-id="QB1hDRFwCUYeuOVuH7klbK">zhang.wei (zhang.wei@corp.cn)</option><option data-page-node-id="fGcX7pT46tqaTkg0Ckbj79">li.na (li.na@corp.cn)</option></select>
+            <select class="input" data-page-node-id="ym0TMwfXTddWcl7d7bGSHr"><option data-page-node-id="Ke0d8IY5hdb4benqaCzg4a">角色…</option><option data-page-node-id="QNXgyipHGumU8HkhjJxr1p">Viewer（只读）</option><option data-page-node-id="9MoQvzYAiSFRFq20g20FtG">Editor（可触发/编排）</option><option data-page-node-id="7e4mrRF9tgH8CPksbhxqSQ">Admin（组件管理员）</option></select>
+            <button class="btn btn-primary btn-sm" data-page-node-id="bniAPNo1ju1xcXwd57zIDi">+ 授权</button>
+          </div>
+          <table data-page-node-id="bNE6mrei7FfzNHbzkmfh6r">
+            <tr data-page-node-id="boSU6Vue7gh5IhiwuPpBxR"><th data-page-node-id="H5i2gP3H5sYWEUtObFDueo">用户</th><th data-page-node-id="OcD6SOxXA0xv3j9ZdnFCLK">角色</th><th data-page-node-id="FRT5pfKLTKKj9TMDIKJsXe">授予时间</th><th data-page-node-id="ug3HBLXAx6XXuJMjH6zzXa">授予人</th><th data-page-node-id="LhRDLyJkYGZombGJhtoBG0"></th></tr>
+            <tr data-page-node-id="CCm8QJEofcB0nQi6Z97NbO">
+              <td data-page-node-id="1r1OEqWH9qFAySMBXUytVF"><span class="avatar" style="width:24px;height:24px;font-size:10px;display:inline-grid;vertical-align:middle;margin-right:6px" data-page-node-id="rGQMAtA8TWDONkq0cZ5x7u">ZW</span>zhang.wei</td>
+              <td data-page-node-id="RaQS6RgPILke4K0ijqjRX4"><span class="badge b-role" data-page-node-id="7sDhRtoxcwPFM1LvuPuEq2">Admin</span></td><td data-page-node-id="VoKTioxYLkOLbw54tzehBl">2026-08-12</td><td data-page-node-id="f03rkLd1M0pmkckRUPYaup">operator</td>
+              <td data-page-node-id="WRbbm6kZaxG08Fd4oHqeFN"><button class="btn btn-danger btn-sm" data-page-node-id="TWiQlBaSEzE4ONKZuOUO6z">移除</button></td>
+            </tr>
+            <tr data-page-node-id="wWzrClKyu4DFqZC8gVZV8p">
+              <td data-page-node-id="TQSlQMuWJZKZq8aNN6hghu"><span class="avatar" style="width:24px;height:24px;font-size:10px;display:inline-grid;vertical-align:middle;margin-right:6px" data-page-node-id="ZgJpnGedfAgHCyAmxeS0Gn">LN</span>li.na</td>
+              <td data-page-node-id="KOPy6l43NBi4BTaOfeUGaj"><span class="badge b-role" data-page-node-id="Lqa89zYgbCBnp0iBXO5UOr">Editor</span></td><td data-page-node-id="MdHwEDzxCH6xH9LiAEEdBO">2026-08-20</td><td data-page-node-id="7Y13mhCs5BfvFSPTdDGo4L">zhang.wei</td>
+              <td data-page-node-id="0vaQnvijoZvPxt6bujR1OJ"><button class="btn btn-danger btn-sm" data-page-node-id="024WnHMYTjy5JHj3qDYuTf">移除</button></td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- 日志 -->
+        <div class="tabpane" id="tp-lg" data-page-node-id="V4CI9RwVTq3yH4sQAnrnif">
+          <div class="empty" data-page-node-id="IPAiXzZqCUV40lZeGdlbaU">运行日志视图（按 run / task 过滤，复用现有 LogsView 逻辑，选择器换成当前组件上下文）</div>
+        </div>
+      </div>
+      <div class="foot" data-page-node-id="MweeFckZEwJJgkOcy1CQRU">对应实现：/components/:id/{overview|config|pipelines|runs|releases|artifacts|environments|permissions|logs} 子路由 · 每个 Tab 可直达收藏</div>
+    </section>
+
+    <!-- ============ 运行中心（唯一全局巡视入口） ============ -->
+    <section class="page" id="page-runs" data-page-node-id="WaY9ICIf3wq3ulr7DdRRZ2">
+      <div class="headrow" data-page-node-id="lQVEuMk6MXKAqDqWemEfe3">
+        <div data-page-node-id="rVY1570s2gKhxgyWwlcKE8"><h1 class="title" data-page-node-id="rsg12g8M8fEFSsF2r8DN9m">运行中心</h1><div class="sub" data-page-node-id="wv53z5B4MCShPKhATJAnuP">跨组件全局运行巡视 · 依赖 hub 新增 GET /api/v1/runs 全局端点</div></div>
+      </div>
+      <div class="filters" data-page-node-id="Nwd8nuJcNxR07Isw5e5qAa">
+        <span class="chip on" onclick="flt(this,'all')" data-page-node-id="a8UyXvfI38uCNPdGUHhXoA">全部</span>
+        <span class="chip" onclick="flt(this,'fail')" data-page-node-id="qACTae4rY2YHzexsXRvXck">失败 (2)</span>
+        <span class="chip" onclick="flt(this,'run')" data-page-node-id="lTFPH2uxPu7LqdPCruNg52">运行中 (1)</span>
+        <span class="chip" onclick="flt(this,'succ')" data-page-node-id="Aq6VB4ydEhl25MuiZvC3vR">成功</span>
+      </div>
+      <div class="card" data-page-node-id="X9YHhtnIcJytbb4uxpu1DF">
+        <table id="runs-tbl" data-page-node-id="g7oygN3KE2ookv8IdVAz82">
+          <tr data-page-node-id="B5bL37EBtvADFGHmPEQgJp"><th data-page-node-id="WMxedRtOrlZ06QgoxDVb9y">状态</th><th data-page-node-id="GSvau58glwN00xjp2ITuiY">组件</th><th data-page-node-id="ZFQaoq2qT7MkW592NfIjaR">流水线</th><th data-page-node-id="6Tc92YQwK7jlqT1g1Nbb0F">触发</th><th data-page-node-id="QOAikvxmyMJoa7VHbI2gLd">开始</th><th data-page-node-id="32A6EhGIKyU6qld7IWoibh">耗时</th><th data-page-node-id="SVCGvilLOEeVh84Ig5OqtV"></th></tr>
+          <tr data-k="run" data-page-node-id="7y77tQIiO4d0CCqSoQUHIN"><td data-page-node-id="1HdRL8QMGBo3VvsfWA7rhf"><span class="badge b-run" data-page-node-id="AGmdAcbAZUUhBLuL9jAFMd"><span class="pt" data-page-node-id="rJejkEpXprKQXpc691OByI"></span>Running</span></td><td data-page-node-id="QJ8NH3YRXZ6dgz8XUglREg">ledger</td><td data-page-node-id="XTt0ZIJKQvuPEQwbBSAuaO">release-staging #57</td><td data-page-node-id="3Lu3zNKKXCVTMNsynY8DYF">手动 · operator</td><td data-page-node-id="mdlOXSb0i2CVBmiRbyaiey">14:02</td><td class="mono" data-page-node-id="r2xPiQo7wEalFdIDP9qOy6">2m05s</td>
+            <td data-page-node-id="K61dNU9plnsBZPSEYG9VP0"><button class="btn btn-pearl btn-sm" onclick="openComponent('ledger')" data-page-node-id="DwECR8X3dFSY1sE0caC5GJ">监控 →</button></td></tr>
+          <tr data-k="fail" data-page-node-id="JjncuDxikbhR2bcCXrlm23"><td data-page-node-id="LZLSwV1BjgR3iKTKbg415t"><span class="badge b-fail" data-page-node-id="OwtevfecCkTWbhAxEwbkWO"><span class="pt" data-page-node-id="EiTLn1BbUfa3fehVbJIxDA"></span>Failed</span></td><td data-page-node-id="cYcqCcSRN0CID5arcsOibC">gateway</td><td data-page-node-id="W360KVHaItG5cGdB5CNee6">release-prod #31</td><td data-page-node-id="FFVX7epEGZodARRMjuKnD1">手动 · operator</td><td data-page-node-id="M4RCzEBVUzhPWZdNGzRdF2">13:44</td><td class="mono" data-page-node-id="hekIhXeEc90VnI1P9oGLKD">3m40s</td>
+            <td data-page-node-id="oxn8z6MhfG9ENyJvxlDrWy"><button class="btn btn-pearl btn-sm" onclick="openComponent('gateway')" data-page-node-id="E1Ee3XwjQAVcH5lfECrSOQ">监控 →</button></td></tr>
+          <tr data-k="fail" data-page-node-id="hi0J7D4IY1RPlRSmdOfX0z"><td data-page-node-id="wl07ydaOSPlFjPbR5ivS41"><span class="badge b-fail" data-page-node-id="XvXDDMsqIKEVnsYyd2wUMm"><span class="pt" data-page-node-id="8NjISeMgUFVbq66bNn6hq3"></span>Failed</span></td><td data-page-node-id="d7CpV6UXvUu5Ta0MU1llR4">risk-core</td><td data-page-node-id="gSOq7QBKDoBFCKrAQvKvaI">build-main #88</td><td data-page-node-id="rt7ylevVQonKk4qvIVRXlL">push feat/x</td><td data-page-node-id="LmDcTS895DJLzbcLLAaXPZ">11:20</td><td class="mono" data-page-node-id="4UtX69Y5AarPBOjcR4gs9K">1m12s</td>
+            <td data-page-node-id="FhwHGg9FOdnh8tYja8rhhS"><button class="btn btn-pearl btn-sm" onclick="go('tree')" data-page-node-id="fmwCk6jHdwIF0dnL7YC5zK">监控 →</button></td></tr>
+          <tr data-k="succ" data-page-node-id="Z1vD40oSshHzIN7UP1pKme"><td data-page-node-id="ql0N5LLueiBTwc8JDUAVIQ"><span class="badge b-succ" data-page-node-id="8f2bEx8l31SnnuGAQl7EEo"><span class="pt" data-page-node-id="B5qO0pgwG5BpqGl8jVEThb"></span>Succeeded</span></td><td data-page-node-id="GcbQQXNrUjSTTo44sAGYzt">ledger</td><td data-page-node-id="VhzhTGzB9B2GLRyDtrvuzf">build-main #218</td><td data-page-node-id="RUFH16Zqg8RplF3UJuV2N9">push main</td><td data-page-node-id="rZ718nrddGWkkbkrJ9JKOu">12:31</td><td class="mono" data-page-node-id="RSTrEQBUH1m67jAndPLMyu">8m12s</td>
+            <td data-page-node-id="DTHQuGOm8z1cJLgxg9nm4b"><button class="btn btn-pearl btn-sm" onclick="openComponent('ledger')" data-page-node-id="K5ZHlMEoWUElqDmhc3qlRy">监控 →</button></td></tr>
+        </table>
+      </div>
+      <div class="foot" data-page-node-id="oRo8kXGfW57685escrSUQC">点击「监控 →」跳转 /pipelines/:pipelineId/runs/:runId 运行监控（DAG 页保持不变）；行内组件名可直达组件详情对应 Tab。</div>
+    </section>
+
+    <!-- ============ 平台管理 ============ -->
+    <section class="page" id="page-admin" data-page-node-id="JOc1zfbPlboYMqGOc3ZF9A">
+      <h1 class="title" data-page-node-id="huojxykRvLUSQrCTJIvPw3">用户与平台权限</h1>
+      <div class="sub" data-page-node-id="nf3htruZQXjeUgVR2RhAr0">平台级 RBAC · 组件级授权在各组件详情的「权限」Tab</div>
+      <div class="tabs" style="margin-top:18px" data-page-node-id="P1YGSqGel6pgxtUrHmNrrO">
+        <div class="tab active" data-page-node-id="W0Pe5RnaFpL734YKXoCGGn">用户</div>
+        <div class="tab" data-page-node-id="FzFMBxhwd3YD9q6n1OFL5N">系统角色</div>
+        <div class="tab" data-page-node-id="8BUlx4jONE2WuAKWwtci2f">平台权限</div>
+      </div>
+      <div class="card" data-page-node-id="ngP1wrF2y82ZM8df2ChV1f">
+        <table data-page-node-id="aR8oUM6UxM2dAzGKl5sMlk">
+          <tr data-page-node-id="NydBlkZBit4Obydt6PTcy7"><th data-page-node-id="ACV2ihAR1woAN40NqL9EBk">用户</th><th data-page-node-id="k8zBDz2yblDH08bezFRtlx">邮箱</th><th data-page-node-id="IcWAlWd4YfDBOoPrvX3mBU">平台角色</th><th data-page-node-id="bGaBTy5LaQBlvbAQe3T4XP">加入时间</th></tr>
+          <tr data-page-node-id="sIcBdfoePUbbZUUirgIyU0"><td data-page-node-id="JRsJI1cArC1A2ng7sW4arW">operator</td><td class="mono" data-page-node-id="yXf2F83YfmuhGjBlfVWtdU">op@corp.cn</td><td data-page-node-id="HDmAutZzCwpKuQn0bNPFh2"><span class="badge b-role" data-page-node-id="pQfD5SGnTepGJqPlFc4dxN">Platform Admin</span></td><td data-page-node-id="N5IKmapinqRlFEikqhvEXD">2026-07-01</td></tr>
+          <tr data-page-node-id="iBQd6tbCbc60CLPEugGhsQ"><td data-page-node-id="rnGmFtWbmDLr0maxq2LyKd">zhang.wei</td><td class="mono" data-page-node-id="tjwM0hKwFzyFxsWawNsNCN">zhang.wei@corp.cn</td><td data-page-node-id="RYuwLvXxLm4UGgm4DN3TfD"><span class="badge b-pend" data-page-node-id="Y2FRAmiz0aM1pa8pMGDv2b">Member</span></td><td data-page-node-id="5Ltg1s4GFMds7NtFsVUwEE">2026-08-12</td></tr>
+        </table>
+      </div>
+      <h2 class="h2" data-page-node-id="K9PNXksTM3Y8WgSBhPYax2">集群</h2>
+      <div class="card" data-page-node-id="4qc5NfQc8XVnLDDN0cF84G">
+        <table data-page-node-id="cAPybTLSSLfBqsNpmGa7yv">
+          <tr data-page-node-id="zQNrGMyrGTQIoHIIlR1wD1"><th data-page-node-id="jijs4t50usw4ap0p4gtPwC">名称</th><th data-page-node-id="ATHQ3dqxN54P3bsWThMnEE">类型</th><th data-page-node-id="vn5QoVM8OHQLbGmj6M7gNO">状态</th><th data-page-node-id="qErvAdnTru5TKR8zPj3fV5">注册时间</th></tr>
+          <tr data-page-node-id="bCUimAeKVmddPRvT1z5tF7"><td data-page-node-id="QTKSRpbjPGWvC2L8JjVVqC"><b data-page-node-id="twODv7ZbjuCYpwJvrWdOeB">local-dev</b></td><td class="mono" data-page-node-id="PhCf9kThZwuIF3LIfDEB8b">kind</td><td data-page-node-id="asbqXXbFL1SzLziOGOsNCh"><span class="badge b-succ" data-page-node-id="J0245hNbVXfdGCoOrgFRPn"><span class="pt" data-page-node-id="rQ437nKhzhza2yI3D6IBXS"></span>online</span></td><td data-page-node-id="KPjb6b68D9ooKGPV2rzc9R">2026-09-05</td></tr>
+        </table>
+        <div class="foot" data-page-node-id="64QWofHGKaiB4Lu4Z9oG78">集群为平台级资源（原「环境」页上半区并入此处）；环境本身是组件级资源 → 组件详情 Tab。</div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  function go(p, sub){
+    document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));
+    document.getElementById('page-'+p).classList.add('active');
+    document.querySelectorAll('.menu .mi').forEach(el=>{
+      let on = el.dataset.page===p;
+      if(p==='admin'&&sub==='clusters') on = el.textContent.indexOf('集群')>=0;
+      el.classList.toggle('active', on);
+    });
+    document.querySelector('.main').scrollTop=0;
+  }
+  // 点击服务树组件 → 全屏详情页（模拟路由跳转 /components/:id）
+  function openComponent(name){
+    const bc = document.querySelector('#page-component .crumb b');
+    if(name) bc.textContent = name;
+    go('component');
+    tab('ov');
+  }
+  function tab(t){
+    document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active', el.dataset.tab===t));
+    document.querySelectorAll('.tabpane').forEach(el=>el.classList.remove('active'));
+    const pane = document.getElementById('tp-'+t);
+    if(pane) pane.classList.add('active');
+  }
+  function flt(chip,k){
+    document.querySelectorAll('.filters .chip').forEach(c=>c.classList.remove('on'));
+    chip.classList.add('on');
+    document.querySelectorAll('#runs-tbl tr[data-k]').forEach(tr=>{
+      tr.style.display = (k==='all'||tr.dataset.k===k)?'':'none';
+    });
+  }
+</script>
+</body>
+</html>

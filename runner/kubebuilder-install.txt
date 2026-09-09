@@ -1,0 +1,149 @@
+# Kubebuilder / controller-gen 命令记录
+
+本文件记录 runner（K8s Operator）组件相关的 Kubebuilder 体系命令：
+- 已实际执行的命令（生成 CRD / RBAC / deepcopy）
+- 安装命令
+- 标准 Kubebuilder 脚手架命令（仅作文档参考，**未执行**，原因见末尾说明）
+
+---
+
+## 一、环境信息（执行时）
+
+- kubebuilder:        v4.15.0  (Kubernetes 1.36.0)
+- controller-gen:     v0.21.0   （由 kubebuilder v4.15 配套的 controller-tools 安装）
+- Go toolchain:       go1.26.5 darwin/amd64
+- runner 使用的 K8s 依赖: k8s.io/* v0.36.0（与 kubebuilder 的 1.36 完全匹配）
+
+> K8s 客户端版本必须与**部署目标集群版本匹配**。当前已升到 K8s 1.36，
+> 部署集群需 >= 1.36 才能兼容。
+
+---
+
+## 二、安装 controller-gen（kubebuilder 不内置它，靠 make manifests 调用）
+
+```bash
+# 使用与 kubebuilder v4.15 / k8s 1.36 适配的最新 controller-tools
+export GOSUMDB=off GOFLAGS=-mod=mod \
+       GOPROXY=https://goproxy.cn,direct \
+       GOBIN=$HOME/go/bin
+
+go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest
+# 等价：go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.21.0
+
+# 验证
+$HOME/go/bin/controller-gen --version   # -> v0.21.0
+```
+
+---
+
+## 三、本次实际执行的命令（生成产物）
+
+> 在 `software-distribution-platform-runner/` 目录下执行。
+
+### 1) 生成 deepcopy（等价于 `make generate`）
+
+```bash
+export GOSUMDB=off GOFLAGS=-mod=mod
+CG=$HOME/go/bin/controller-gen
+
+$CG object:headerFile=/dev/null paths="./..."
+# 产物: api/v1alpha1/zz_generated.deepcopy.go
+```
+
+### 2) 生成 CRD + RBAC 清单（等价于 `make manifests`）
+
+```bash
+$CG rbac:roleName=manager-role crd \
+      paths="./..." \
+      output:crd:artifacts:config=config/crd/bases \
+      output:rbac:artifacts:config=config/rbac
+```
+
+产物（已生成，非空）：
+```
+config/crd/bases/pipeline.sdp.io_pipelineruns.yaml   # 575 行
+config/crd/bases/pipeline.sdp.io_taskruns.yaml       # 658 行
+config/crd/bases/pipeline.sdp.io_rollouts.yaml       # 268 行
+```
+
+> 注意：`config/rbac/role.yaml` **未生成** —— 因为代码中没有
+> `+kubebuilder:rbac:...` 标记，controller-gen 无权限规则可吐。
+> 部署 Operator 时如需最小 RBAC，需随后手写或在 controller 里补标记后重跑。
+
+---
+
+## 四、修改后验证（必须执行）
+
+```bash
+export GOSUMDB=off GOFLAGS=-mod=mod
+go build ./...      # 期望: 无输出，EXIT=0
+go vet   ./...      # 期望: 无输出，EXIT=0
+gofmt -l .          # 期望: 空（已全部规范）
+```
+
+---
+
+## 五、标准 Kubebuilder 脚手架命令（参考文档，本次未执行）
+
+runner 当前是**手写代码 + 沿用 Kubebuilder 约定标记**，没有 `PROJECT` / `Makefile`
+（因此不是 kubebuilder 脚手架生成的工程）。若要把它"正规化"成 Kubebuilder 工程，
+原本应走的命令是：
+
+```bash
+# 1. 初始化工程骨架（会生成 PROJECT / Makefile / config/ 全套 / main.go 样板）
+kubebuilder init \
+  --domain pipeline.sdp.io \
+  --repo github.com/rouroumaibing/software-distribution-platform-runner
+
+# 2. 创建 API（生成 types + controller 样板 + CRD 标记）
+kubebuilder create api \
+  --group pipeline --version v1alpha1 --kind PipelineRun \
+  --resource --controller
+kubebuilder create api \
+  --group pipeline --version v1alpha1 --kind TaskRun \
+  --resource --controller
+kubebuilder create api \
+  --group pipeline --version v1alpha1 --kind Rollout \
+  --resource --controller
+
+# 3. 生成代码与清单（脚手架生成 Makefile 后由 make 调用，等价于上面第三节）
+make generate
+make manifests
+```
+
+> ⚠️ 警告：`kubebuilder init/create api` **会覆盖 main.go 与 controller 样板**，
+> 与本项目已有的手写控制器（`internal/controller/*`、长连接 connector、DAG 调度）
+> 冲突。当前无需执行，仅保留作参考。
+
+---
+
+## 六、安装命令汇总（复制即用）
+
+### 1) 安装 kubebuilder（本机当前：v4.15.0 / K8s 1.36.0）
+
+```bash
+# 官方安装脚本（macOS / Linux，自动选平台）
+curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
+chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
+
+# 验证
+kubebuilder version
+# -> KubeBuilder: v4.15.0 / Kubernetes: 1.36.0
+```
+
+### 2) 安装 controller-gen（kubebuilder 不内置，靠 make manifests 调用；本次实际执行）
+
+```bash
+export GOSUMDB=off GOFLAGS=-mod=mod \
+       GOPROXY=https://goproxy.cn,direct \
+       GOBIN=$HOME/go/bin
+
+go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest
+# 等价（锁定版本）：go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.21.0
+
+# 验证
+$HOME/go/bin/controller-gen --version   # -> v0.21.0
+```
+
+> 说明：环境信息里 `controller-gen: v0.21.0` 即由上面第 2) 步安装得到；
+> 第二节「安装 controller-gen」与此处为同一命令，单列于此方便直接复制。
