@@ -113,6 +113,14 @@
 
 全部固化在 `hub/deploy/p0-up.sh`（幂等可重跑）。
 
+> 🗑 **2026-09-15 更新**：`hub/deploy/{p0-up.sh,p0-down.sh,Dockerfile}`（及 `runner/deploy/Dockerfile`）已作为
+> **P0 legacy** 删除（无任何引用者）；P0 抓到的踩坑经验仍然有效，但**仓库内没有、也不再提供全量编排脚本**。
+> 全量 kind + helm 联调编排（registry → kind → 镜像 → helm/manifests → 就绪等待 → 网关握手）由**维护者本机的
+> 临时脚本**完成，**不随任何仓库分发**。其它开发者按**各仓自带脚本**起步：
+> `make package` / `pnpm image` 产出「镜像 + charts」交付包（`output/software-distribution-platform-<comp>-<version>.tar.gz`）；
+> `make start-dev` / `pnpm start:dev` 起本地开发服务（`hack/svc.sh` / `scripts/svc.sh`）。
+> 依据见 `software-distribution-platform-docs/BUILD-ARTIFACTS.md` 附 C 与 §10.7。
+
 ### P1 Build 链路（L2-2 + L2-6）
 
 1. 界面建组件 → 配参数 → 编排流水线：Stage1 `Build`（command=`go build ./...`，image=`golang:1.22-alpine`）+ Stage2 `Build`（command=`go test ./...`）
@@ -140,6 +148,7 @@
 2. 界面 **暂停** → 权重停在当前步；**晋升** → 推进到下一步；**回滚** → 流量回 0%、Phase→Degraded
 3. 编排 `Approval` 任务 → 运行中暂停 → 界面提交审批 → 恢复推进
 4. **通过标准**：三个控制动作在集群侧真实生效（`kubectl get rollout` 权重可见），不只是 UI 状态变化
+5. **审批安全校验（P2/P3a）**：① 触发人本人尝试审批同一运行应被 **防自审** 拦截（UI 禁用 + hub `pipeline_approvals` 状态机拒绝 `requested_by == approver`）；② 审批决策在 hub `pipeline_approvals` 留痕（谁/何时/意见），与 runner 解除挂起解耦；③ 组件 owner 因 P3b 自动绑 `component-admin`，天然持有 `approval:approve` 即默认审批人。
 
 ### P5 全链路验收（L2-8）
 

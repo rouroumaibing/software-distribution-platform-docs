@@ -2,7 +2,7 @@
 
 > 配套文档：`STORY-hub-implementation.md`（控制面接线层）。本 Story 覆盖 M1 全链路的 **Runner 侧**：接收 Hub 下发 → 落地 CRD → DAG 调度 → 任务执行（Job/Deploy/Approval）→ 状态/审批回写 Hub。
 >
-> **项目目标（对齐 console / hub）**：runner 是 SDP 的执行平面，把 hub 下发的流水线 DAG 在目标集群真正执行——构建（Build Job）、施加发布（Release chart/manifest + 金丝雀）、人工卡点（Approval）——从而让"界面触发一次发布"端到端跑通到多套环境。它支撑 console 定义的 4 类标准流水线（日常 / 版本归档 / 转测 / 生产，见 console `CONSOLE-UI设计文档.md` §1.1）。落地顺序：先贯通基本功能（R1–R3 生产化收尾），**权限管控紧接着由 hub 侧 G7 统一落实**。
+> **项目目标（对齐 console / hub）**：runner 是 SDP 的执行平面，把 hub 下发的流水线 DAG 在目标集群真正执行——构建（Build Job）、施加发布（Release chart/manifest + 金丝雀）、人工卡点（Approval）——从而让"界面触发一次发布"端到端跑通到多套环境。它支撑 console 定义的 4 类标准流水线（日常 / 版本归档 / 转测 / 生产，见 console `CONSOLE-UI设计文档.md` §1.1）。落地顺序：先贯通基本功能（R1–R3 生产化收尾），**权限管控由 hub 侧 G7 统一落实（已实现：P1 建表 / P2 审批子系统 / P3a Enforcement）**。
 
 ## 1. 元信息与业务价值 (Context & Value)
 - **类型**: [x] Tech Story (架构/重构/技术债)   [ ] Biz Story (业务)
@@ -78,7 +78,7 @@
 **StatusUpdatePayload**: `{ clusterID, pipelineRunName, pipelineRunNamespace, phase, message?, startTime?, completionTime?, tasks: TaskRunStatusSummary[] }`
 
 ### 4.2 数据库/缓存变动 —— Runner 的"表"即 K8s CRD（etcd 持久化）
-> ⚠️ **重要说明**: Runner 是 K8s Operator，**不连接任何关系型数据库**。其全部持久化状态由 3 个自定义资源（CRD）承担，物理存于 K8s 集群的 etcd。这与 Hub 的 Postgres 20 张表是**两套独立的存储**：Hub 存"历史/审计/权限"（SQL），Runner 存"实时执行状态"（CRD/etcd）。二者通过 `CRName`/`CRNamespace` 关联。
+> ⚠️ **重要说明**: Runner 是 K8s Operator，**不连接任何关系型数据库**。其全部持久化状态由 3 个自定义资源（CRD）承担，物理存于 K8s 集群的 etcd。这与 Hub 的 Postgres（26 张表，含 §7 多 org RBAC 扩展）是**两套独立的存储**：Hub 存"历史/审计/权限"（SQL），Runner 存"实时执行状态"（CRD/etcd）。二者通过 `CRName`/`CRNamespace` 关联。
 
 以下为 3 个 CRD 的"建表"（schema）设计，字段类型/枚举均对照 `api/v1alpha1/*_types.go` 核实。
 
@@ -128,11 +128,10 @@
 | `spec.retryPolicy` | *RetryPolicy | — | 失败重试 |
 | `spec.timeoutSeconds` | int64 | — | 单任务超时 |
 | `spec.approvalConfig` | *ApprovalConfig | Type==Approval 必填 | 审批人/最少批准数/超时 |
-| `spec.rolloutSpec` | *RolloutSpec | Type==Deploy 必填 | 金丝雀模板 |
 | **Status** | | | |
 | `status.phase` | enum | Pending/Running/Succeeded/Failed/Skipped | 阶段（Skipped=上游失败不调度） |
-| `status.jobRef` | string | Normal 任务 | 创建的 Job 名 |
-| `status.rolloutRef` | string | Deploy 任务 | 创建的 Rollout 名 |
+| `status.jobRef` | string | Build 任务 | 创建的 Job 名 |
+| `status.rolloutRef` | string | Release 任务 | 创建的 Rollout 名 |
 | `status.podName` | string | — | 运行 Pod 名 |
 | `status.startTime/completionTime` | *Time | — | 起止 |
 | `status.retryCount` | int32 | — | 已重试次数 |
@@ -141,7 +140,7 @@
 | `status.logsRef` | string | — | 完整日志归档位置（M1 未启用） |
 | `status.approval` | *ApprovalStatus | Approval | 该任务审批状态镜像 |
 
-#### 表 3: `Rollout`（Deploy 任务的金丝雀发布对象，TaskRun 的 owned 子资源）
+#### 表 3: `Rollout`（Release 任务的金丝雀发布对象，TaskRun 的 owned 子资源）
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | `metadata.name` | string | == TaskRun 名 | 唯一 |
@@ -173,7 +172,7 @@ Runner 在发布过程中还会创建/持有以下 K8s 原生对象（受 Rollou
 #### 4.2.2 CRD 生成与关键枚举取值
 - CRD YAML 由 `controller-gen v0.21.0` 生成于 `config/crd/bases/*.yaml`（安装步骤见 §4.2.3）。
 - 枚举常量（直接引用 `api/v1alpha1`）：
-  - `PipelineTaskType`: `Normal` / `Approval` / `Deploy`
+  - `PipelineTaskType`: `Build` / `Release` / `Approval`
   - `PipelineRunPhase`: `Pending` / `Running` / `WaitingApproval` / `Succeeded` / `Failed` / `Cancelled`
   - `TaskRunPhase`: `Pending` / `Running` / `Succeeded` / `Failed` / `Skipped`
   - `RolloutPhase`: `Progressing` / `Paused` / `Healthy` / `Degraded` / `RollingBack`
@@ -190,7 +189,7 @@ curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go 
 chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 ```
 
-> 安装后 `controller-gen` 位于 kubebuilder 的 `bin/` 目录（或 `$GOPATH/bin`），由 `make manifests` 调用于生成/更新 CRD。
+> 安装后 `controller-gen` 位于 kubebuilder 的 `bin/` 目录（或 `$GOPATH/bin`）。⚠️ **注意：runner 仓当前 `Makefile` 并无 `manifests` target**——CRD 由 `controller-gen` 直接生成并提交于 `config/crd/bases/*.yaml`（另有副本位于 `build/runner/charts/.../crds/`）。若新增 `make manifests`，需自行补齐该 target 与 `controller-gen` 调用。
 
 ### 4.3 任务处理与 DAG 推进逻辑（Runner 侧；推送模型，已确认）
 
@@ -201,15 +200,15 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 
 **2. 阶段间串行 + 阶段内串行/并行（统一用 `DependsOn` 表达）**
 - `PipelineRunReconciler` 纯函数 `findRunnableTasks` / `dependenciesSatisfied`：仅当某 task 的全部 `DependsOn` 前驱 `Succeeded`，才创建其 `TaskRun`。
-- **阶段间串行**：hub `buildSpec` 已为每个阶段首任务加"依赖上一阶段末任务"的 `DependsOn` → 自然形成阶段顺序屏障。
+- **阶段间串行**：hub `buildSpec` 已为后续阶段的**每个**任务补上"依赖上一阶段**全部**任务"的 `DependsOn`（任务自带依赖时不覆盖）→ 自然形成阶段顺序屏障。
 - **阶段内并行（默认）**：同阶段任务间无 `DependsOn` → 同时可运行。
-- **阶段内串行（Stage `executionMode=Serial`，已确认 Stage 级）**：hub `buildSpec` 按 `DisplayOrder` 在同阶段任务间补 `DependsOn` 链（t1→t2→t3）→ 严格先后。
+- **阶段内串行（`executionMode=Serial`）**：⚠️ **尚未实现**——当前 hub `buildSpec` 只做跨阶段 `DependsOn` 派生，**无 `executionMode` 字段、无同阶段串行 `DependsOn` 链**（`pipeline_stages` 现仅 `(pipeline_id, name, sequence)`）。该能力为已确认的待实现设计，见 [hub 数据模型 §6.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)。
 - 终态（`Succeeded`/`Failed`/`Skipped`/`Cancelled`）后不再调度新 `TaskRun`。
 
 **3. 单节点执行（TaskRun → 实际命令）**
 - `TaskRunReconciler` 按 `spec.type` 建原生对象：
-  - `Normal`(Build) → K8s Job（init 容器 git checkout + 构件 fetch，主容器跑 `command`/`sh {scriptPath}`）；
-  - `Deploy`(Release) → `Rollout` CR 渐进发布（`rolloutSpec`）；
+  - `Build` → K8s Job（init 容器 git checkout + 构件 fetch，主容器跑 `command`/`sh {scriptPath}`）；
+  - `Release` → `Rollout` CR 渐进发布（`rolloutSpec`，可选）；
   - `Approval` → **不建 Job**，挂起等 Hub 经 `approve_task` 帧回写决策（见 §4.1）。
 - 失败按 `retryPolicy` 退避重试；超时按 `timeoutSeconds` 置 `Failed(Timeout)`。
 
@@ -243,7 +242,7 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 ---
 
 ## 6. 后续待办（非本 Story 范围 / 已注明 TODO）
-- ✅ **Hub 审批下发路径**：Hub 侧已实现 `POST /pipelines/:pipelineId/runs/:runId/tasks/:taskName/decision`（经 `gateway.Approve` → `MessageApproveTask` 下发），与 Runner 的 `ApproveTask` handler 形成完整审批闭环（见 SDP-HUB-001 本轮补充）。
+- ✅ **Hub 审批下发路径**：Hub 侧已实现 `POST /pipelines/:pipelineId/runs/:runId/tasks/:taskName/decision`（经 `gateway.Approve` → `MessageApproveTask` 下发），与 Runner 的 `ApproveTask` handler 形成完整审批闭环（见 SDP-HUB-001 本轮补充）。**P2 起 Hub 额外落 `pipeline_approvals` 审计记录并实施防自审（`requested_by == approver` 直接拒绝），Runner 仅据此解除挂起/终止（[hub 数据模型 §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）。**
 - ⬜ **实时日志**：`MessageLogChunk` / `LogChunkPayload` 类型已定义，Runner 侧 Pod 日志抓取与发送未实现。
 - ⬜ **IngressCanary 路由**：`TrafficRoutingIngressCanary` 已记录但 M1 降级为副本切分；专用 canary Ingress 资源为后续项。
 - ⬜ **HTTPProbe / PrometheusQuery 健康检查**：M1 实际只校验 `PodReady`；`HTTPProbe`/`PrometheusQuery` 引擎分支已留但未接真实探测。

@@ -6,7 +6,7 @@
 > - `CONSOLE-MODULES.md` —— 后端端点契约 / 模块 Backlog（MOD-0~10）/ 三态子任务表单
 > - （`OPEN-ITEMS.md` 已随文档合并整合进各组件 Backlog 与本文附 B，不再单独保留）
 >
-> 合并时间：2026-09-09。交互原型保留 `console-ia-v2-prototype.html`（IA v2 决策依据）。
+> 合并时间：2026-09-09。交互原型文件原为 `console-ia-v2-prototype.html`（IA v2 决策依据）；该文件已于 2026-09-15 调整，同目录现为 `CONSOLE-UI-重设计原型.html`（IA v3 方向，方案见 `CONSOLE-UI重设计文档.md`）。**本文档仍为现状实现的事实源**，重设计内容以重设计文档为准。
 >
 > **标注约定**：`【假设】`= 原文档未覆盖、由本文据上下文推导，需你确认；`【待补充】`= 设计尚未落档，需补；`【待确认】`= 存在歧义 / 待拍板。
 
@@ -19,11 +19,11 @@
 | CONSOLE-DESIGN（设计令牌 + F1–F6 构成） | §9 视觉系统 + §7/§8 页面构成 | 其 §3 页面结构 / §4 路由表曾被 LAYOUT 标记为"被覆盖"，已以 LAYOUT 为准 |
 | CONSOLE-LAYOUT（IA v2） | §5 信息架构 + §7 页面布局 | 布局唯一权威源 |
 | CONSOLE-MODULES（契约 + Backlog） | §4 功能清单 + 附 A 契约 | 模块/端点唯一权威源 |
-| OPEN-ITEMS（未完成项） | 附 B 当前未完成项 | G1–G6 已全部落地，仅 G7 + R1–R3 残留 |
+| OPEN-ITEMS（未完成项） | 附 B 当前未完成项 | G1–G6 已全部落地，G7 已实现，仅 R1–R3 残留 |
 
-**现状快照（2026-09-09）**：Console 前端 MOD-0~MOD-10 全部页面与组件已落地，`vue-tsc` + `vite build` 全绿；hub 后端 G1–G6 缺口已于 2026-09-06 全部补齐，仅剩 **G7（权限校验 TODO，安全债）**；runner 剩 **R1–R3（生产化收尾：chart 鉴权 / values 注入验证 / 镜像固化）**。端到端链路「构建→测试→发布(灰度可控)→审批→看日志→下制品」已可跑通，只待 runner 联调。
+**现状快照（2026-09-14 更新）**：Console 前端 MOD-0~MOD-10 全部页面与组件已落地，`vue-tsc` + `vite build` 全绿；hub 后端 G1–G6 缺口已于 2026-09-06 全部补齐，**G7（权限校验）已于 P3a 通过 §7 Enforcement 落地**；runner 剩 **R1–R3（生产化收尾：chart 鉴权 / values 注入验证 / 镜像固化）**。端到端链路「构建→测试→发布(灰度可控)→审批→看日志→下制品」已可跑通，只待 runner 联调。
 
-> **文档完整性**：核心任务流程的**执行模型 + 异常分支**已于 §6 补全（权限分支依赖 G7，见 §1.2）；各页面**四态**已于 §8.2 按双向钢人论证补充；**用户侧验收（按目标执行、达成目标）**已于 §10.2 定义；**自动化功能测试（API 各阶段组合）**范围已于 §10.3 锁定，实现推迟到后期独立自动化测试项目。当前无遗留 `【待补充】` 主块。唯一未决的架构项 `stage_runs` 已据双向钢人论证**确认不建**（见 [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) §6.3）。
+> **文档完整性**：核心任务流程的**执行模型 + 异常分支**已于 §6 补全（权限分支已由 §7 Enforcement 实现，见 §1.2）；各页面**四态**已于 §8.2 按双向钢人论证补充；**用户侧验收（按目标执行、达成目标）**已于 §10.2 定义；**自动化功能测试（API 各阶段组合）**范围已于 §10.3 锁定，实现推迟到后期独立自动化测试项目。当前无遗留 `【待补充】` 主块。唯一未决的架构项 `stage_runs` 已据双向钢人论证**确认不建**（见 [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) §6.3）。
 
 ---
 
@@ -54,7 +54,7 @@
 ### 1.2 落地顺序（基本功能优先，权限紧随）
 
 1. **先完成基本功能**：服务树 → 组件 → 环境 → 配置 → 流水线创建/编排/运行 → 多环境发布全链路贯通（console MOD-0~MOD-10 + hub G1–G6 + runner R1–R3）。
-2. **紧接着落实权限管控**：基本功能可用后，立即实现权限体系——平台级用户/角色 + 组件级 role-bindings + 环境/操作级管控（如生产环境强制审批）。当前 G7 为权限校验 TODO，是下一优先项。
+2. **权限管控已落地**：基本功能可用后实现的权限体系——平台级用户/角色（`platform_roles`/`platform_role_bindings`）+ 组件级 role-bindings（`component_roles`/`component_role_bindings`，subject 支持 user/group）+ 审批子系统（`pipeline_approvals`，含防自审）——已于 P1/P2/P3 整体落地（见 [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）。G7（service 层 §7 Enforcement）已在 P3a 完成。
 
 ---
 
@@ -105,7 +105,7 @@
 - ❌ 暗色模式（令牌已预留 Action Blue 深色变体，后续迭代）
 - ❌ DAG 自由画布编辑器（线性阶段组先行，`DependsOn` 并行需求出现后再升级，评估 vue-flow）
 - ❌ API 管理模块（新平台无此后端域）
-- 🟡 G7 权限校验 TODO（安全债，非功能阻断，最后处理）
+- 🟢 G7 权限校验 已完成（P3a Enforcement 落地：hub 路由级 `HasPermission` + Keycloak `groups` 注入 + console §7.9 权限页）
 - 🟡 R1–R3 runner 生产化（见附 B）
 
 ---
@@ -137,9 +137,9 @@
 ### 6.0 执行模型（已确认）
 
 - **阶段（Stage）串行**：流水线由有序阶段组成，按 `sequence` 从前到后逐阶段执行；前一阶段全部子任务完成（成功/跳过）才解锁下一阶段。
-- **阶段内子任务按 `executionMode` 串行/并行**（**`ExecutionMode` 已确认放在 Stage 级**，一个阶段统一一种模式）：
-  - `Parallel`（默认）：阶段内子任务并发启动，互不等待；
-  - `Serial`：hub `buildSpec` 按 `DisplayOrder` 在各子任务间推导 `DependsOn` 链，严格先后；
+- **阶段内子任务按 `executionMode` 串行/并行**（**`ExecutionMode` 已确认放在 Stage 级**，一个阶段统一一种模式；**⚠️ 该字段与 `Serial` 行为当前待实现**）：
+  - `Parallel`（默认，**当前唯一已实现**）：阶段内子任务并发启动，互不等待；
+  - `Serial`（**待实现**）：计划由 hub `buildSpec` 在各子任务间按序推导 `DependsOn` 链，严格先后；
   - **阶段完成条件**：该阶段所有子任务 `Succeeded` 或 `Skipped` 即视为完成；任一 `Failed` 且不可重试 → 阶段失败，下游不调度（DAG `Skipped`）。
 - **数据与执行解耦（推送模型，已确认）**：触发 `POST /runs` 时 hub 先把"任务落实到数据库"（`pipeline_runs` + 按 DAG 种子的 `task_runs` + `dispatch_jobs`），再把整份已解析 spec 经 WebSocket **推送**给目标环境 runner；runner 在集群内建 CRD 执行，**不直连 hub DB**，状态经 WS `status_update` 流回 hub 写回 `task_runs`。详见 [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) §6 / runner `STORY` §4.3。
 
@@ -163,11 +163,11 @@
 | 任务终态失败 | 重试耗尽 / 硬错误 | `Failed` | 阶段 `Failed` | `Failed`；可整跑重投或单阶段重跑 | redispatch / 跳到失败阶段重跑 |
 | 上游失败跳过 | 依赖任务 `Failed` | 未调度，`Skipped` | — | — | 查看 DAG 跳过关系 |
 | 超时 | `timeoutSeconds` 到 | `Failed(Timeout)` | 阶段 `Failed` | `Failed` | 调大超时后重投 |
-| 权限不足 | G7 未授权 / 生产环境无审批权限 | 触发即拒或运行中拒 | — | `Failed(PermissionDenied)` | 申请 role-binding / 走审批（见 §1.2） |
+| 权限不足 | §7 Enforcement 未授权 / 生产环境无审批权限 | 触发即拒或运行中拒 | — | `Failed(PermissionDenied)` | 申请 role-binding / 走审批（见 §1.2、§7.9） |
 | 回滚 | 灰度健康度不达标 / 手动 | — | Release 阶段可回滚 | `Succeeded` 后走回滚流程 | 灰度步骤器「回滚」 |
 | 审批拒绝 | 审批人 `Rejected` | Approval 任务 `Failed` | 阶段 `Failed` | `Failed` | 修正后重跑该 Approval 阶段 |
 
-> 权限相关分支依赖 **G7**（生产环境强制审批 + 组件级 role-bindings），按 §1.2 为"基本功能后紧接着"的优先项；当前为安全债占位。
+> 权限相关分支已由 **§7 Enforcement**（P3a 落地）实现：生产环境强制审批 + 组件级 role-bindings + 防自审，详见 [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)。
 
 ---
 
@@ -215,7 +215,7 @@
 ```
 
 - 阶段号带状态色；任务卡类型图标（⌘ Build / ⬇ Release / ✓ Approval）；点击开三态子任务抽屉。
-- 每个阶段头部有**串行/并行开关**（`executionMode`，已确认 Stage 级）；`Serial` 时阶段内任务按 `DisplayOrder` 纵排并标注 `DependsOn` 链，`Parallel` 时并行平铺。阶段间恒为依赖（前一阶段完成才解锁）。`DependsOn` 自由画布待并行需求明确后升级（评估 vue-flow）。
+- 每个阶段头部有**串行/并行开关**（`executionMode`，已确认 Stage 级；**⚠️ 待实现**）；`Serial` 时阶段内任务按序纵排并标注 `DependsOn` 链，`Parallel` 时并行平铺（当前仅 `Parallel` 生效）。阶段间恒为依赖（前一阶段完成才解锁）。`DependsOn` 自由画布待并行需求明确后升级（评估 vue-flow）。
 
 ### 7.6 运行监控（DAG + 日志面板）
 
@@ -229,7 +229,7 @@
 
 制品库/环境/权限 = 「筛选栏 + 表格 + 分页 + 行内操作」标准布局。
 
-### 7.9 权限与审批 UX（设计已落，待实现；对应 [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）
+### 7.9 权限与审批 UX（设计已落，已实现；对应 [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）
 
 > 授权分层与后端表设计见 [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) §7：**Keycloak 管身份、k8s 管 runner 部署边界、hub 内两层 RBAC + 审批表**。前端只消费 hub 鉴权结果。钢人论证见对话记录（结论：组件级权限以"管理员/组映射为主" → 不引入 Keycloak UMA；默认审批人 = 组件 owner/管理员）。
 
@@ -238,7 +238,7 @@
 | 层 | 前端表现 | 数据来源 |
 | --- | --- | --- |
 | 平台级 | 顶部导航/页面按 `platform_role` 显隐；设置页仅管理员可见 | hub `platform_role_bindings`（KC 组映射，§7.2） |
-| 组件级 | 组件详情「成员与角色」Tab；按 `component_role` 控制按钮 | hub `component_role_bindings`（§7.3） |
+| 组件级 | 组件详情「权限 (permissions)」Tab；按 `component_role` 控制按钮 | hub `component_role_bindings`（§7.3） |
 | 审批 | 运行监控 Approval 节点展开审批卡（§7.6） | hub `pipeline_approvals`（§7.4） |
 
 **平台级权限页（页面 × 增删改查颗粒度全面分析，对应 §7.2）**
@@ -259,19 +259,21 @@
 
 > 🔒 = 需对应角色；未持有则按钮隐藏 + 路由守卫拦截（见错误态）。
 
-**组件级「成员与角色」Tab（对应 §7.3）**
+**组件级「权限 (permissions)」Tab（对应 §7.3，P3c 已实现）**
 
-组件详情新增 Tab「成员与角色」，管理 `component_role_bindings`：
+组件详情的「权限」Tab 管理 `component_role_bindings`：
 
 | 操作 | UI | 权限要求 |
 | --- | --- | --- |
-| 查看成员列表 | 表格（用户/组、角色、来源） | `component:read` |
-| 添加成员/组 | 抽屉：选用户或 KC 组 + 选角色(viewer/editor/approver) | `component:update` |
+| 查看成员列表 | 表格（类型/主体/角色/来源） | `component:read` |
+| 添加成员/组 | 抽屉：选主体类型（`user`/`group`）+ 主体标识 + 选 §7 角色 | `component:update` |
 | 修改成员角色 | 行内下拉 | `component:update` |
 | 移除成员 | 行内删除（确认） | `component:update` |
 
-- 三种组件角色：`component-viewer`（只读）/ `component-editor`（读写+触发+配置）/ `component-approver`（+`approval:approve`）。
-- **默认成员（创建组件时自动生成，满足"默认审批人=owner/admin"）**：组件 owner → `component-approver`；组件 admin 组 → `component-editor`（见 [hub 数据模型 §7.3/§7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）。
+- 四种组件角色（hub `component_roles` 预置，[hub 数据模型 §7.3](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）：`component-viewer`（只读）/ `component-editor`（读写+触发+配置）/ `component-approver`（+`approval:approve`）/ `component-admin`（全部组件动作 + `component:manage`）。
+- 主体支持 **user 或 group**（§7 `subject_type`/`subject_id`）：组名当前由用户在 console 手填（hub 暂未暴露 Keycloak 组目录，待补 `/groups` 接口）；角色选择器枚举来自 hub `GET /component-roles`（P3c 新增）。
+- **默认成员（创建组件时自动生成，满足"默认审批人=owner/admin"）**：组件 owner（user 或 group）**自动绑 `component-admin`**（P3b，含 `approval:approve` + 全量管理动作，非致命失败）；因此 owner 天然是默认审批人（[hub 数据模型 §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）。
+- V1 旧绑定行（`userId`/`roleId`）在界面回显兼容，新建/修改一律走 §7 字段。
 - 权限实时生效；无权限按钮在界面禁用/隐藏，而非仅报错。
 
 **审批卡 UX（对应 §7.4 / §6.2 审批分支）**
@@ -472,7 +474,7 @@
 | Run | `POST /runs/:id/redispatch` | run.ts ✅ |
 | Run | `POST /pipelines/:pipelineId/runs/:runId/tasks/:taskName/decision` | run.ts ✅（后端 `h.Approve` 已实现） |
 | Artifact | `GET /components/:componentId/artifacts` `/artifacts/:id` `/download` `/DELETE` | artifact.ts ✅ |
-| Permission | `POST/GET /components/:componentId/role-bindings` `/DELETE /role-bindings/:id` `GET /roles` `GET /users` | permission.ts ✅ |
+| Permission | `GET /component-roles`（P3c 新增，§7 组件角色选择器数据源）`POST/GET /components/:componentId/role-bindings` `/DELETE /role-bindings/:id` `GET /roles` `GET /users` | permission.ts ✅ |
 
 **关键事实**：后端无 `GET/POST/PUT/DELETE /pipelines/:id`（仅按组件列出）→ 流水线自身 CRUD 曾受 G1 影响，G1 已修；无 `PUT /stages/:id`（G6 已修）；无独立 Rollout 控制/日志读取端点（G4/G2 已修）。
 
@@ -502,7 +504,7 @@
 
 | ID | 项 | 影响 | 阻塞 | 建议 |
 | --- | --- | --- | --- | --- |
-| **G7** | service 层权限校验多处 TODO | 安全债（非功能阻断） | 🟡 低 | 设计已落（[hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) 两层 RBAC + 审批表 / console §7.9 UX）；待实现：`component.go`/`org.go`/`environment.go`/`catalog/service.go` 接入 §7.5 Enforcement |
+| **G7** | service 层权限校验多处 TODO | 安全债（非功能阻断） | 🟢 已完成 | 设计已落（[hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) 两层 RBAC + 审批表 / console §7.9 UX）；**P3a 已实现**：路由级 `HasPermission` 改用 §7 action、`component.go` 等接入 §7.5 Enforcement、Keycloak `groups` 经 `UserContext` 注入；console 权限页 P3c 支持 user/group 主体 + §7 角色选择器 + 自审提示 |
 | **R1** | chart/manifest 施加生产化 | runner 发布链路 | 🟡 | chart 仓库鉴权接入；values `--set` 注入端到端验证 |
 | **R2** | 日志持久化读路径 | 运行日志 | 🟡 | 已由 G2 hub DB 读路径解决，runner 侧归档可走 G5 upload-url |
 | **R3** | 镜像与默认参数固化 | runner 生产镜像 | 🟡 | git/artifact/helm 镜像替换为 pinned 生产镜像；常量配置化（registry 确定后定值） |

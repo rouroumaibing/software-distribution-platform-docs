@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SDP Console · UI 重设计原型</title>
+<!--
+  结构契约核对（本原型须体现的硬性设计决策）：
+  1) 左栏"精简 + 有界"：**恒 5 项** —— 总览 / 服务树 / 运行中心 / 用户与权限 / 集群。
+     不放 Org→Service→Component 全量树，也不放任何随资源增长的列表（如"最近访问"）；
+     跨组件浏览统一收在"运行中心"的三个视图(运行/流水线/发布)内  ✔
+  2) 全局搜索：顶栏搜索 = 任意资源直达主路径(服务端 GET /search?q=)，替代"树里找"  ✔
+  3) 服务树独立页(/catalog)：懒加载(展开才请求子层) + 服务端搜索 + 虚拟滚动(≥200 节点) + master-detail  ✔
+  4) 组件详情 Tab 收敛：6 主 Tab(概览/交付/配置/制品/权限/日志)，交付含子 Tab(流水线/运行/发布)，配置含子 Tab(参数/环境)  ✔
+  5) 流水线 CRUD：新建入口 + 列表(编排/删除) + 编辑器工具条(保存/触发/删除) + 删除强确认(影响面)  ✔
+  6) 总览指挥中心：待办(可点) + KPI + 最近运行(全局) + 异常集群条  ✔
+  7) 双主题：明/暗切换 + 灰阶开关；状态=图标+文字+色  ✔
+  8) 四态演示：组件→交付→流水线 列表可切 空/加载/错误/成功  ✔
+  本契约仅用于生成后核对，核对后即弃。
+-->
+<style>
+:root{
+  --bg:#F5F5F7; --surface:#FFFFFF; --surface-2:#FAFAFC; --surface-3:#F1F3F4;
+  --text:#1D1D1F; --text-sub:#5F6368;
+  --hairline:#E0E0E0; --hairline-2:#F0F0F2;
+  --accent:#0066CC; --accent-hover:#0058B0; --accent-soft:#E8F0FE;
+  --rail-bg:#FFFFFF; --rail-item:#43474E; --rail-hover:rgba(0,0,0,.045);
+  --rail-active-bg:#E8F0FE; --rail-active-fg:#0066CC; --rail-group:#9AA0A6;
+  --succ-bg:#E6F4EA; --succ-fg:#1E8E3E;
+  --run-bg:#E8F0FE;  --run-fg:#0066CC;
+  --fail-bg:#FCE8E6; --fail-fg:#D93025;
+  --pend-bg:#F1F3F4; --pend-fg:#5F6368;
+  --warn-bg:#FEF7E0; --warn-fg:#B06000;
+  --shadow:0 1px 2px rgba(0,0,0,.05),0 1px 3px rgba(0,0,0,.04);
+  --radius:12px;
+}
+:root[data-theme="dark"]{
+  --bg:#101216; --surface:#171A20; --surface-2:#1D2129; --surface-3:#22262E;
+  --text:#E6E8EC; --text-sub:#98A0AD;
+  --hairline:#262B34; --hairline-2:#20242C;
+  --accent:#4DA3FF; --accent-hover:#6FB4FF; --accent-soft:#12304D;
+  --rail-bg:#141720; --rail-item:#B6BCC8; --rail-hover:rgba(255,255,255,.06);
+  --rail-active-bg:#12304D; --rail-active-fg:#6FB4FF; --rail-group:#6B7280;
+  --succ-bg:#12351F; --succ-fg:#5DDC86;
+  --run-bg:#12304D;  --run-fg:#6FB4FF;
+  --fail-bg:#3A1A17; --fail-fg:#FF7B6E;
+  --pend-bg:#24282F; --pend-fg:#98A0AD;
+  --warn-bg:#3A2F10; --warn-fg:#F0B429;
+  --shadow:0 1px 2px rgba(0,0,0,.45);
+}
+.gray{ filter:grayscale(1); }
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:"Inter","Noto Sans SC",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+  font-size:14px;line-height:1.5;color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none;cursor:pointer}
+.mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:var(--hairline);border-radius:9px}
+
+/* ---------- shell ---------- */
+.app{display:flex;height:100vh;overflow:hidden}
+.rail{width:268px;flex:0 0 268px;background:var(--rail-bg);border-right:1px solid var(--hairline);
+  display:flex;flex-direction:column;transition:width .18s ease;overflow:hidden}
+.rail.collapsed{width:64px;flex-basis:64px}
+.rail-head{height:56px;flex:0 0 56px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--hairline-2)}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px;white-space:nowrap}
+.brand-dot{width:20px;height:20px;border-radius:6px;background:var(--accent);flex:0 0 20px}
+.collapse{margin-left:auto;border:none;background:none;color:var(--text-sub);cursor:pointer;font-size:15px;padding:4px 6px;border-radius:7px}
+.collapse:hover{background:var(--rail-hover)}
+.rail-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:10px 8px}
+.rail-foot{flex:0 0 auto;border-top:1px solid var(--hairline-2);padding:10px 12px;display:flex;align-items:center;gap:8px}
+.rgroup{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--rail-group);font-weight:600;margin:12px 10px 5px;white-space:nowrap}
+.nav-item{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;color:var(--rail-item);
+  cursor:pointer;font-size:14px;white-space:nowrap;transition:background .13s,color .13s;position:relative}
+.nav-item:hover{background:var(--rail-hover)}
+.nav-item.active{background:var(--rail-active-bg);color:var(--rail-active-fg);font-weight:600}
+.nav-item .ni{width:19px;height:19px;flex:0 0 19px;display:grid;place-items:center}
+.nav-item .ni svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.rail.collapsed .nlabel,.rail.collapsed .rgroup{display:none}
+.rail.collapsed .nav-item{justify-content:center;padding:9px 0}
+
+/* tree（仅用于「服务树」页与资源管理页，不再出现于左栏） */
+.tree{margin-left:16px;padding-left:8px;border-left:1px dashed var(--hairline)}
+.tree.root{margin-left:0;padding-left:0;border-left:none}
+.tnode{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:8px;cursor:pointer;color:var(--text);font-size:13px;white-space:nowrap}
+.tnode:hover{background:var(--surface-2)}
+.tnode.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.tnode .chev{width:14px;text-align:center;font-size:10px;color:var(--text-sub);transition:transform .15s}
+.tnode .chev.open{transform:rotate(90deg)}
+.tnode .dot{width:6px;height:6px;border-radius:50%;background:var(--text-sub);flex:0 0 6px}
+.tnode.svc .dot{background:var(--accent)}
+.tnode .lazy{font-size:10.5px;color:var(--text-sub);opacity:.75;margin-left:auto;padding-left:8px}
+/* 树容器：自身滚动 + 虚拟滚动窗口 */
+.treepane{max-height:420px;overflow:auto;padding:10px 12px;border-bottom:1px solid var(--hairline-2)}
+.treepane.tall{max-height:none}
+.vhint{font-size:11.5px;color:var(--text-sub);padding:8px 14px;background:var(--surface-2);border-top:1px solid var(--hairline-2);display:flex;align-items:center;gap:7px}
+/* 全局搜索结果 */
+.hit{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;cursor:pointer}
+.hit:hover{background:var(--surface-2)}
+.hit .hk{font-size:10.5px;color:var(--text-sub);border:1px solid var(--hairline);border-radius:5px;padding:1px 6px;white-space:nowrap}
+.hit .hn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hit .hp{font-size:11.5px;color:var(--text-sub)}
+.kbd{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:11px;border:1px solid var(--hairline);border-radius:5px;padding:1px 5px;color:var(--text-sub)}
+
+/* ---------- main ---------- */
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.topbar{height:56px;flex:0 0 56px;background:var(--surface);border-bottom:1px solid var(--hairline);
+  display:flex;align-items:center;gap:14px;padding:0 22px}
+.crumb{font-size:13px;color:var(--text-sub);display:flex;align-items:center;gap:7px}
+.crumb b{color:var(--text);font-weight:600}
+.crumb a{color:var(--text-sub)}
+.crumb a:hover{color:var(--accent)}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.search{display:flex;align-items:center;gap:7px;background:var(--surface-3);border:1px solid transparent;border-radius:9px;
+  padding:7px 12px;color:var(--text-sub);font-size:13px;min-width:210px}
+.search svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.9}
+.tbtn{border:1px solid var(--hairline);background:var(--surface);color:var(--text-sub);border-radius:9px;
+  padding:7px 10px;cursor:pointer;font-size:12.5px;display:inline-flex;align-items:center;gap:6px;font-family:inherit}
+.tbtn:hover{background:var(--surface-2);color:var(--text)}
+.tbtn.on{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.tbtn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8}
+.content{flex:1;overflow-y:auto;padding:24px 28px 60px}
+.wrap{max-width:1280px;margin:0 auto}
+
+/* ---------- primitives ---------- */
+.card{background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)}
+.card.flush{padding:0;overflow:hidden}
+.title{font-size:26px;font-weight:650;letter-spacing:-.01em}
+.sub{color:var(--text-sub);font-size:13px;margin-top:4px}
+.h2{font-size:16px;font-weight:650;margin:24px 0 12px;display:flex;align-items:center;gap:10px}
+.h2 .spacer{flex:1}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:none;border-radius:9px;font-family:inherit;
+  font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .14s,border-color .14s}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover:not(:disabled){background:var(--accent-hover)}
+.btn-ghost{background:var(--surface);color:var(--text);border:1px solid var(--hairline)}
+.btn-ghost:hover:not(:disabled){background:var(--surface-2)}
+.btn-danger{background:var(--surface);color:var(--fail-fg);border:1px solid var(--hairline)}
+.btn-danger:hover:not(:disabled){border-color:var(--fail-fg)}
+.btn-sm{padding:5px 11px;font-size:12.5px;border-radius:8px}
+.link{color:var(--accent);font-weight:600;cursor:pointer;background:none;border:none;font-family:inherit;font-size:13px}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.badge .g{font-size:11px}
+.b-succ{background:var(--succ-bg);color:var(--succ-fg)}
+.b-run{background:var(--run-bg);color:var(--run-fg)}
+.b-fail{background:var(--fail-bg);color:var(--fail-fg)}
+.b-pend{background:var(--pend-bg);color:var(--pend-fg)}
+.b-warn{background:var(--warn-bg);color:var(--warn-fg)}
+.chip{display:inline-block;background:var(--surface-3);border-radius:6px;padding:2px 8px;font-size:12px;color:var(--text-sub);font-family:"SF Mono",ui-monospace,Menlo,monospace}
+.table{width:100%;border-collapse:collapse;font-size:13.5px}
+.table th{text-align:left;font-size:12px;color:var(--text-sub);font-weight:600;padding:11px 15px;border-bottom:1px solid var(--hairline-2);white-space:nowrap}
+.table td{padding:11px 15px;border-bottom:1px solid var(--hairline-2);vertical-align:middle}
+.table tbody tr:last-child td{border-bottom:none}
+.table tbody tr:hover{background:var(--surface-2)}
+.table tr.click{cursor:pointer}
+.empty{padding:46px 0;text-align:center;color:var(--text-sub);font-size:13px}
+.empty .big{font-size:30px;opacity:.5;display:block;margin-bottom:8px}
+.loading{padding:34px 0;text-align:center;color:var(--text-sub);font-size:13px}
+.spinner{width:22px;height:22px;border:2.5px solid var(--hairline);border-top-color:var(--accent);border-radius:50%;
+  display:inline-block;animation:spin .7s linear infinite;margin-bottom:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.errbox{background:var(--fail-bg);color:var(--fail-fg);border-radius:10px;padding:11px 15px;font-size:13px;display:flex;gap:9px;align-items:center}
+.warnbox{background:var(--warn-bg);color:var(--warn-fg);border-radius:10px;padding:10px 15px;font-size:13px;display:flex;gap:9px;align-items:center;margin-bottom:16px}
+
+/* console-state switcher */
+.seg{display:inline-flex;background:var(--surface-3);border-radius:9px;padding:3px;gap:2px}
+.seg button{border:none;background:none;font-family:inherit;font-size:12.5px;color:var(--text-sub);padding:5px 11px;border-radius:7px;cursor:pointer}
+.seg button.on{background:var(--surface);color:var(--text);font-weight:600;box-shadow:var(--shadow)}
+
+/* kpi / todo */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.kpi .label{font-size:12.5px;color:var(--text-sub)}
+.kpi .num{font-size:30px;font-weight:700;margin-top:6px;letter-spacing:-.02em}
+.kpi .num.good{color:var(--succ-fg)} .kpi .num.bad{color:var(--fail-fg)}
+.todos{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.todo{display:flex;align-items:center;gap:13px;cursor:pointer;transition:border-color .14s,transform .14s}
+.todo:hover{border-color:var(--accent)}
+.todo .ic{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;font-size:18px;flex:0 0 40px}
+.todo .n{font-size:26px;font-weight:700;line-height:1}
+.todo .t{font-size:13px;font-weight:600} .todo .d{font-size:12px;color:var(--text-sub)}
+
+/* tabs */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--hairline);margin:16px 0 0}
+.tab{padding:11px 15px;font-size:14px;color:var(--text-sub);cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;gap:6px}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:650}
+.tab .caret{font-size:9px;opacity:.7}
+.pills{display:flex;gap:7px;margin:16px 0 14px}
+.pill{padding:5px 13px;border-radius:999px;font-size:13px;color:var(--text-sub);cursor:pointer;border:1px solid transparent}
+.pill:hover{background:var(--surface-2)}
+.pill.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+
+/* pipeline editor */
+.flow{display:flex;gap:0;align-items:stretch;overflow-x:auto;padding:6px 2px 14px}
+.stage{flex:0 0 230px;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);padding:12px;margin-right:30px;position:relative;box-shadow:var(--shadow)}
+.stage:last-child{margin-right:0}
+.stage::after{content:"→";position:absolute;right:-24px;top:50%;transform:translateY(-50%);color:var(--text-sub);font-size:17px}
+.stage:last-child::after{display:none}
+.stage-head{display:flex;align-items:center;gap:7px;font-weight:650;font-size:13.5px;margin-bottom:10px}
+.stage-no{width:20px;height:20px;border-radius:6px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-size:11px;font-weight:700}
+.mode{margin-left:auto;font-size:11px;color:var(--text-sub);border:1px solid var(--hairline);border-radius:6px;padding:1px 7px;cursor:pointer}
+.task{display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--hairline-2);border-radius:9px;padding:8px 10px;margin-bottom:7px;font-size:13px;cursor:pointer}
+.task:hover{border-color:var(--accent)}
+.task .ti{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:12px;flex:0 0 22px;background:var(--surface-3)}
+.task .tn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.task .tacts{display:none;gap:4px}
+.task:hover .tacts{display:flex}
+.add-task{width:100%;border:1px dashed var(--hairline);background:none;color:var(--text-sub);border-radius:9px;padding:7px;font-size:12.5px;cursor:pointer;font-family:inherit}
+.add-task:hover{border-color:var(--accent);color:var(--accent)}
+.toolbar2{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.toolbar2 .spacer{flex:1}
+
+/* modal / toast */
+.mhost{position:fixed;inset:0;background:rgba(0,0,0,.42);display:none;place-items:center;z-index:300}
+.mhost.on{display:grid}
+.modal{background:var(--surface);border:1px solid var(--hairline);border-radius:14px;width:min(520px,92vw);padding:22px;box-shadow:0 24px 60px rgba(0,0,0,.3)}
+.modal h3{font-size:17px;font-weight:650;margin-bottom:6px}
+.modal .mb{color:var(--text-sub);font-size:13.5px;margin-bottom:16px}
+.impact{list-style:none;background:var(--surface-2);border:1px solid var(--hairline-2);border-radius:10px;padding:12px 14px;font-size:13px;margin-bottom:16px}
+.impact li{display:flex;justify-content:space-between;padding:3px 0}
+.impact .k{color:var(--text-sub)}
+.impact .v{font-weight:600}
+.impact .v.danger{color:var(--fail-fg)}
+.modal-foot{display:flex;justify-content:flex-end;gap:10px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12.5px;font-weight:600;margin-bottom:6px}
+.input{width:100%;padding:9px 12px;border:1px solid var(--hairline);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--surface);color:var(--text)}
+.input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.checks{display:flex;gap:16px;flex-wrap:wrap;margin-top:4px}
+.checks label{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;cursor:pointer}
+.thost{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:400;display:flex;flex-direction:column;gap:8px;align-items:center}
+.toast{background:#1D1D1F;color:#fff;padding:10px 20px;border-radius:999px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.25);animation:ti .22s ease}
+:root[data-theme="dark"] .toast{background:#2C313A}
+.toast.err{background:#D93025}
+@keyframes ti{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+.hint{font-size:12px;color:var(--text-sub)}
+/* 设计备注：集中承载"后端依赖/待确认"，默认隐藏，不污染产品 UI */
+.notebar{background:var(--warn-bg);color:var(--warn-fg);border-radius:10px;padding:13px 16px;font-size:12.5px;margin-bottom:18px}
+.notebar .nt{font-size:11px;letter-spacing:.06em;font-weight:700;opacity:.85;margin-bottom:7px}
+.notebar ul{margin:0;padding-left:17px}
+.notebar li{margin:4px 0;line-height:1.55}
+.notebar .close{margin-left:auto;cursor:pointer;opacity:.7;background:none;border:none;font:inherit;color:inherit}
+.master{display:grid;grid-template-columns:290px 1fr;gap:18px}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail" id="rail"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar">
+      <div class="crumb" id="crumb"></div>
+      <div class="tb-right">
+        <div class="search" id="searchBtn" style="cursor:pointer" title="全局搜索（⌘K）">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+          搜索组件 / 流水线…<span class="kbd" style="margin-left:auto">⌘K</span>
+        </div>
+        <button class="tbtn" id="noteBtn" title="显示/隐藏设计备注（后端依赖与待确认项，仅评审用）">ⓘ 设计备注</button>
+        <button class="tbtn" id="themeBtn" title="切换明/暗主题"></button>
+        <button class="tbtn" id="grayBtn" title="灰阶模式（验证状态是否仍可辨）">灰阶</button>
+      </div>
+    </header>
+    <main class="content" id="content"></main>
+  </div>
+</div>
+<div class="mhost" id="mhost"><div class="modal" id="modal"></div></div>
+<div class="thost" id="thost"></div>
+
+<script>
+/* ============ icons ============ */
+const ICON = {
+  grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  play:'<polygon points="7 4.5 19.5 12 7 19.5 7 4.5"/>',
+  flow:'<circle cx="4.5" cy="6" r="1.6"/><circle cx="4.5" cy="12" r="1.6"/><circle cx="4.5" cy="18" r="1.6"/><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/>',
+  rocket:'<path d="M5 15c-1 2-1 4-1 4s2 0 4-1"/><path d="M9.5 13.5L6 12l1.6-3.2L12 7.5c2.8-2.8 6.3-3.7 8.4-3.4.3 2.1-.6 5.6-3.4 8.4l-1.2 4.4L12.5 18"/>',
+  layers:'<polygon points="12 3 21 8 12 13 3 8"/><polyline points="3 13 12 18 21 13"/>',
+  shield:'<path d="M12 3l7 3v6c0 4.6-3 7.9-7 9-4-1.1-7-4.4-7-9V6z"/>',
+  cloud:'<path d="M7 18h9.5a3.8 3.8 0 0 0 .3-7.6A5.2 5.2 0 0 0 7 9.4 3.6 3.6 0 0 0 7 18z"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="5" y1="5" x2="7" y2="7"/><line x1="17" y1="17" x2="19" y2="19"/><line x1="5" y1="19" x2="7" y2="17"/><line x1="17" y1="7" x2="19" y2="5"/>',
+  moon:'<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
+};
+const svg = (n)=>`<svg viewBox="0 0 24 24">${ICON[n]||''}</svg>`;
+
+/* ============ data (中性占位示例) ============ */
+const TREE = [
+  {id:'o1', label:'platform-eng', children:[
+    {id:'s1', label:'svc-a', children:[{id:'c1', label:'comp-web',comp:1},{id:'c2', label:'comp-api',comp:1}]},
+    {id:'s2', label:'svc-b', children:[{id:'c3', label:'comp-worker',comp:1},{id:'c4', label:'comp-gateway',comp:1}]},
+    {id:'s4', label:'svc-c', children:[{id:'c6', label:'comp-cron',comp:1}]},
+  ]},
+  {id:'o2', label:'data-platform', children:[
+    {id:'s3', label:'svc-data', children:[{id:'c5', label:'comp-etl',comp:1}]},
+    {id:'s5', label:'svc-ml', children:[{id:'c7', label:'comp-train',comp:1}]},
+  ]},
+];
+const RUNS = [
+  {id:'run-8f21', pipeline:'comp-web / 日常流水线', by:'张三', phase:'succeeded', dur:'2m14s', at:'09-14 19:02'},
+  {id:'run-7c04', pipeline:'comp-api / 生产发布', by:'李四', phase:'running', dur:'52s', at:'09-14 19:18'},
+  {id:'run-6b90', pipeline:'comp-worker / 版本归档', by:'王五', phase:'failed', dur:'1m03s', at:'09-14 18:47'},
+  {id:'run-5a11', pipeline:'comp-web / 转测流水线', by:'张三', phase:'waiting', dur:'—', at:'09-14 18:31'},
+  {id:'run-4e77', pipeline:'comp-etl / 日常流水线', by:'赵六', phase:'succeeded', dur:'3m40s', at:'09-14 18:12'},
+];
+const PIPELINES = [
+  {id:'p1', name:'日常流水线', comp:'comp-web', kind:'build', ver:3, last:'09-14 19:02'},
+  {id:'p2', name:'版本归档', comp:'comp-api', kind:'release', ver:1, last:'09-14 18:47'},
+  {id:'p3', name:'生产发布', comp:'comp-api', kind:'release', ver:2, last:'09-14 19:18'},
+  {id:'p4', name:'转测流水线', comp:'comp-web', kind:'custom', ver:1, last:'09-14 18:31'},
+];
+const RELEASES = [
+  {id:'r1', comp:'comp-api', env:'production', step:'50%', health:'良好', phase:'paused'},
+  {id:'r2', comp:'comp-web', env:'staging', step:'100%', health:'良好', phase:'succeeded'},
+  {id:'r3', comp:'comp-worker', env:'production', step:'10%', health:'波动', phase:'running'},
+];
+const PH = {succeeded:['b-succ','✓','成功'], running:['b-run','●','运行中'], failed:['b-fail','✕','失败'],
+  waiting:['b-warn','⏳','待审批'], pending:['b-pend','○','待执行'], paused:['b-warn','⏸','已暂停']};
+const badge = (p)=>{const m=PH[p]||PH.pending;return `<span class="badge ${m[0]}"><span class="g">${m[1]}</span>${m[2]}</span>`};
+
+/* ============ state ============ */
+const S = {
+  page:'dashboard', theme:'light', gray:false, collapsed:false,
+  open:{o1:true,s1:true}, comp:'comp-web',
+  compTab:'delivery', sub:{delivery:'pipelines', configure:'params'},
+  plState:'success', editorName:'日常流水线', catq:'', notes:false,
+  /* 运行中心的三个视图（跨组件巡视统一入口，不再是左栏三个独立菜单） */
+  runTab:'runs', runFilter:'all',
+};
+
+/* ============ rail（精简且有界：恒 5 项，与资源数量无关） ============ */
+/* 主区（不挂分组标签）：总览 → 服务树 → 运行中心，顺序 = 用户心智顺序（看态势 → 找资源 → 巡视运行）。
+   去掉"全局/资源"两个标签：服务树与运行中心已同处一段，再给单条目挂分组标题就是冗余。 */
+const MAIN_NAV = [
+  ['dashboard','总览','grid'],
+  ['catalog','服务树','layers'],
+  ['runs','运行中心','play'],
+];
+const ADMIN_NAV = [['admin-perm','用户与权限','shield'],['admin-cluster','集群','cloud']];
+
+function renderRail(){
+  const rail = document.getElementById('rail');
+  const navActive = (k)=>S.page===k?'active':'';
+  rail.className = 'rail'+(S.collapsed?' collapsed':'');
+  rail.innerHTML = `
+    <div class="rail-head">
+      <div class="brand"><span class="brand-dot"></span><span class="nlabel">SDP Console</span></div>
+      <button class="collapse" id="collapseBtn" title="折叠/展开">${S.collapsed?'»':'«'}</button>
+    </div>
+    <div class="rail-body">
+      ${MAIN_NAV.map(([k,l,ic])=>`<div class="nav-item ${navActive(k)}" data-nav="${k}"><span class="ni">${svg(ic)}</span><span class="nlabel">${l}</span></div>`).join('')}
+      <div class="rgroup nlabel" style="margin-top:16px">平台管理</div>
+      ${ADMIN_NAV.map(([k,l,ic])=>`<div class="nav-item ${navActive(k)}" data-nav="${k}"><span class="ni">${svg(ic)}</span><span class="nlabel">${l}</span></div>`).join('')}
+    </div>
+    <div class="rail-foot">
+      <span class="avatar" style="width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:700">ZS</span>
+      <span class="nlabel" style="font-size:13px">张三</span>
+      <span class="nlabel" style="margin-left:auto;color:var(--text-sub);font-size:12px">退出</span>
+    </div>`;
+}
+/* 左栏规模不变量：条目数 = 3(主区:总览/服务树/运行中心) + 2(平台管理:用户与权限/集群) = 恒 5，与组件数量无关 */
+
+
+/* ============ 设计备注（评审用；与文档附 A 同源，默认不显示） ============ */
+const NOTE = {
+  dashboard:['KPI 与「最近运行」所需的全局运行端点 <span class="mono">GET /runs</span> 已落地（支持 <span class="mono">page/pageSize/phase</span>，附 A · N-1）；KPI 的时间窗/聚合口径仍待补。',
+             '「待我审批」的"待我"这层身份过滤需 <span class="mono">assignee=me</span>（附 A · N-2），未落地前退化按 <span class="mono">phase=WaitingApproval</span> 筛。'],
+  runs:['「待我审批」当前只能按 <span class="mono">phase=WaitingApproval</span> 筛；按人过滤需 <span class="mono">assignee=me</span>（附 A · N-2）。',
+        '三视图 URL 形态已裁决并落地 = <span class="mono">/runs?view=runs|pipelines|releases&amp;phase=&amp;page=</span>（query，非嵌套子路由）；本原型以内存状态模拟该 query。论证与实现记录见文档 <b>附 B</b>（N-13 / B.9）。'],
+  'runs-pipelines':['hub 无全局流水线列表端点（<span class="mono">GET /pipelines</span> 只有按组件列，附 A · N-3）；实现版以服务树索引前端聚合兜底，全局端点落地后切换（附 B · B.9）。',
+             '<span class="mono">/pipelines</span> 的 CRUD 端点已核对存在（<span class="mono">POST /pipelines</span>、<span class="mono">GET/PUT/DELETE /pipelines/:id</span>、附 A · N-4）；删除语义（硬删/软删/保留历史）仍待拍板（附 A · N-5）。'],
+  'runs-releases':['hub 无全局发布列表端点（附 A · N-3）；实现版以服务树索引 + 扫描运行（取 <span class="mono">kind=release</span>）前端聚合兜底。',
+             '本原型的「已暂停」筛选在实现版<b>刻意未提供</b>：<span class="mono">Paused</span> 是 Rollout 任务级状态，不在 PipelineRun 的 6 个 phase 枚举里，逐 run 查 tasks 才能判定（N+1）——等 <span class="mono">GET /releases?scope=global&amp;state=paused</span>（附 B · B.9）。'],
+  catalog:['<b>本页不常驻左栏的理由</b>：组件数会持续增长，树放左栏会导致条目无界增长 + 首屏变慢。左栏条目数恒为 5，与资源数无关。',
+           '懒加载依赖 <span class="mono">GET /orgs</span> → <span class="mono">/orgs/:id/services</span> → <span class="mono">/services/:id/components</span>（附 A · N-9）；若后端只有"整树"单端点，降级为<b>一次拉取 + 前端虚拟滚动</b>。',
+           '搜索依赖 <span class="mono">GET /search?q=</span>（附 A · N-8）。',
+           '节点数 ≥200 启用虚拟滚动窗口。'],
+  component:['组件详情 Tab 由 9 项平铺收敛为 6 主 Tab + 2 组子 Tab；旧子路由保留 redirect 兼容 deep link。',
+             '「配置」= 参数 + 环境；「交付」= 流水线 + 运行 + 发布。'],
+  editor:['阶段间恒为依赖（前阶段完成才解锁）；阶段内按 <span class="mono">executionMode</span> 串行/并行。',
+          '保存 = 阶段/任务的 <span class="mono">POST/PUT/DELETE</span>；流水线级删除见附 A · N-4 / N-5。',
+          '现编辑器仅 <span class="mono">kind=build</span> 可编排，是否放开 release/custom 待定（附 A · N-7）。'],
+  'admin-cluster':['集群健康来自 Runner 心跳；离线 Runner 重连后自动重放 Pending 任务。'],
+  'admin-perm':['平台角色来自 Keycloak 组映射，仅平台管理员可见。'],
+};
+/* 运行中心承载三个视图，备注按当前视图出（评审信息与附 A 同源，一处不落） */
+function noteKey(){
+  if(S.page!=='runs') return S.page;
+  return S.runTab==='pipelines' ? 'runs-pipelines' : S.runTab==='releases' ? 'runs-releases' : 'runs';
+}
+function noteBar(page){
+  const items = NOTE[page]; if(!items || !items.length) return '';
+  return `<div class="notebar">
+    <div class="row" style="align-items:center;margin-bottom:2px">
+      <div class="nt" style="margin-bottom:0">设计备注 · 评审用 · 不属产品 UI</div>
+      <button class="close" data-act="hide-notes">收起 ✕</button>
+    </div>
+    <ul>${items.map(x=>`<li>${x}</li>`).join('')}</ul>
+  </div>`;
+}
+
+/* ============ pages ============ */
+function pageDashboard(){
+  return `<div class="wrap">
+    <div class="row" style="align-items:flex-end">
+      <div><div class="title">你好，张三 👋</div><div class="sub">跨集群运行态势与你的待办</div></div>
+      <div style="margin-left:auto" class="row">
+        <button class="btn btn-ghost" data-act="new-comp">＋ 新建组件</button>
+        <button class="btn btn-primary" data-act="trigger">▶ 触发运行</button>
+      </div>
+    </div>
+
+    <div class="warnbox">⚠ 1 个集群离线（kind-e2e-02），Runner 重连后将自动重放 Pending 任务。</div>
+
+    <div class="todos" style="margin-top:6px">
+      ${todoCard('⏳','var(--warn-bg)','var(--warn-fg)','3','待我审批','运行等待你的决定','runs','runs','waiting')}
+      ${todoCard('✕','var(--fail-bg)','var(--fail-fg)','2','失败运行','近 24 小时内','runs','runs','failed')}
+      ${todoCard('⏸','var(--run-bg)','var(--run-fg)','1','暂停的灰度','发布停在 50%','runs','releases')}
+    </div>
+
+    <div class="h2">运行态势 <span class="spacer"></span><a class="link" data-nav="admin-cluster" style="font-size:12.5px;font-weight:500">集群健康 →</a></div>
+    <div class="kpis">
+      <div class="card kpi"><div class="label">今日运行</div><div class="num">42</div></div>
+      <div class="card kpi"><div class="label">成功率</div><div class="num good">93%</div></div>
+      <div class="card kpi"><div class="label">运行中</div><div class="num">4</div></div>
+      <div class="card kpi" data-nav="admin-cluster" style="cursor:pointer"><div class="label">在线集群</div><div class="num bad">3 / 4</div></div>
+    </div>
+
+    <div class="h2">最近运行 <span class="spacer"></span><a class="link" data-nav="runs" style="font-size:12.5px;font-weight:500">查看全部 42 条 →</a></div>
+    <div class="card flush"><table class="table">
+      <thead><tr><th>运行</th><th>组件 / 流水线</th><th>触发人</th><th>状态</th><th>耗时</th><th>开始时间</th></tr></thead>
+      <tbody>${RUNS.slice(0,3).map(r=>`<tr class="click" data-act="goto-run"><td class="mono">${r.id}</td><td>${r.pipeline}</td><td>${r.by}</td><td>${badge(r.phase)}</td><td>${r.dur}</td><td class="mono">${r.at}</td></tr>`).join('')}</tbody>
+    </table></div>
+  </div>`;
+}
+const todoCard = (ic,bg,fg,count,title,desc,to,toTab,toFilter)=>`<div class="card todo" data-nav="${to}"${toTab?` data-run-tab="${toTab}"`:''}${toFilter?` data-run-filter="${toFilter}"`:''}>
+  <div class="ic" style="background:${bg};color:${fg}">${ic}</div>
+  <div><div class="n">${count}</div><div class="t" style="margin-top:5px">${title}</div><div class="d">${desc}</div></div>
+  <div style="margin-left:auto;color:var(--text-sub)">→</div></div>`;
+
+/* 运行中心 = 跨组件巡视的唯一入口，内含三个视图；左栏不再为「流水线 / 发布」各占一项 */
+const RUN_VIEWS = [['runs','运行'],['pipelines','流水线'],['releases','发布']];
+const RUN_FILTERS = {runs:[['all','全部'],['running','运行中'],['failed','失败'],['waiting','待我审批']],
+  releases:[['all','全部'],['running','进行中'],['paused','已暂停'],['succeeded','成功']]};
+
+function pageRuns(){
+  const tab = S.runTab;
+  const filters = RUN_FILTERS[tab];
+  const rows = tab==='releases' ? RELEASES.filter(r=>S.runFilter==='all'||r.phase===S.runFilter)
+             : tab==='runs'     ? RUNS.filter(r=>S.runFilter==='all'||r.phase===S.runFilter)
+             : PIPELINES;
+  let head, body;
+  if(tab==='pipelines'){
+    head = pipelineHead(true);
+    body = PIPELINES.map(p=>pipelineRow(p,true)).join('');
+  } else if(tab==='releases'){
+    head = `<tr><th>组件</th><th>环境</th><th>灰度步骤</th><th>健康度</th><th>状态</th><th></th></tr>`;
+    body = rows.map(r=>`<tr><td><b>${r.comp}</b></td><td><span class="chip">${r.env}</span></td><td>${r.step}</td><td>${r.health}</td><td>${badge(r.phase)}</td>
+        <td style="text-align:right"><button class="link">控制 →</button></td></tr>`).join('');
+  } else {
+    head = `<tr><th>运行</th><th>组件 / 流水线</th><th>触发人</th><th>状态</th><th>耗时</th><th>开始时间</th></tr>`;
+    body = rows.map(r=>`<tr class="click" data-act="goto-run"><td class="mono">${r.id}</td><td>${r.pipeline}</td><td>${r.by}</td><td>${badge(r.phase)}</td><td>${r.dur}</td><td class="mono">${r.at}</td></tr>`).join('');
+  }
+  const noHit = `<tr><td colspan="6" style="color:var(--text-sub);padding:22px 14px">无匹配记录</td></tr>`;
+  return `<div class="wrap">
+    <div class="row" style="align-items:flex-end">
+      <div><div class="title">运行中心</div><div class="sub">跨组件巡视 · 运行 / 流水线 / 发布</div></div>
+      ${tab==='pipelines'?`<div style="margin-left:auto"><button class="btn btn-primary" data-act="new-pl">＋ 新建流水线</button></div>`:''}
+    </div>
+    <div class="toolbar2" style="margin-top:18px">
+      <span class="seg">${RUN_VIEWS.map(([k,l])=>`<button class="${tab===k?'on':''}" data-run-tab="${k}">${l}</button>`).join('')}</span>
+      ${filters?`<span class="seg">${filters.map(([k,l])=>`<button class="${S.runFilter===k?'on':''}" data-run-filter="${k}">${l}</button>`).join('')}</span>`:''}
+      ${tab==='pipelines'?`<select class="input" style="width:170px"><option>全部组件</option><option>comp-web</option><option>comp-api</option></select>
+        <select class="input" style="width:140px"><option>全部类型</option><option>build</option><option>release</option><option>custom</option></select>`:''}
+      <div class="spacer"></div><span class="hint">共 ${rows.length} 条</span>
+    </div>
+    <div class="card flush"><table class="table">
+      <thead>${head}</thead>
+      <tbody>${rows.length?body:noHit}</tbody>
+    </table></div>
+  </div>`;
+}
+
+/* 流水线行渲染：全局页(withComp) 与组件内列表共用，避免两处重复维护 */
+function pipelineRow(p, withComp){
+  return `<tr><td><b>${p.name}</b></td>${withComp?`<td>${p.comp}</td>`:''}<td><span class="chip">${p.kind}</span></td><td>v${p.ver}</td><td class="mono">${p.last}</td>
+    <td style="text-align:right;white-space:nowrap"><button class="link" data-act="open-pl" data-name="${p.name}">编排</button> · <button class="link" style="color:var(--fail-fg)" data-act="del-pl" data-name="${p.name}">删除</button></td></tr>`;
+}
+function pipelineHead(withComp){
+  return `<tr><th>名称</th>${withComp?'<th>所属组件</th>':''}<th>类型</th><th>版本</th><th>最近运行</th><th></th></tr>`;
+}
+
+/* ---- 服务树页专用：懒加载树（展开才渲染/请求下一层） ---- */
+function treeHtml(nodes, depth){
+  return nodes.map(n=>{
+    const hasC = n.children && n.children.length;
+    const open = S.open[n.id];
+    const isComp = !!n.comp;
+    const sub = hasC ? `<div class="tree" ${open?'':'style="display:none"'}>${treeHtml(n.children, depth+1)}</div>` : '';
+    const lazy = (hasC && !open) ? `<span class="lazy">${n.children.length} 项 · 点开时加载</span>` : '';
+    return `<div class="tnode ${isComp?'comp':'svc'} ${isComp&&n.label===S.comp?'active':''}" data-node="${n.id}" data-label="${n.label}" data-comp="${isComp?1:0}">
+      <span class="chev ${open?'open':''}">${hasC?'▶':''}</span>
+      <span class="dot"></span><span>${n.label}</span>${lazy}</div>${sub}`;
+  }).join('');
+}
+/* 服务端搜索的本地模拟：命中"任意层级"的节点，含其路径 */
+const SEARCH_HITS = [
+  {k:'组件',n:'comp-web',p:'platform-eng / svc-a'},
+  {k:'组件',n:'comp-api',p:'platform-eng / svc-a'},
+  {k:'组件',n:'comp-worker',p:'platform-eng / svc-b'},
+  {k:'组件',n:'comp-gateway',p:'platform-eng / svc-b'},
+  {k:'组件',n:'comp-etl',p:'data-platform / svc-data'},
+  {k:'流水线',n:'生产发布',p:'comp-api · release'},
+  {k:'流水线',n:'日常流水线',p:'comp-web · build'},
+  {k:'Service',n:'svc-data',p:'data-platform'},
+];
+
+function pageCatalog(){
+  const q = S.catq.trim().toLowerCase();
+  const hits = q ? SEARCH_HITS.filter(h=>(h.n+h.p+h.k).toLowerCase().includes(q)) : [];
+  const pane = q
+    ? (hits.length ? hits.map(h=>`<div class="hit" data-node="hit" data-label="${h.n}" data-comp="${h.k==='组件'?1:0}">
+          <span class="hk">${h.k}</span><span class="hn"><b>${h.n}</b></span><span class="hp">${h.p}</span></div>`).join('')
+        : `<div class="empty" style="padding:30px 0"><span class="big">∅</span>无匹配「${S.catq}」</div>`)
+    : treeHtml(TREE,0);
+  return `<div class="wrap">
+    <div class="row" style="align-items:flex-end">
+      <div><div class="title">服务树</div>
+        <div class="sub">Org → Service → Component 的浏览与管理（<b>独立页</b>，不再常驻左栏）</div></div>
+      <div style="margin-left:auto" class="row">
+        <button class="btn btn-ghost" data-act="new-svc">＋ 新建 Service</button>
+        <button class="btn btn-primary" data-act="new-comp">＋ 新建组件</button>
+      </div>
+    </div>
+
+    <div class="master" style="margin-top:18px">
+      <div class="card flush">
+        <div style="padding:10px 12px;border-bottom:1px solid var(--hairline-2)">
+          <div class="search" style="min-width:0;width:100%">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+            <input class="catq" value="${S.catq}" placeholder="搜索组件 / 流水线 / Service…"
+              style="border:none;background:none;outline:none;font:inherit;color:inherit;width:100%" />
+          </div>
+        </div>
+        <div class="treepane" id="treepane">${q?'<div class="rgroup" style="margin:0 0 6px">搜索结果</div>':''}${pane}</div>
+        <div class="vhint">⚡ 懒加载：默认仅请求 <span class="mono">GET /orgs</span>；展开才请求 <span class="mono">/services</span>·<span class="mono">/components</span>
+          <span style="margin-left:auto" class="mono">≥200 节点启用虚拟滚动</span></div>
+      </div>
+
+      <div class="card">
+        <div class="h2" style="margin-top:0">${S.catq?'搜索结果':'comp-web'} <span class="chip">${S.catq?'Search':'Component'}</span></div>
+        ${S.catq
+          ? `<div class="card flush" style="box-shadow:none"><table class="table"><tbody>
+               ${hits.length?hits.map(h=>`<tr class="click" data-node="hit" data-label="${h.n}" data-comp="${h.k==='组件'?1:0}"><td><b>${h.n}</b></td><td><span class="chip">${h.k}</span></td><td style="color:var(--text-sub)">${h.p}</td><td style="text-align:right"><button class="link">打开</button></td></tr>`).join(''):'<tr><td colspan="4" style="color:var(--text-sub)">无命中</td></tr>'}
+             </tbody></table></div>`
+          : `<div class="row" style="margin-top:4px"><button class="btn btn-primary" data-nav="component">进入组件详情</button><button class="btn btn-ghost" data-act="edit-comp">编辑</button></div>
+             <div class="h2">节点信息</div>
+             <table class="table"><tbody>
+               <tr><td style="color:var(--text-sub);width:96px">路径</td><td class="mono">platform-eng / svc-a / comp-web</td></tr>
+               <tr><td style="color:var(--text-sub)">仓库</td><td class="mono">git@…/comp-web.git</td></tr>
+               <tr><td style="color:var(--text-sub)">语言 / 分支</td><td>Go · <span class="mono">main</span></td></tr>
+               <tr><td style="color:var(--text-sub)">流水线</td><td>2 条</td></tr>
+             </tbody></table>`}
+      </div>
+    </div>
+  </div>`;
+}
+
+function pageComponent(){
+  const mainTabs = [['overview','概览'],['delivery','交付'],['configure','配置'],['artifacts','制品'],['permissions','权限'],['logs','日志']];
+  const subs = {delivery:[['pipelines','流水线'],['runs','运行'],['releases','发布']], configure:[['params','参数'],['envs','环境']]};
+  const tabBtn = ([k,l])=>`<div class="tab ${S.compTab===k?'active':''}" data-ctab="${k}">${l}${subs[k]?'<span class="caret">▾</span>':''}</div>`;
+  let body='';
+  if(S.compTab==='overview'){
+    body = `<div class="row" style="gap:14px;align-items:stretch">
+      ${['最近一次运行|run-8f21|succeeded','活跃环境|4 套|','成员|6 人|','待处理|1 条审批|waiting'].map(x=>{const[c,v,p]=x.split('|');return `<div class="card kpi" style="flex:1"><div class="label">${c}</div><div class="num" style="font-size:22px">${v}</div>${p?badge(p):''}</div>`}).join('')}
+    </div>`;
+  } else if(S.compTab==='delivery'){
+    body = S.sub.delivery==='pipelines' ? pipelinesListView() : (S.sub.delivery==='runs'
+      ? `<div class="card flush"><table class="table"><thead><tr><th>运行</th><th>流水线</th><th>状态</th><th>开始时间</th></tr></thead><tbody>
+          ${RUNS.slice(0,3).map(r=>`<tr class="click" data-act="goto-run"><td class="mono">${r.id}</td><td>${r.pipeline.split(' / ')[1]}</td><td>${badge(r.phase)}</td><td class="mono">${r.at}</td></tr>`).join('')}
+        </tbody></table></div>`
+      : `<div class="card flush"><table class="table"><thead><tr><th>环境</th><th>灰度步骤</th><th>健康度</th><th>状态</th></tr></thead><tbody>
+          <tr><td>staging</td><td>100%</td><td>良好</td><td>${badge('succeeded')}</td></tr>
+          <tr><td>production</td><td>50%</td><td>良好</td><td>${badge('paused')}</td></tr></tbody></table></div>`);
+  } else if(S.compTab==='configure'){
+    body = S.sub.configure==='params'
+      ? `<div class="card flush"><table class="table"><thead><tr><th>Key</th><th>值</th><th>来源</th><th>环境</th></tr></thead><tbody>
+          <tr><td class="mono">REGISTRY</td><td class="mono">localhost:5000</td><td>变量库</td><td>全部</td></tr>
+          <tr><td class="mono">REPLICAS</td><td class="mono">3</td><td>变量库</td><td>production</td></tr></tbody></table></div>`
+      : `<div class="card flush"><table class="table"><thead><tr><th>环境</th><th>集群</th><th>命名空间</th></tr></thead><tbody>
+          <tr><td>staging</td><td>kind-e2e-01</td><td class="mono">staging</td></tr>
+          <tr><td>production</td><td>kind-e2e-02</td><td class="mono">prod</td></tr></tbody></table></div>`;
+  } else {
+    body = `<div class="card"><div class="empty"><span class="big">◍</span>「${mainTabs.find(t=>t[0]===S.compTab)[1]}」Tab 占位——结构同旧版，本原型聚焦重设计项。</div></div>`;
+  }
+  return `<div class="wrap">
+    <div class="row" style="align-items:flex-end">
+      <div><div class="title">${S.comp}</div>
+        <div class="sub"><span class="mono">git@…/comp-web.git</span> · Go · 默认分支 <span class="mono">main</span></div></div>
+      <div style="margin-left:auto" class="row">
+        <button class="btn btn-ghost btn-sm" data-act="edit-comp">编辑</button>
+        <button class="btn btn-primary btn-sm" data-act="trigger">▶ 触发运行</button>
+        <button class="btn btn-danger btn-sm" data-act="del-comp">⋯ 删除</button>
+      </div>
+    </div>
+    <div class="tabs">${mainTabs.map(tabBtn).join('')}</div>
+    ${S.compTab==='delivery'?`<div class="pills">${subs.delivery.map(([k,l])=>`<div class="pill ${S.sub.delivery===k?'on':''}" data-sub="delivery:${k}">${l}</div>`).join('')}</div>`:''}
+    ${S.compTab==='configure'?`<div class="pills">${subs.configure.map(([k,l])=>`<div class="pill ${S.sub.configure===k?'on':''}" data-sub="configure:${k}">${l}</div>`).join('')}</div>`:''}
+    ${body}
+  </div>`;
+}
+
+function pipelinesListView(){
+  const seg = `<span class="seg">
+    ${['success:成功（默认）','empty:空态','loading:加载中','error:错误'].map(x=>{const[k,l]=x.split(':');return `<button class="${S.plState===k?'on':''}" data-pl-state="${k}">${l}</button>`}).join('')}
+  </span>`;
+  const mine = PIPELINES.filter(p=>p.comp===S.comp);
+  let inner;
+  if(S.plState==='loading') inner = `<div class="loading"><span class="spinner"></span><div>加载中…</div></div>`;
+  else if(S.plState==='error') inner = `<div style="padding:22px"><div class="errbox">✕ 拉取流水线失败：网络/5xx。<button class="btn btn-ghost btn-sm" style="margin-left:auto">重试</button></div></div>`;
+  else if(S.plState==='empty' || !mine.length) inner = `<div class="empty"><span class="big">⛓</span>${S.comp} 还没有流水线<div style="margin-top:12px"><button class="btn btn-primary" data-act="new-pl">＋ 新建流水线</button></div></div>`;
+  else inner = `<table class="table">
+      <thead>${pipelineHead(false)}</thead>
+      <tbody>${mine.map(p=>pipelineRow(p,false)).join('')}</tbody>
+    </table>`;
+  return `<div class="toolbar2"><span class="hint">四态演示：</span>${seg}<div class="spacer"></div><button class="btn btn-primary btn-sm" data-act="new-pl">＋ 新建流水线</button></div>
+    <div class="card flush">${inner}</div>`;
+}
+
+function pageEditor(){
+  const tasks = {
+    '构建':[['Build','compile & test'],['Build','docker build']],
+    '测试':[['Build','pytest -q']],
+    '发布':[['Release',`helm upgrade ${S.comp}`],['Approval','人工卡点']],
+  };
+  const stages = Object.entries(tasks).map(([name,ts],i)=>`
+    <div class="stage">
+      <div class="stage-head"><span class="stage-no">${i+1}</span>${name}
+        <span class="mode" title="executionMode（Stage 级）">并行 ▾</span></div>
+      ${ts.map(([ty,label])=>`<div class="task"><span class="ti">${ty==='Build'?'⌘':ty==='Release'?'⬇':'✓'}</span>
+        <span class="tn">${label}</span>
+        <span class="tacts"><button class="link" data-act="edit-task">编辑</button><button class="link" style="color:var(--fail-fg)" data-act="del-task">✕</button></span></div>`).join('')}
+      <button class="add-task" data-act="add-task">＋ 子任务</button>
+    </div>`).join('');
+  const kindOf = (PIPELINES.find(p=>p.name===S.editorName)||{kind:'build'}).kind;
+  return `<div class="wrap">
+    <div class="toolbar2">
+      <div class="title" style="font-size:20px">${S.editorName} <span class="chip" style="vertical-align:middle">${kindOf}</span></div>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm" data-act="save-pl">保存</button>
+      <button class="btn btn-primary btn-sm" data-act="trigger">▶ 触发</button>
+      <button class="btn btn-danger btn-sm" data-act="del-pl" data-name="${S.editorName}">🗑 删除流水线</button>
+    </div>
+    <div class="flow">${stages}</div>
+    <button class="btn btn-ghost" data-act="add-stage">＋ 新建阶段</button>
+    <div class="h2">子任务配置</div>
+    <div class="card">
+      <div class="row" style="gap:8px"><span class="chip">类型</span><span class="pill on" style="border:1px solid var(--accent)">Build</span><span class="pill">Release</span><span class="pill">Approval</span></div>
+      <div class="field" style="margin-top:14px"><label>image</label><input class="input mono" value="localhost:5000/toolchain/go:1.22" /></div>
+      <div class="field"><label>command / args</label><input class="input mono" value="go test ./... -run TestUnit" /></div>
+      <div class="field"><label>timeoutSeconds / retryPolicy</label><input class="input mono" value="600 / ≤3 次退避" /></div>
+    </div>
+  </div>`;
+}
+
+function pageAdminPerm(){
+  return `<div class="wrap"><div class="title">用户与平台权限</div><div class="sub">Keycloak 组 → platform_role 映射（仅平台管理员可见）</div>
+    <div class="card flush" style="margin-top:18px"><table class="table">
+      <thead><tr><th>Keycloak 组</th><th>平台角色</th><th>成员</th><th></th></tr></thead><tbody>
+      <tr><td><span class="chip">sdp-admins</span></td><td>platform-admin</td><td>3</td><td style="text-align:right"><button class="link">编辑</button></td></tr>
+      <tr><td><span class="chip">sdp-devs</span></td><td>platform-user</td><td>18</td><td style="text-align:right"><button class="link">编辑</button></td></tr>
+      </tbody></table></div></div>`;
+}
+function pageAdminCluster(){
+  return `<div class="wrap"><div class="title">集群</div><div class="sub">Runner 接入的 K8s 集群健康</div>
+    <div class="card flush" style="margin-top:18px"><table class="table">
+      <thead><tr><th>名称</th><th>状态</th><th>Runner 版本</th><th>最近心跳</th></tr></thead><tbody>
+      <tr><td>kind-e2e-01</td><td>${badge('succeeded')}</td><td class="mono">v0.4.1</td><td class="mono">12s 前</td></tr>
+      <tr><td>kind-e2e-02</td><td>${badge('failed')}</td><td class="mono">v0.4.0</td><td class="mono">8m 前</td></tr>
+      <tr><td>kind-e2e-03</td><td>${badge('succeeded')}</td><td class="mono">v0.4.1</td><td class="mono">6s 前</td></tr>
+      </tbody></table></div></div>`;
+}
+
+const PAGES = {dashboard:pageDashboard, runs:pageRuns,
+  catalog:pageCatalog, component:pageComponent, editor:pageEditor, 'admin-perm':pageAdminPerm, 'admin-cluster':pageAdminCluster};
+
+/* ============ crumb（唯一面包屑；中间层可点，不再在内容区重复一条） ============ */
+function renderCrumb(){
+  const sep = `<span style="opacity:.45">/</span>`;
+  let segs;
+  if(S.page==='component')      segs = [['服务树','catalog'],[S.comp]];
+  else if(S.page==='editor')    segs = [[S.comp,'component'],['交付'],[S.editorName]];
+  else if(S.page==='runs')      segs = S.runTab==='runs' ? [['运行中心']]
+                                      : [['运行中心','runs'],[(RUN_VIEWS.find(v=>v[0]===S.runTab)||[])[1]||'']];
+  else if(S.page==='admin-perm')    segs = [['平台管理'],['用户与权限']];
+  else if(S.page==='admin-cluster') segs = [['平台管理'],['集群']];
+  else segs = [[{dashboard:'总览',runs:'运行中心',catalog:'服务树'}[S.page]||'']];
+  const html = segs.map(([label,to],i)=>{
+    const last = i===segs.length-1;
+    if(last) return `<b>${label}</b>`;
+    return to ? `<a data-nav="${to}">${label}</a>` : `<span>${label}</span>`;
+  }).join(sep);
+  document.getElementById('crumb').innerHTML = `SDP${sep}${html}`;
+}
+
+/* ============ render ============ */
+function render(){
+  renderRail(); renderCrumb();
+  document.getElementById('content').innerHTML = (S.notes?noteBar(noteKey()):'') + (PAGES[S.page]||pageDashboard)();
+  document.getElementById('rail').classList.toggle('collapsed', S.collapsed);
+  document.getElementById('grayBtn').classList.toggle('on', S.gray);
+  document.getElementById('noteBtn').classList.toggle('on', S.notes);
+  document.body.classList.toggle('gray', S.gray);
+  const tb = document.getElementById('themeBtn');
+  tb.innerHTML = svg(S.theme==='dark'?'sun':'moon') + (S.theme==='dark'?'明':'暗');
+}
+/* go(page, runTab, runFilter)：进"运行中心"默认落在"运行"视图；显式带参数才切视图/筛选（左栏点菜单=回到默认） */
+function go(page, runTab, runFilter){
+  S.page=page; S.plState='success';
+  if(page==='runs'){ S.runTab = runTab||'runs'; S.runFilter = (runTab&&runTab!=='runs') ? 'all' : (runFilter||'all'); }
+  render(); document.getElementById('content').scrollTop=0;
+}
+
+/* ============ modal / toast ============ */
+function openModal(html, onOk){
+  const h=document.getElementById('mhost'), m=document.getElementById('modal');
+  m.innerHTML = html; h.classList.add('on');
+  h.onclick = (e)=>{ if(e.target===h) closeModal(); };
+  m.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeModal);
+  const ok = m.querySelector('[data-ok]'); if(ok) ok.onclick = ()=>{ onOk&&onOk(); closeModal(); };
+}
+function closeModal(){ document.getElementById('mhost').classList.remove('on'); }
+function toast(msg, err){
+  const t=document.createElement('div'); t.className='toast'+(err?' err':''); t.textContent=msg;
+  document.getElementById('thost').appendChild(t); setTimeout(()=>t.remove(), 2200);
+}
+
+/* ============ delete pipeline modal (强确认 + 影响面) ============ */
+function delPipeline(name){
+  openModal(`<h3>删除流水线「${name}」？</h3>
+    <div class="mb">此操作不可撤销，请确认影响面：</div>
+    <ul class="impact">
+      <li><span class="k">进行中运行</span><span class="v danger">0 条</span></li>
+      <li><span class="k">历史运行（将保留）</span><span class="v">12 条</span></li>
+      <li><span class="k">阶段 / 子任务（将一并删除）</span><span class="v danger">3 阶段 · 5 任务</span></li>
+    </ul>
+    <div class="field"><label>输入流水线名称以确认</label><input class="input" placeholder="${name}" /></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-danger" data-ok>确认删除</button></div>`,
+    ()=>toast('流水线已删除'));
+}
+function newPipeline(){
+  openModal(`<h3>新建流水线</h3><div class="mb">选择所属组件并命名，保存后进入编排。</div>
+    <div class="field"><label>所属组件</label><select class="input"><option>${S.comp}</option><option>comp-api</option><option>comp-worker</option></select></div>
+    <div class="field"><label>名称</label><input class="input" placeholder="例如：日常流水线" /></div>
+    <div class="field"><label>类型</label><select class="input"><option>build</option><option>release</option><option>custom</option></select></div>
+    <div class="field"><label>描述</label><input class="input" placeholder="可选" /></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>保存并编排</button></div>`,
+    ()=>{ S.editorName='新建流水线'; go('editor'); toast('已创建，进入编排'); });
+}
+
+/* ============ events ============ */
+document.getElementById('rail').addEventListener('click', (e)=>{
+  const col = e.target.closest('#collapseBtn'); if(col){ S.collapsed=!S.collapsed; render(); return; }
+  const nav = e.target.closest('[data-nav]');
+  if(nav){ go(nav.dataset.nav, nav.dataset.runTab, nav.dataset.runFilter); return; }
+});
+document.getElementById('topbar').addEventListener('click', (e)=>{
+  const nav = e.target.closest('[data-nav]');
+  if(nav){ go(nav.dataset.nav, nav.dataset.runTab, nav.dataset.runFilter); }
+});
+document.getElementById('content').addEventListener('input', (e)=>{
+  if(e.target.classList && e.target.classList.contains('catq')){
+    S.catq = e.target.value;
+    const pos = e.target.selectionStart;
+    render();
+    const el = document.querySelector('.catq');
+    if(el){ el.focus(); try{ el.setSelectionRange(pos,pos); }catch(_){} }
+  }
+});
+document.getElementById('content').addEventListener('click', (e)=>{
+  const nav=e.target.closest('[data-nav]'); if(nav){ go(nav.dataset.nav, nav.dataset.runTab, nav.dataset.runFilter); return; }
+  const rt=e.target.closest('[data-run-tab]'); if(rt){ S.runTab=rt.dataset.runTab; S.runFilter='all'; render(); return; }
+  const rf=e.target.closest('[data-run-filter]'); if(rf){ S.runFilter=rf.dataset.runFilter; render(); return; }
+  const nd=e.target.closest('[data-node]');
+  if(nd){
+    const id=nd.dataset.node, isComp=nd.dataset.comp==='1', lbl=nd.dataset.label||'';
+    if(isComp){ S.comp=lbl; S.catq=''; go('component'); return; }
+    if(/^(o|s)\d+$/.test(id)){ S.open[id]=!S.open[id]; render(); return; }
+    toast(`打开 ${lbl}（示意）`); return;
+  }
+  const ct=e.target.closest('[data-ctab]'); if(ct){ S.compTab=ct.dataset.ctab; render(); return; }
+  const sb=e.target.closest('[data-sub]'); if(sb){ const[g,k]=sb.dataset.sub.split(':'); S.sub[g]=k; render(); return; }
+  const ps=e.target.closest('[data-pl-state]'); if(ps){ S.plState=ps.dataset.plState; render(); return; }
+  const act=e.target.closest('[data-act]'); if(!act) return;
+  const a=act.dataset.act, name=act.dataset.name;
+  if(a==='hide-notes'){ S.notes=false; render(); }
+  else if(a==='goto-run') go('runs');
+  else if(a==='new-pl') newPipeline();
+  else if(a==='open-pl'){ S.editorName=name||'日常流水线'; go('editor'); }
+  else if(a==='del-pl') delPipeline(name||S.editorName);
+  else if(a==='save-pl') toast('流水线已保存');
+  else if(a==='trigger') toast('已提交运行（触发对话框示意）');
+  else if(a==='add-stage') toast('新建阶段（示意）');
+  else if(a==='add-task') toast('打开子任务抽屉（示意）');
+  else if(a==='edit-task') toast('编辑子任务（示意）');
+  else if(a==='del-task') toast('已删除子任务（示意）');
+  else if(a==='new-comp') toast('新建组件（示意）');
+  else if(a==='new-svc') toast('新建 Service（示意）');
+  else if(a==='edit-comp') toast('编辑组件（示意）');
+  else if(a==='del-comp') toast('删除组件需强确认（示意）');
+});
+
+/* ---- 全局搜索（替代"树里翻"：任意资源直达） ---- */
+function openSearch(){
+  openModal(`<h3>全局搜索</h3><div class="mb">组件 / 流水线 / Service，跨层级直达，不依赖树展开。</div>
+    <div class="search" style="min-width:0;width:100%;margin-bottom:12px">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+      <input id="gsq" placeholder="输入名称…" autocomplete="off" style="border:none;background:none;outline:none;font:inherit;color:inherit;width:100%" />
+    </div>
+    <div id="gsr" style="max-height:300px;overflow:auto"></div>
+    <div class="modal-foot" style="margin-top:14px"><button class="btn btn-ghost" data-close>关闭</button></div>`,
+    null);
+  const q = document.getElementById('gsq'), r = document.getElementById('gsr');
+  const paint = ()=>{
+    const k = q.value.trim().toLowerCase();
+    const hits = (k?SEARCH_HITS.filter(h=>(h.n+h.p+h.k).toLowerCase().includes(k)):SEARCH_HITS).slice(0,20);
+    r.innerHTML = hits.length ? hits.map(h=>`<div class="hit" data-goto="${h.k}:${h.n}">
+        <span class="hk">${h.k}</span><span class="hn"><b>${h.n}</b></span><span class="hp">${h.p}</span></div>`).join('')
+      : `<div class="empty" style="padding:22px 0">无匹配</div>`;
+    r.querySelectorAll('[data-goto]').forEach(el=>el.onclick=()=>{
+      const [kind,name]=el.dataset.goto.split(':');
+      closeModal();
+      if(kind==='组件'){ S.comp=name; go('component'); }
+      else if(kind==='流水线'){ S.editorName=name; go('editor'); }
+      else { S.catq=name; go('catalog'); }
+    });
+  };
+  q.oninput = paint; paint(); setTimeout(()=>q.focus(),30);
+}
+document.getElementById('searchBtn').addEventListener('click', openSearch);
+document.addEventListener('keydown', (e)=>{
+  if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); openSearch(); }
+});
+
+document.getElementById('themeBtn').addEventListener('click', ()=>{
+  S.theme = S.theme==='dark'?'light':'dark';
+  document.documentElement.dataset.theme = S.theme; render();
+});
+document.getElementById('grayBtn').addEventListener('click', ()=>{ S.gray=!S.gray; render(); });
+document.getElementById('noteBtn').addEventListener('click', ()=>{ S.notes=!S.notes; render(); });
+
+/* ============ boot ============ */
+(function(){
+  const sysDark = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
+  S.theme = sysDark?'dark':'light';
+  document.documentElement.dataset.theme = S.theme;
+  render();
+})();
+</script>
+</body>
+</html>

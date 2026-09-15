@@ -3,7 +3,7 @@
 > 本文档钉死软件分发平台 hub 的核心关系链，作为后续建模与代码审查的权威参考。
 > 来源：`internal/org`、`internal/catalog`、`internal/component`、`internal/pipeline`、`internal/run` 各 `models` 包（已读源码核实，非推测）。
 >
-> **项目目标（对齐 console / runner）**：hub 是 SDP 的控制平面，为"通过界面交互把软件构建、测试、发布到多套环境"提供数据模型与 REST API 支撑。核心能力 = 组织 / 服务树 / 组件 / 环境 / 配置 / 流水线 / 运行 的 CRUD 与编排下发，以及运行态状态回收。标准流水线模式（日常 / 版本归档 / 转测 / 生产，见 console `CONSOLE-UI设计文档.md` §1.1）由 Pipeline（锚定单 Component）+ 阶段 + 三态任务（Build/Release/Approval）表达。落地顺序：先贯通基本功能（G1–G6 已完成），**权限管控（G7）紧接着落实**。
+> **项目目标（对齐 console / runner）**：hub 是 SDP 的控制平面，为"通过界面交互把软件构建、测试、发布到多套环境"提供数据模型与 REST API 支撑。核心能力 = 组织 / 服务树 / 组件 / 环境 / 配置 / 流水线 / 运行 的 CRUD 与编排下发，以及运行态状态回收。标准流水线模式（日常 / 版本归档 / 转测 / 生产，见 console `CONSOLE-UI设计文档.md` §1.1）由 Pipeline（锚定单 Component）+ 阶段 + 三态任务（Build/Release/Approval）表达。落地顺序：先贯通基本功能（G1–G6 已完成），**权限管控（G7）已落实（P1 建表 / P2 审批子系统 / P3 Enforcement，见 §7）**。
 
 ## 0. 四条不动式（先记住这四句话）
 
@@ -37,7 +37,7 @@ Org  ──1:1──▶  ServiceTree        (service_trees.org_id, unique)
 
 ### 1.1 关键交互语义
 - **阶段间顺序执行**：`PipelineStage.Sequence` 决定先后。
-- **阶段内子任务按 `ExecutionMode` 执行**（`PipelineStage.ExecutionMode`，见 §6.4）：`Parallel`（默认，同阶段子任务同时可运行，无相互依赖）/ `Serial`（同阶段子任务按 `DisplayOrder` 顺序执行）。`Serial` 由 hub `buildSpec` 按序推导阶段内 `DependsOn` 链实现，runner 消费的是已解析 DAG，无需感知"串行/并行"——它只看 `DependsOn`。阶段间恒串行（跨阶段 `DependsOn`）。`DisplayOrder` 在 `Serial` 时即执行顺序，在 `Parallel` 时仅展示排序。
+- **阶段内子任务按 `ExecutionMode` 执行**（`PipelineStage.ExecutionMode`，**⚠️ 待实现，见 §6.4**）：`Parallel`（**当前唯一已实现**值，同阶段子任务同时可运行、无相互依赖）/ `Serial`（**待实现**，同阶段子任务按序执行）。设计上 `Serial` 由 hub `buildSpec` 按序推导阶段内 `DependsOn` 链实现；runner 消费的是已解析 DAG，无需感知"串行/并行"——它只看 `DependsOn`。阶段间恒串行（跨阶段 `DependsOn`，**已实现**）。注：`ExecutionMode` 字段与阶段内 `DisplayOrder` 排序均**尚未落地**（`PipelineStage` 现仅 `pipeline_id/name/sequence`）。
 - **子任务交互**：`Produces`/`Consumes`（JSON 键）描述产物产出与消费；触发时 run service 直接 copy 进 `runnerapi.PipelineTaskSpec`，并跨 stage 推导 `DependsOn`。
 - **类型分工**：`Build`=内联命令执行（如 `pytest`/`go build`，跑在 `Image` 工具镜像里；也支持 `ScriptPath` 脚本逃生通道）；`Release`=施加一个软件单元（`ReleaseConfig` 里的 chart/manifest 源 + 从参数管理注入的 `values`），可选 `RolloutConfig` 做金丝雀；`Approval`=人工卡点（结果写 runner CR 的 `ApprovedBy/RejectedBy`）。
 
@@ -166,17 +166,17 @@ Pipeline  ──1:N──▶  PipelineRun    (pipeline_runs.pipeline_id + cluste
 **钢人结论（已确认：不建 `stage_runs`，用户决策）**
 - **MVP 采用方案 A**：后端在 `Progress`/`stage-progress` 响应里**顺手算好阶段 rollup** 一起下发（一次查询、后端聚合、前端零计算）。
 - **未来若规模迫使必须引入（当前决策为不建），触发条件如下**：① 实测 progress 查询 p95 延迟在真实并发下超预算；或 ② 出现"阶段级操作"需求（暂停/恢复/重跑某一阶段）需要阶段实体身份。届时 `stage_runs` **只能作为派生缓存**——由 `ApplyStatus` 同一事务/路径、从 `task_runs` **重算**（而非增计数）写入，杜绝双真相源漂移。
-- 阶段进展 API：`GET /runs/:id/stage-progress`（见 §6.5，当前即派生实现）。
+- 阶段进展 API：`GET /runs/:id/stage-progress`（见 §6.5，**确认新增、待实现**）；**当前 hub 仅实现 `GET /runs/:id/progress`**（返回 `phase + per-task`，未做 Stage 级 rollup）。
 
 ### 6.4 DB 表设计变更（本次新增/推荐）
 
-**① `pipeline_stages` 加 `execution_mode`**（实现阶段内串行/并行；**已确认 `ExecutionMode` 放在 Stage 级**）
+**① `pipeline_stages` 加 `execution_mode`**（实现阶段内串行/并行；**已确认方向为放 Stage 级；⚠️ 当前未实现**——`PipelineStage` 结构体现仅 `(pipeline_id, name, sequence)`，无该字段）
 ```sql
 ALTER TABLE pipeline_stages ADD COLUMN execution_mode varchar(16) NOT NULL DEFAULT 'Parallel';
 -- 枚举: 'Parallel' | 'Serial'
 ```
-- `Serial` 时 hub `buildSpec` 按 `DisplayOrder` 在同阶段任务间推导 `DependsOn` 链；runner 无新字段，纯消费 DAG（CRD 类型无需改）。
-- store 层 `ListByPipelineID` 已按 `sequence` 返回，UI 并行/串行开关即写此列。
+- （**待实现**）`Serial` 时 hub `buildSpec` 应在同阶段任务间推导 `DependsOn` 链；**当前 `buildSpec` 无此分支**，同阶段任务一律并行。runner 无新字段，纯消费 DAG（CRD 类型无需改）。
+- store 层 `ListByPipelineID` 已按 `sequence` 返回；UI 并行/串行开关写入此列后由 `buildSpec` 消费（待接线）。
 
 **②（确认不建）`stage_runs` 聚合表** —— 见 §6.3 双向钢人论证，结论：**确认不建（用户决策）**，derive-on-read 为终态方案；DDL 仅留作未来参考（若触发条件出现再评估）。
 ```sql
@@ -203,9 +203,33 @@ CREATE TABLE stage_runs (
 
 ---
 
-## 7. 授权模型（权限管控 G7；设计已落，待实现）
+## 7. 授权模型（权限管控 G7；目标态 = 多 org；P1 建表 / P2 审批 / P3 Enforcement 均已落地）
 
 > 双向钢人论证结论（见 [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI设计文档.md) / 对话记录）：Keycloak 与 k8s RBAC 均**退到边界**——KC 只做身份+组，k8s RBAC 只管 runner 集群操作；承载"用户对组件能做什么 + 谁能审批"的是 **hub 内的两层 RBAC + 审批表**。这同时满足：① 组件级权限以"管理员/组映射为主"（无运行时自助需求 → 不引入 Keycloak UMA）；② 默认审批人 = 组件 owner/管理员（所有权在 app，见 §7.4）。
+
+> ⚠️ **实现现状（V1，已在代码）≠ 本章设计（目标态，迁移中）**——V1 与 §7 表并存是**有意为之的增量迁移**，不是两套对立设计：
+>
+> | 维度 | V1（已实现，M1） | 本章设计（目标态，M2，**多 org**） | 迁移相位 |
+> | --- | --- | --- | --- |
+> | 角色表 | 单张 `roles`（`permissions jsonb`，`org_id` 归属） | `platform_roles` + `component_roles`（`actions[]` 枚举，**均带 `org_id`**） | P1 建表；P3a §7 action 权威 |
+> | 绑定主体 | `component_role_bindings.user_id uuid NOT NULL`（无组） | `subject_type[user\|group] + subject_id` + **`org_id`**（冗余隔离） | P1 加列+回填；P3a/c Enforcement+console 切换 |
+> | 平台级 | **无** | `platform_roles` / `platform_role_bindings` | P1 建表；P3a Enforcement 就绪（console UI 待落地） |
+> | 组件所有权 | **无** `owner_user`/`owner_group` 列 | `components.owner_user`/`owner_group` | P1 加列；P3b owner 自动绑 component-admin |
+> | 审批表 | `approvals`（`task_run_id, approver, decision, comment`） | `pipeline_approvals`（`org_id, run_id, task_run_id, component_id, status, requested_by, approver, ...`） | P1 建表；P2 已切换 Enforcement |
+> | **org 维度** | `roles.org_id` 有；其余表无 | **所有 RBAC 表均带 `org_id`**（修复 V1 缺 org 的倒退） | P1 已落地 |
+>
+> **多 org 决策（2026-09-14 裁定）**：平台按多租户推进，故 §7 全部 RBAC 表带 `org_id`；`component_role_bindings.org_id` / `pipeline_approvals.org_id` 由「组件 → 服务 → 服务树 → org」解析后冗余存储，使鉴权查询可按 org 隔离而无需 join。
+>
+> 代码锚点：`internal/permission/models/{role.go,binding.go,platform_role.go,platform_role_binding.go,component_role.go}`、`internal/run/models/{approval.go,pipeline_approval.go}`、`internal/component/models/component.go`、`internal/db/db.go`（已 AutoMigrate 上述全部表）；演进回填见 `migrations/0004_rbac_multiorg.sql` + `migrations/0005_rbac_p3.sql`，预置角色见 `cmd/hub/conf/09_rbac_multiorg.sql`（含 `component-admin`）。
+>
+> **实现相位状态（截至 2026-09-14）**：
+> - **P1（已落地）**：§7 全部表建表 + 列 + `org_id` 冗余 + 预置角色（含 `component-admin`）。
+> - **P2（已落地，审批子系统切换 §7）**：`pipeline_approvals` 取代 V1 `approvals`——run 触发时为每个 Approval 子任务 seed `PipelineApproval`（org/component/run 作用域，`requested_by`=触发人）；`Approve` 改为状态机 + **防自审**（`requested_by == approver` 直接拒绝）+ 审计字段；runner 经 `ApproveTaskPayload` 解除 DAG 挂起。见 `internal/run/{repository/approval.go,service/pipeline_run.go}`、`internal/run/models/pipeline_approval.go`。
+> - **P3（已落地，Enforcement 切 §7 + console）**：
+>   - **P3a**：§7 action 枚举成为权威（`internal/permission/models/role.go`），`BindingService` 重写——`ResolveComponentActions` / `HasPermission` / `HasPlatformPermission` 合并 §7 绑定 + owner override + V1 回退；中间件 `rbac.go` 路由判定改用 §7 action（`ActionPipelineTrigger` / `ActionComponentRead` / `ActionApprovalApprove`）；Keycloak `groups` claim 经 `UserContext` 注入（`CurrentGroups`）。
+>   - **P3b**：组件创建自动把 owner 绑 `component-admin`（非致命失败），`Create` 写入 `owner_user`；handler 手写路由、owner 未填时从会话补。见 `internal/component/{service,handler}/component.go`、`internal/permission/handler/binding.go`。
+>   - **P3c**：console `permissions.ts` 切换 §7 `ComponentRoleBinding`（`subjectType` / `subjectId` / `componentRoleId`）+ 新增 hub `GET /component-roles`（`internal/permission/handler/component_role.go`）；`PermissionsTab.vue` 支持 user/group 主体、§7 角色选择器、自审拦截提示。V1 旧行（`userId` / `roleId`）回显兼容。
+> - **遗留（非阻塞）**：V1 `roles` / `approvals` 表与代码路径保留为迁移窗口兼容，未删除；Keycloak 组目录未由 hub 暴露（console 组名手填，待 `/groups` 接口）；平台级权限 UI（`platform_role_bindings` 管理）尚未在 console 落地。
 
 ### 7.1 分层授权模型（总览）
 
@@ -228,15 +252,15 @@ CREATE TABLE stage_runs (
 
 > 直接对应 ArgoCD 两层模型：`ArgoCDRole`（全局角色定义）+ `ArgoCDProjectRoleBinding`（绑定到具体 AppProject）。我们换成 `ComponentRole`（全局定义）+ `ComponentRoleBinding`（绑定到具体 Component）。
 
-- **`component_roles`**：`(id, name, description, actions[])`，action 枚举（Casbin 风格 `resource:action`）：
+- **`component_roles`**：`(id, org_id, name, description, actions[])`，`org_id` 为 NULL 表示内置角色（`component-viewer`/`component-editor`/`component-approver`/`component-admin`），非 NULL 表示某 org 自定义角色。action 枚举（Casbin 风格 `resource:action`）：
   - `component:read` / `component:update` / `component:delete`
   - `pipeline:read` / `pipeline:create` / `pipeline:update` / `pipeline:delete` / `pipeline:trigger`
   - `config:read` / `config:update`
   - `artifact:read` / `artifact:download` / `artifact:delete`
   - `approval:approve`（仅 approver 持有）
-  - 预置三种角色：`component-viewer`(read 类)、`component-editor`(read+update+trigger+create/delete pipeline+config)、`component-approver`(+`approval:approve`)。
+  - 预置四种角色（built-in，`org_id IS NULL`，见 `cmd/hub/conf/09_rbac_multiorg.sql`）：`component-viewer`(read 类)、`component-editor`(read+update+trigger+create/delete pipeline+config)、`component-approver`(+`approval:approve`)、`component-admin`(+ **全部组件动作**，含 `approval:approve` 与 `component:manage`；创建组件的 owner 自动绑定此角色，见 §7.4)。
 - **`component_role_bindings`**：`(id, component_id, subject_type[user|group], subject_id, component_role_id)`。同一组件可多绑定；`subject_type=group` 复用 KC 组。
-- **默认绑定（满足"默认审批人=组件 owner/admin"）**：创建组件时自动生成两条——`component-approver` 绑到组件 owner（或 owner 组）、`component-editor` 绑到组件 admin 组；owner/admin 来源见 §7.4 所有权。
+- **默认绑定（满足"默认审批人=组件 owner/admin"）**：创建组件时（P3b）**自动把组件 owner（user 或 group）绑 `component-admin`**——owner 即拥有全部组件动作（含 `approval:approve` 与 `component:manage`），无需再显式授予。该自动绑定非致命（失败不影响组件创建，仅记日志告警）。owner 来源见 §7.4 所有权。
 - **增删改查颗粒度**：逐 action 授权，支持"能看不能改""能触发不能删"等组合；前端权限页见 [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI设计文档.md)。
 
 ### 7.4 审批子系统（pipeline approvals）
@@ -245,7 +269,7 @@ CREATE TABLE stage_runs (
 
 - **`pipeline_approvals`**：`(id, run_id, task_run_id, component_id, status[Pending|Approved|Rejected|Cancelled], requested_by, approver, decision_comment, created_at, decided_at)`。`task_run_id` 关联处于 `WaitingApproval` 的 Approval 子任务（§6.2）。
 - **选谁审批**：编排流水线时可在 Approval 任务上指定 `approver`（用户/组）；**未指定则默认 = 组件 owner / 组件 admin 组**（取自 §7.3 默认绑定 / 组件所有权）。
-- **默认审批人来源**：组件所有权模型（app 数据）——组件表 `owner_user` / `owner_group`；创建组件时写入，并同步生成 `component-approver` 绑定。
+- **默认审批人来源**：组件所有权模型（app 数据）——组件表 `owner_user` / `owner_group`；创建组件时写入，并同步**把 owner 自动绑 `component-admin`**（见 §7.3），因此 owner 天然持有 `approval:approve`，即默认审批人。
 - **通过 / 拒绝语义**：
   - `Approve`：写 `status=Approved` + `decided_at`，经 `approve_task` 帧（见 runner §4.1）通知 runner 解除 Approval 挂起 → 流程继续。
   - `Reject`：写 `status=Rejected`，整条 `PipelineRun` 标 `Failed`（或按策略 `Cancelled`），终止后续阶段（§6.2 审批拒绝分支）。
@@ -262,7 +286,7 @@ hub 在 API 网关/中间件层统一鉴权：
 3. 按路由判定所需 action（如 `POST /components/:id/pipelines` → `pipeline:create@component_id`），校验是否在有效 action 集内；否 → `403`。
 4. Approval 类端点额外校验 `approval:approve` 且申请人 ≠ 审批人（防自审）。
 
-- **与现有 G7 TODO 对接**：在 `component.go`/`org.go`/`environment.go`/`catalog/service.go` 的 service 层入口注入上述校验（见 附 B G7 项）。
+- **已实现（P3a）**：上述校验在 hub 路由/中间件层落地——`BindingService.HasPermission` 合并 §7 绑定 + owner override + V1 回退；路由判定改用 §7 action（`ActionPipelineTrigger` / `ActionComponentRead` / `ActionApprovalApprove`）；Keycloak `groups` claim 经 `UserContext` 注入并参与绑定解析（见 §7 实现相位状态 P3a）。
 
 ### 7.6 开源参考映射
 
@@ -274,35 +298,48 @@ hub 在 API 网关/中间件层统一鉴权：
 | 选谁审 / 通过拒绝 / 防自审 | **GitHub Environments / GitLab Protected Environments / Spinnaker Manual Judgment** | 审批=独立门禁节点；required reviewers + 防自审 + wait timer |
 | 动态策略（可选） | **OPA / Casbin** | 未来"仅工作时间可发布生产"等用策略引擎，不在本期 |
 
-### 7.7 表结构（DDL 草稿，待实现）
+### 7.7 表结构（DDL，与 AutoMigrate 同步已实现）
 
 ```sql
 -- 平台级
 CREATE TABLE platform_roles (
-  id UUID PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT,
-  actions TEXT[] NOT NULL DEFAULT '{}'
+  id UUID PRIMARY KEY, org_id UUID,            -- NULL = 全局内置角色
+  name TEXT NOT NULL, description TEXT,
+  actions TEXT[] NOT NULL DEFAULT '{}', is_system BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE TABLE platform_role_bindings (
-  id UUID PRIMARY KEY, subject_type TEXT NOT NULL CHECK (subject_type IN ('user','group')),
+  id UUID PRIMARY KEY, org_id UUID,            -- 冗余，按 org 隔离
+  subject_type TEXT NOT NULL CHECK (subject_type IN ('user','group')),
   subject_id TEXT NOT NULL, platform_role_id UUID NOT NULL REFERENCES platform_roles(id),
-  UNIQUE (subject_type, subject_id, platform_role_id)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (org_id, subject_type, subject_id, platform_role_id)
 );
 
 -- 组件级
 CREATE TABLE component_roles (
-  id UUID PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT,
-  actions TEXT[] NOT NULL DEFAULT '{}'
+  id UUID PRIMARY KEY, org_id UUID,            -- NULL = 内置角色
+  name TEXT NOT NULL, description TEXT,
+  actions TEXT[] NOT NULL DEFAULT '{}', is_system BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE TABLE component_role_bindings (
   id UUID PRIMARY KEY, component_id UUID NOT NULL REFERENCES components(id),
-  subject_type TEXT NOT NULL CHECK (subject_type IN ('user','group')),
-  subject_id TEXT NOT NULL, component_role_id UUID NOT NULL REFERENCES component_roles(id),
-  UNIQUE (component_id, subject_type, subject_id, component_role_id)
+  org_id UUID,                                -- 冗余，由组件→服务→服务树→org 解析
+  -- §7 主体模型（P3）：subject_type/subject_id + component_role_id
+  subject_type TEXT CHECK (subject_type IN ('user','group')),
+  subject_id TEXT, component_role_id UUID REFERENCES component_roles(id),
+  -- V1 兼容列（迁移窗口保留，可空）：旧 per-user 绑定（roles 表）仍可按 user_id 解析
+  user_id UUID REFERENCES users(id),
+  role_id UUID REFERENCES roles(id),
+  granted_by UUID, granted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (component_id, org_id, subject_type, subject_id, component_role_id)
 );
 
--- 审批
+-- 审批（§7.4）
 CREATE TABLE pipeline_approvals (
-  id UUID PRIMARY KEY, run_id UUID NOT NULL REFERENCES pipeline_runs(id),
+  id UUID PRIMARY KEY, org_id UUID NOT NULL,   -- 按 org 隔离
+  run_id UUID NOT NULL REFERENCES pipeline_runs(id),
   task_run_id UUID REFERENCES task_runs(id),
   component_id UUID NOT NULL REFERENCES components(id),
   status TEXT NOT NULL CHECK (status IN ('Pending','Approved','Rejected','Cancelled')),

@@ -26,7 +26,7 @@ Hub 此前已写好各 domain 的 handler / service / repository / middleware，
 |---|---|
 | `cmd/hub/main.go` | 入口：装配 DB→repos→services→handlers→认证→gateway，启动 Gin + WS |
 | `internal/config/config.go` | 环境变量配置（`KEYCLOAK_ISSUER` 空即 dev 免认证） |
-| `internal/db/db.go` | `gorm.Open(postgres)` + `AutoMigrate` 全部 20 张表 |
+| `internal/db/db.go` | `gorm.Open(postgres)` + `AutoMigrate` 全部 26 张表（基础 22 + §7 多 org RBAC 扩展 4 张：`platform_roles` / `platform_role_bindings` / `component_roles` / `pipeline_approvals`） |
 | `internal/gateway/gateway.go` | Hub 侧 WebSocket：鉴权、按集群跟踪连接、下发 spec、回写状态 |
 | `internal/run/service/pipeline_run.go` | `Trigger` 组装 DAG spec 并下发；`ApplyStatus` 回写运行状态 |
 | `internal/run/models/trigger_request.go` | `POST /pipelines/:pipelineId/runs` 请求 DTO |
@@ -39,7 +39,7 @@ Hub 此前已写好各 domain 的 handler / service / repository / middleware，
 
 ## 2. 验收标准 (Acceptance Criteria - AC)
 
-- [x] **AC-01 (正常路径 · 启动)**: Given 配置了 `DB_DSN` 的 Postgres, When 执行 `go run ./cmd/hub`, Then 进程启动、Gin 监听 `HUB_ADDR`、`AutoMigrate` 建立全部 20 张表、gateway 路由挂载于 `GATEWAY_PATH`，日志输出 `db: auto-migrate complete`。
+- [x] **AC-01 (正常路径 · 启动)**: Given 配置了 `DB_DSN` 的 Postgres, When 执行 `go run ./cmd/hub`, Then 进程启动、Gin 监听 `HUB_ADDR`、`AutoMigrate` 建立全部 26 张表（含 §7 多 org RBAC 扩展）、gateway 路由挂载于 `GATEWAY_PATH`，日志输出 `db: auto-migrate complete`。
 - [x] **AC-02 (正常路径 · 集群接入)**: Given 一个已在 `clusters` 表注册的集群且 `GATEWAY_TOKEN` 匹配, When Runner 携带 `X-Cluster-Name` + `Authorization: Bearer <token>` 拨入 WS, Then 连接建立、`clusters.status` 置 `online`、断开后置 `offline`。
 - [x] **AC-03 (正常路径 · 触发运行)**: Given 至少一个在线集群且目标 pipeline 有 task 模板, When `POST /api/pipelines/:pipelineId/runs`, Then Hub 按当前版本组装 `PipelineRunSpec`（跨 stage 推导 `DependsOn`），落 `pipeline_runs`(Pending)+`task_runs`(Pending)×N，并经 gateway `apply_pipeline_run` 单播到目标集群 Runner。
 - [x] **AC-04 (正常路径 · 状态回写)**: Given 某运行已由 Runner 执行, When Runner 经 WS 回传 `status_update`, Then `pipeline_runs.phase`/`start_time`/`completion_time` 与每个 `task_runs.*` 被同步更新；未知运行（如 Runner 重启后的孤儿消息）被安全忽略。
@@ -106,7 +106,7 @@ Headers: Authorization: Bearer <token>   X-Cluster-Name: <cluster-name>
 
 ### 4.2 数据库 / 缓存变动（DDL 设计）
 
-共 **20 张表**，由 `internal/db/db.go` 的 `AutoMigrate` 自动生成（等价于下方 DDL）。
+共 **26 张表**，由 `internal/db/db.go` 的 `AutoMigrate` 自动生成（等价于下方 DDL）；其中 V1 的 `roles` + `approvals` 仍保留为迁移窗口兼容（P2 已切到 `pipeline_approvals`），§7 扩展表见 #23–#26。
 
 **公共基类**
 - `Base`（软删除，用于 orgs/services/components/pipelines/users）：`id uuid PK default gen_random_uuid()`、`created_at`、`updated_at`、`deleted_at timestamptz`（软删索引）。
@@ -131,11 +131,13 @@ Headers: Authorization: Bearer <token>   X-Cluster-Name: <cluster-name>
 | 13 | `artifacts` | artifact.Artifact | — | 产物 |
 | 14 | `pipeline_runs` | run.PipelineRun | — | 运行记录 |
 | 15 | `task_runs` | run.TaskRun | — | 运行记录 |
-| 16 | `rollout_runs` | run.RolloutRun | — | 运行记录 |
-| 17 | `approvals` | run.Approval | — | 审批 |
-| 18 | `roles` | permission.Role | — | 权限 |
-| 19 | `component_role_bindings` | permission.ComponentRoleBinding | — | 权限 |
-| 20 | `users` | permission.User | Base | 认证 |
+| 16 | `task_run_logs` | run.TaskRunLog | — | 运行记录（日志块） |
+| 17 | `rollout_runs` | run.RolloutRun | — | 运行记录 |
+| 18 | `approvals` | run.Approval | — | 审批 |
+| 19 | `dispatch_jobs` | run.DispatchJob | — | 运行记录（Durable 投递队列） |
+| 20 | `roles` | permission.Role | — | 权限 |
+| 21 | `component_role_bindings` | permission.ComponentRoleBinding | — | 权限 |
+| 22 | `users` | permission.User | Base | 认证 |
 
 **逐表字段（DDL 等价）**
 
@@ -304,7 +306,19 @@ CREATE TABLE task_runs (
 );
 CREATE INDEX ON task_runs (stage_name);
 
--- 16. rollout_runs (Release 任务渐进式交付历史)
+-- 16. task_run_logs (由父 pipeline_run 管理；Runner 经 MessageLogChunk 流式落库)
+CREATE TABLE task_run_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  pipeline_run_id uuid NOT NULL REFERENCES pipeline_runs(id),
+  task_name varchar(128) NOT NULL,            -- 任务名；run 级日志用 '__run__'
+  stream varchar(16),                          -- stdout|stderr
+  chunk text NOT NULL,
+  created_at timestamptz
+);
+CREATE INDEX ON task_run_logs (pipeline_run_id);
+CREATE INDEX ON task_run_logs (task_name);
+
+-- 17. rollout_runs (Release 任务渐进式交付历史)
 CREATE TABLE rollout_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   task_run_id uuid NOT NULL REFERENCES task_runs(id),
@@ -314,7 +328,7 @@ CREATE TABLE rollout_runs (
   start_time timestamptz, completion_time timestamptz
 );
 
--- 17. approvals (一个 Approval 任务可有多条)
+-- 18. approvals (一个 Approval 任务可有多条)
 CREATE TABLE approvals (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   task_run_id uuid NOT NULL REFERENCES task_runs(id),
@@ -322,7 +336,23 @@ CREATE TABLE approvals (
   comment text, decided_at timestamptz NOT NULL DEFAULT now()
 );
 
--- 18. roles
+-- 19. dispatch_jobs (Durable 投递队列；Trigger 入队 pending，sweeper/重连补投)
+CREATE TABLE dispatch_jobs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  pipeline_run_id uuid NOT NULL REFERENCES pipeline_runs(id),
+  cluster_id uuid NOT NULL,
+  payload jsonb NOT NULL,                       -- 完整 ApplyPipelineRunPayload 快照
+  state varchar(32) NOT NULL DEFAULT 'pending', -- pending|dispatching|dispatched|failed|dead
+  attempts int NOT NULL DEFAULT 0,
+  last_error varchar(512),
+  next_retry_at timestamptz,
+  created_at timestamptz, updated_at timestamptz
+);
+CREATE INDEX ON dispatch_jobs (pipeline_run_id);
+CREATE INDEX ON dispatch_jobs (cluster_id);
+CREATE INDEX ON dispatch_jobs (state);
+
+-- 20. roles
 CREATE TABLE roles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id uuid, name varchar(64) NOT NULL,
@@ -330,7 +360,7 @@ CREATE TABLE roles (
   is_system boolean NOT NULL DEFAULT false, created_at timestamptz
 );
 
--- 19. component_role_bindings (无绑定 = 无权限)
+-- 21. component_role_bindings (无绑定 = 无权限)
 CREATE TABLE component_role_bindings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   component_id uuid NOT NULL REFERENCES components(id),
@@ -339,7 +369,7 @@ CREATE TABLE component_role_bindings (
   granted_by uuid, granted_at timestamptz NOT NULL DEFAULT now()
 );
 
--- 20. users (Keycloak JIT 自建)
+-- 22. users (Keycloak JIT 自建)
 CREATE TABLE users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id uuid NOT NULL REFERENCES orgs(id),
@@ -347,7 +377,45 @@ CREATE TABLE users (
   keycloak_id varchar(64) UNIQUE,   -- token sub，认证查找主键
   created_at timestamptz, updated_at timestamptz, deleted_at timestamptz
 );
+
+-- 23. platform_roles (§7.2 平台级角色；OrgID NULL=内置)
+CREATE TABLE platform_roles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid, name varchar(64) NOT NULL,
+  description text, actions jsonb NOT NULL DEFAULT '[]',
+  is_system boolean NOT NULL DEFAULT false, created_at timestamptz
+);
+
+-- 24. platform_role_bindings (§7.2 平台级绑定)
+CREATE TABLE platform_role_bindings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid,
+  subject_type varchar(16) CHECK (subject_type IN ('user','group')),
+  subject_id varchar(128) NOT NULL, platform_role_id uuid NOT NULL REFERENCES platform_roles(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- 25. component_roles (§7.3 组件级角色；OrgID NULL=内置)
+CREATE TABLE component_roles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid, name varchar(64) NOT NULL,
+  description text, actions jsonb NOT NULL DEFAULT '[]',
+  is_system boolean NOT NULL DEFAULT false, created_at timestamptz
+);
+
+-- 26. pipeline_approvals (§7.4 审批记录，P2 取代 V1 approvals)
+CREATE TABLE pipeline_approvals (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL, run_id uuid NOT NULL REFERENCES pipeline_runs(id),
+  task_run_id uuid REFERENCES task_runs(id),
+  component_id uuid NOT NULL REFERENCES components(id),
+  status varchar(16) NOT NULL, requested_by varchar(128) NOT NULL,
+  approver varchar(128), decision_comment varchar(1024),
+  created_at timestamptz NOT NULL DEFAULT now(), decided_at timestamptz
+);
 ```
+
+> ✅ **权限表已升级为 §7 多 org 两层 RBAC（P1/P2/P3 已落地）**：[hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) 规划的两层 RBAC（`platform_roles` + `platform_role_bindings` + `component_roles` + `subject_type/subject_id` + 组件 `owner_user`/`owner_group` 列 + `pipeline_approvals`）均已建表并实现 Enforcement；V1 的 `roles` + `component_role_bindings(user_id/role_id)` + `approvals` 仅保留为迁移窗口兼容（可空、不新建授权）。新建授权一律走 §7 路径。
 
 **ER 关系概要**
 ```
@@ -361,7 +429,7 @@ pipelines ─1:N─ pipeline_versions
 components ─1:N─ artifacts
 pipelines ─1:N─ pipeline_runs ─1:N─ task_runs ─1:N─ approvals / rollout_runs
 clusters ─1:N─ pipeline_runs / environments
-components ─1:N─ component_role_bindings ─N:1─ users / roles
+components ─1:N─ component_role_bindings ─N:1─ component_roles（§7.3）；platform_roles / platform_role_bindings 为平台级（§7.2）；pipeline_approvals 关联 run/task（§7.4）
 ```
 关键外键：`pipeline_runs.cluster_id` 与 `environments.cluster_id` 指向 `clusters`（gateway 据此把 spec 发到正确 Runner）；`pipeline_runs.cr_name`+`cr_namespace` 桥接集群内短期 PipelineRun CR；`task_runs.pipeline_run_id` 表示运行历史只经父运行管理。
 
@@ -372,7 +440,7 @@ components ─1:N─ component_role_bindings ─N:1─ users / roles
 - [x] 3-Corner 澄清通过：AC 由 Dev 与历史主规格（Epic 5/7）对齐，QA 待补。
 - [x] 单元测试覆盖率基线：核心逻辑（`buildSpec`/`selectCluster`/`ApplyStatus`）已实现，单测待补（当前以 `go build`+`go vet` 作为门禁）。
 - [x] 静态代码扫描无 P0/P1：hub 与 runner 两模块 `go vet ./...` 通过；`go mod tidy` 清理完成。
-- [x] 自动化测试/手动验收：两模块 `go build ./...` 均 EXIT=0；本地启动会执行 `AutoMigrate` 建 20 表（手动验收待联调）。
+- [x] 自动化测试/手动验收：两模块 `go build ./...` 均 EXIT=0；本地启动会执行 `AutoMigrate` 建 26 张表（含 §7 多 org RBAC 扩展，手动验收待联调）。
 - [ ] 监控告警与降级开关在预发/灰度环境验证：依赖后续 Epic 5 离线告警与 console 灰度监控（**未做**）。
 
 ---

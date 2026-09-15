@@ -43,9 +43,11 @@
 ```
 software-distribution-platform-docs/
 ├── README.md                      # 本索引
+├── BUILD-ARTIFACTS.md             # 三仓生成物链路梳理（产生→忽略→清理→再生成）+ 已知断链
 ├── console/
 │   ├── CONSOLE-UI设计文档.md       # 前端设计（10 段结构：目标/场景/IA/页面/执行模型+异常分支/状态色/四态/权限审批 UX/验收）
-│   └── console-ia-v2-prototype.html  # IA v2 交互原型（当前权威原型）
+│   ├── CONSOLE-UI重设计文档.md      # 前端重设计方案（IA v3 方向：AppShell 常驻左栏 / 指挥中心 Dashboard / 组件 6 主 Tab / 明暗双主题 / 流水线 CRUD 全链路）
+│   └── CONSOLE-UI-重设计原型.html   # IA v3 可交互原型
 ├── hub/
 │   ├── DATA-MODEL.md              # 领域模型 + §6 下发与进展回收 + §7 授权模型（两层 RBAC + 审批表）
 │   ├── STORY-hub-implementation.md
@@ -65,7 +67,8 @@ software-distribution-platform-docs/
 | 文件（GitHub 链接）                                                                                                                                                 | 组件      | 核心内容                | 关键章节                                                             |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------- | ---------------------------------------------------------------- |
 | [console/CONSOLE-UI设计文档.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI设计文档.md)                         | console | 前端整体设计              | §1 目标/4 类流水线模式、§6 执行模型+异常分支、§7.9 权限与审批 UX、§8.2 四态、§10.2/§10.3 验收 |
-| [console/console-ia-v2-prototype.html](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/console-ia-v2-prototype.html)   | console | IA v2 交互原型          | ——                                                               |
+| [console/CONSOLE-UI重设计文档.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI重设计文档.md)                     | console | 前端重设计方案（IA v3 方向）    | AppShell 常驻左栏 / 指挥中心 Dashboard / 组件 6 主 Tab / 明暗双主题 / 流水线 CRUD 全链路 |
+| [console/CONSOLE-UI-重设计原型.html](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-重设计原型.html)               | console | IA v3 可交互原型         | ——                                                               |
 | [hub/DATA-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)                                         | hub     | 领域关系链 + 执行/授权模型     | §6 下发与进展回收（推送模型、stage 不建表）、§7 授权模型                               |
 | [hub/STORY-hub-implementation.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-hub-implementation.md)             | hub     | hub 控制面实现 Story     | ——                                                               |
 | [hub/STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md)                                   | hub     | 实现 Backlog（G1–G7 等） | ——                                                               |
@@ -74,6 +77,7 @@ software-distribution-platform-docs/
 | [hub/user-stories.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/user-stories.md)                                     | hub     | 用户故事                | ——                                                               |
 | [runner/STORY-runner-implementation.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md) | runner  | runner 实现 Story     | §4.2.3 kubebuilder 安装、§4.3 任务处理/DAG 推进、§4.4 授权边界                 |
 | [plans/E2E-VERIFY-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/E2E-VERIFY-PLAN.md)                           | 跨组件     | 端到端联调验证计划           | P0 环境→P6 自举（成功标准 / kind 拓扑 / 各阶段验证）                              |
+| [BUILD-ARTIFACTS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/BUILD-ARTIFACTS.md)                                       | 跨组件     | 生成物链路梳理 + 已知断链       | §2 生成物拓扑、§3 正向链路、§6 F-1（hub `docs/` 编译必需却未入库，已复现 CI/`make build` 失败）、§8 待裁决 |
 
 ## 5. 跨组件对齐（重点：三处必须保持一致）
 
@@ -82,12 +86,12 @@ software-distribution-platform-docs/
 ### 5.1 整体目标（北极星）
 
 - **写在**：[console 设计文档 §1 + §1.1 + §1.2](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI设计文档.md)、[hub 数据模型 顶部「项目目标」](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)、[runner 实现 Story 顶部「项目目标」](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md)。
-- **内容**：通过纯界面交互，把软件「构建 → 测试 → 发布到多套环境」跑通；4 类标准流水线（日常 / 版本归档 / 转测 / 生产）；落地顺序 = **基本功能全链路优先，权限管控（G7）紧随其后**。
+- **内容**：通过纯界面交互，把软件「构建 → 测试 → 发布到多套环境」跑通；4 类标准流水线（日常 / 版本归档 / 转测 / 生产）；落地顺序 = **基本功能全链路优先，权限管控（G7）紧随其后——G7 已于 P1/P2/P3 整体落地（§7 多 org 两层 RBAC + 审批子系统 + Enforcement）**。
 
-### 5.2 授权模型（G7，设计已落、待实现）
+### 5.2 授权模型（G7，设计已落、已实现；P1/P2/P3）
 
-- [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) —— 两层 RBAC（`platform_roles`/`platform_role_bindings` + `component_roles`/`component_role_bindings`）+ 审批子系统 `pipeline_approvals` + Enforcement 中间件 + DDL 草稿。
-- [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI设计文档.md) —— 平台级权限页（各页面增删改查颗粒度全分析）+ 组件级「成员与角色」Tab + 审批卡 UX（默认审批人 = 组件 owner / 管理员）。
+- [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) —— 两层 RBAC（`platform_roles`/`platform_role_bindings` + `component_roles`/`component_role_bindings`）+ 审批子系统 `pipeline_approvals` + Enforcement 中间件 + DDL（已实现，与 AutoMigrate 同步；共 26 张表）。
+- [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI设计文档.md) —— 平台级权限页（各页面增删改查颗粒度全分析）+ 组件级「权限 (permissions)」Tab（user/group 主体 + §7 角色选择器 + 自审提示）+ 审批卡 UX（默认审批人 = 组件 owner / 管理员，owner 自动绑 `component-admin`）。
 - [runner 实现 Story §4.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md) —— runner 只消费 hub 已鉴权下发的 spec，自身无授权逻辑；集群侧权限由 k8s RBAC（hub 签发 RoleBinding）约束。
 - **设计结论**：Keycloak 只管身份+组；k8s RBAC 只管 runner 集群部署边界；业务授权与审批全部落 hub（app 内 RBAC + 审批表）。参考：ArgoCD 两层 RBAC、GitHub/GitLab/Spinnaker 审批门禁、Backstage 所有权驱动默认审批。
 
