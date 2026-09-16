@@ -63,6 +63,8 @@
 ## 4. 技术契约与接口设计 (Technical Contract)
 
 ### 4.1 Hub ↔ Runner 线协议（共享 `api/v1alpha1`）
+
+> **端点边界**：Runner **不暴露任何入站 HTTP API**——它只作为 WebSocket 客户端拨入 hub 网关（`GET {GATEWAY_PATH}`，默认 `/gateway/ws`），消费 hub 下发的 spec 并回写状态/日志/心跳。所有"控制面"能力（CRUD、触发、审批、回滚）都在 hub 的 `/api/v1` REST 面，runner 无对应 HTTP 端点（与 old 后端无关）。
 帧结构: `Message{ Type MessageType, Payload json.RawMessage }`。
 
 | 方向 | Type | Payload 类型 | 说明 |
@@ -242,7 +244,7 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 ---
 
 ## 6. 后续待办（非本 Story 范围 / 已注明 TODO）
-- ✅ **Hub 审批下发路径**：Hub 侧已实现 `POST /pipelines/:pipelineId/runs/:runId/tasks/:taskName/decision`（经 `gateway.Approve` → `MessageApproveTask` 下发），与 Runner 的 `ApproveTask` handler 形成完整审批闭环（见 SDP-HUB-001 本轮补充）。**P2 起 Hub 额外落 `pipeline_approvals` 审计记录并实施防自审（`requested_by == approver` 直接拒绝），Runner 仅据此解除挂起/终止（[hub 数据模型 §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）。**
+- ✅ **Hub 审批下发路径**：Hub 侧已实现 `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision`（经 `gateway.Approve` → `MessageApproveTask` 下发），与 Runner 的 `ApproveTask` handler 形成完整审批闭环（见 SDP-HUB-001 本轮补充）。**P2 起 Hub 额外落 `pipeline_approvals` 审计记录并实施防自审（`requested_by == approver` 直接拒绝），Runner 仅据此解除挂起/终止（[hub 数据模型 §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）。**
 - ⬜ **实时日志**：`MessageLogChunk` / `LogChunkPayload` 类型已定义，Runner 侧 Pod 日志抓取与发送未实现。
 - ⬜ **IngressCanary 路由**：`TrafficRoutingIngressCanary` 已记录但 M1 降级为副本切分；专用 canary Ingress 资源为后续项。
 - ⬜ **HTTPProbe / PrometheusQuery 健康检查**：M1 实际只校验 `PodReady`；`HTTPProbe`/`PrometheusQuery` 引擎分支已留但未接真实探测。

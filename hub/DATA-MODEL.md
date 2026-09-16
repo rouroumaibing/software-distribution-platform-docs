@@ -113,7 +113,7 @@ Pipeline  ──1:N──▶  PipelineRun    (pipeline_runs.pipeline_id + cluste
 
 ### 6.1 任务落地与下发机制（现状，推送模型）
 
-触发 `POST /runs` → `PipelineRunService.Trigger`：
+触发 `POST /pipelines/:id/runs` → `PipelineRunService.Trigger`：
 1. 落 `pipeline_runs` 一行（Pending）+ 按 spec 种子 `task_runs`（每 DAG 节点一行，Pending）—— **"任务先落实到数据库"在 hub 侧成立**；
 2. 入队 `dispatch_jobs`（Pending）携带完整 `ApplyPipelineRunPayload`；
 3. 立即尝试下发；Runner 离线则 job 保持 Pending，重连（`DrainCluster`）/ 周期扫（`SweepPending`）重投，运行不失败（状态机见 `dispatch_job.go`）；
@@ -203,7 +203,9 @@ CREATE TABLE stage_runs (
 
 ---
 
-## 7. 授权模型（权限管控 G7；目标态 = 多 org；P1 建表 / P2 审批 / P3 Enforcement 均已落地）
+## 7. 授权模型（权限管控 G7；目标态 = 多 org；P1 建表 / P2 审批 / P3 Enforcement 均已落地；**平台级 HTTP 端点待补**）
+
+> ⚠️ **状态勘误（2026-09-15）**：本节 §7 表 + Enforcement 中间件已落地，但 `platform_roles` / `platform_role_bindings` **尚无 HTTP 端点**（`internal/permission/handler/` 下仅有 `role` / `component_role` / `binding` 组件级 handler，`main.go` 未注册 platform 级路由）。平台管理员绑定须经 API 配置的能力未暴露（backlog P1-1）。详细对账见 `DOC-CODE-CALIBRATION-2026-09-15.html`。
 
 > 双向钢人论证结论（见 [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI设计文档.md) / 对话记录）：Keycloak 与 k8s RBAC 均**退到边界**——KC 只做身份+组，k8s RBAC 只管 runner 集群操作；承载"用户对组件能做什么 + 谁能审批"的是 **hub 内的两层 RBAC + 审批表**。这同时满足：① 组件级权限以"管理员/组映射为主"（无运行时自助需求 → 不引入 Keycloak UMA）；② 默认审批人 = 组件 owner/管理员（所有权在 app，见 §7.4）。
 
@@ -347,3 +349,90 @@ CREATE TABLE pipeline_approvals (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(), decided_at TIMESTAMPTZ
 );
 ```
+
+---
+
+## 8. 环境分组（`environment_groups`，新增；2026-09-16 用户拍板"需要落库"）
+
+> 背景：console 环境页 / 配置页左侧的"分组（类生产 / 生产）"此前只存在于原型内存（`ENV[comp].groups`），hub 无落库位置。用户于 2026-09-16 明确要求落库。本节为设计（DDL 尚未落地）。
+
+### 8.1 方案选择
+| 方案 | 评估 |
+| --- | --- |
+| A. 给 `environments` 加 `group_name varchar` | ✗ 无法表达**空分组**（原型允许先建组、后建环境）；改名需批量 UPDATE；组内顺序无处表达 |
+| B. 新表 `environment_groups` + `environments.group_id`（可空） | ✓ 支持空分组、可排序、改名不动环境、可稳定引用 |
+
+**采纳 B。**
+
+### 8.2 DDL（建议 `migrations/0003_environment_groups.sql`）
+```sql
+create table environment_groups (
+    id            uuid primary key default gen_random_uuid(),
+    component_id  uuid not null references components(id) on delete cascade,
+    key           varchar(64)  not null,   -- 稳定标识，如 prod-like / prod
+    name          varchar(128) not null,   -- 展示名，如「类生产」「生产」
+    display_order integer      not null default 0,
+    created_at    timestamptz  not null default now(),
+    updated_at    timestamptz  not null default now(),
+    unique (component_id, key)
+);
+create index idx_env_groups_component on environment_groups(component_id);
+
+alter table environments add column group_id uuid references environment_groups(id);
+create index idx_environments_group on environments(group_id);
+```
+
+### 8.3 关系与不变式
+```
+Component ──1:N──▶ environment_groups     (component_id NOT NULL)
+Component ──1:N──▶ environments           (component_id NOT NULL)
+environment_groups ──1:N──▶ environments  (environments.group_id，可空)
+```
+- **锚定 Component**（与 §3 不变式一致）：分组是**组件内**概念，不跨组件。
+- `environments.group_id` **可空** → 兼容既有数据（0001 建的环境无分组），并表达"未分组"这一合法状态。
+- **不加 `(component_id, group_id)` 复合外键**：与 `component_configs.environment_id` 的既有缺口同构（见 DELETE-CONTRACT §6.2 机制②）。建议**统一靠服务层校验**，避免 DB 层约束与软删语义打架。
+
+### 8.4 删除语义（与 DELETE-CONTRACT §6 同源）
+| 操作 | 行为 | 理由 |
+| --- | --- | --- |
+| 删分组（组内**有**环境） | **`409 + {reasons}`** 拒绝，列出未清理环境 | 分组是用户显式建立的组织结构；静默降级为"未分组"会丢失归类信息（语义清晰优先，非残留考虑） |
+| 删分组（组内**空**） | 允许（硬删；本表与 `environments` 同为无 `deleted_at` 表） | 空壳无引用 |
+| 删环境 | 允许，但**删除前须告知**该环境上的配置覆盖行数 | `component_configs.environment_id` 现为 `ON DELETE CASCADE`，**会静默删**（见 DELETE-CONTRACT §6.3 ⑧） |
+| 删组件 | 分组应随之消失 | ⚠️ 组件是**软删**，`ON DELETE CASCADE` **不触发**（见 DELETE-CONTRACT §6.2 机制①）→ 须服务层显式级联软删 |
+
+### 8.5 与 `env_type` 的区别（勿混淆）
+| | `environments.env_type` | `environment_groups` |
+| --- | --- | --- |
+| 语义 | **平台级策略标记**（`test` / `production`） | **用户自定义归类**（"类生产""预发"） |
+| 谁定义 | 平台（0002 追加，`check in ('test','production')`） | 用户 |
+| 影响执行行为 | 是（如生产环境强审批） | 否（纯组织语义） |
+
+两者**正交**。原型里的"类生产 / 生产"是**分组**，不要与 `env_type` 合并；UI 文案应避免同名造成误读。
+
+### 8.6 折叠状态不落库
+分组的折叠/展开（原型 `S.collapsedGroups`）是**用户级 UI 偏好**，非组件级数据 → 不进入 `environment_groups`。落点：前端 localStorage（或未来的 per-user preference 表），避免组件数据被个人偏好污染。
+
+### 8.7 落地 gate
+- 迁移 `0003` 在既有库上幂等（仅新表 + 可空列，无回填需求）。
+- `GET /components/:id/environments` 响应带 `groupId`；或新增 `GET /components/:id/environment-groups`。
+- 单测：空分组可删 / 非空分组 `409` / 删环境前可统计到配置覆盖行数。
+
+### 8.8 落地决策（2026-09-16 用户拍板）
+
+> 与 `DELETE-CONTRACT.md` §6.5 / §6.6 同源（含双向钢人论证）。本节只记录**对本章的影响**。
+
+| 决策 | 结论 | 对本章的影响 |
+| --- | --- | --- |
+| 删环境 / 删组件时，**集群侧**已部署资源是否回收 | **不回收**（平台与目标环境隔离，避免平台误伤生产） | §8.4「删环境」行**不再涉及集群侧**；删环境只处理**平台侧**（DB 行 + 审计） |
+| 「残留」的定义 | **只指平台侧**遗留（DB 行 / 对象存储对象 / 配置与审计） | §8.4「删组件」行的"分组应随之消失"须**服务层显式级联**（组件软删，DB `ON DELETE CASCADE` 不触发）；集群侧不计入残留 |
+| `component_config_history.environment_id` | **去 FK + 加 `environment_key` 快照列**（优于单纯 `ON DELETE SET NULL`） | §8.4「删环境」的"删除前须告知配置覆盖行数"**仍然成立**；同时消除"删环境随机 500"（现状：`component_configs` 是 cascade、`config_history` 是 `NO ACTION`，同一操作两种结果） |
+| `pipeline_stages` / `pipeline_task_templates` | **补 `deleted_at`** + **封父存在性校验** + **修 `pipelines` 唯一约束** | 与本章无直接耦合，记录于 `DELETE-CONTRACT.md` §6.6-3（B-15）。**(a) 父存在性校验 + (b) `pipelines` 改 partial unique index + (c) 模型时间列映射已于 2026-09-16 落地**；`deleted_at` 待拍板 |
+| Artifact 孤儿对象 | **先堵源头 → 后做对账（仅报告，不自动删）** | 同 `DELETE-CONTRACT.md` §6.6-4（B-16） |
+
+**未变（仍然有效）**：
+- §8.2 的 DDL 方案（新表 `environment_groups` + `environments.group_id` **可空**）；
+- §8.4 的"组内有环境则 `409 + {reasons}` 拒绝 / 组内空则允许硬删"；
+- §8.5 的 `env_type`（平台策略标记）与分组**正交，不合并**；
+- §8.6 的折叠状态**不落库**（用户级 UI 偏好）。
+
+**关联 backlog**：`STORY-BACKLOG.md` B-13（环境分组落库）、B-14（config_history 快照列）、B-15（stages/templates 标记与入口校验）、B-16（artifacts 治理）。

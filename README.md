@@ -70,6 +70,7 @@ software-distribution-platform-docs/
 | [console/CONSOLE-UI重设计文档.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI重设计文档.md)                     | console | 前端重设计方案（IA v3 方向）    | AppShell 常驻左栏 / 指挥中心 Dashboard / 组件 6 主 Tab / 明暗双主题 / 流水线 CRUD 全链路 |
 | [console/CONSOLE-UI-重设计原型.html](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-重设计原型.html)               | console | IA v3 可交互原型         | ——                                                               |
 | [hub/DATA-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)                                         | hub     | 领域关系链 + 执行/授权模型     | §6 下发与进展回收（推送模型、stage 不建表）、§7 授权模型                               |
+| [hub/API-REFERENCE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/API-REFERENCE.md) | hub     | **REST API 权威端点清单** + old→new 映射 + 设计钢人论证 | 全部 hub 端点（按资源分组）、old 接口组成、合理性论证 |
 | [hub/STORY-hub-implementation.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-hub-implementation.md)             | hub     | hub 控制面实现 Story     | ——                                                               |
 | [hub/STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md)                                   | hub     | 实现 Backlog（G1–G7 等） | ——                                                               |
 | [hub/STORY-TEMPLATE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-TEMPLATE.md)                                 | hub     | Story 模板            | ——                                                               |
@@ -88,7 +89,9 @@ software-distribution-platform-docs/
 - **写在**：[console 设计文档 §1 + §1.1 + §1.2](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI设计文档.md)、[hub 数据模型 顶部「项目目标」](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)、[runner 实现 Story 顶部「项目目标」](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md)。
 - **内容**：通过纯界面交互，把软件「构建 → 测试 → 发布到多套环境」跑通；4 类标准流水线（日常 / 版本归档 / 转测 / 生产）；落地顺序 = **基本功能全链路优先，权限管控（G7）紧随其后——G7 已于 P1/P2/P3 整体落地（§7 多 org 两层 RBAC + 审批子系统 + Enforcement）**。
 
-### 5.2 授权模型（G7，设计已落、已实现；P1/P2/P3）
+### 5.2 授权模型（G7，设计已落、Enforcement 已落地；平台级 HTTP 端点待补；P1/P2/P3）
+
+> ⚠️ **状态勘误（2026-09-15）**：`platform_roles` / `platform_role_binding` 仅建表+种子+内部 `RequirePermission` 使用，**无 HTTP 端点**（`/platform-roles`、`/platform-role-bindings` 未注册，见 `cmd/hub/main.go:250-264`）。多租户管理员权限尚无法经 API 配置（backlog P1-1）。
 
 - [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) —— 两层 RBAC（`platform_roles`/`platform_role_bindings` + `component_roles`/`component_role_bindings`）+ 审批子系统 `pipeline_approvals` + Enforcement 中间件 + DDL（已实现，与 AutoMigrate 同步；共 26 张表）。
 - [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI设计文档.md) —— 平台级权限页（各页面增删改查颗粒度全分析）+ 组件级「权限 (permissions)」Tab（user/group 主体 + §7 角色选择器 + 自审提示）+ 审批卡 UX（默认审批人 = 组件 owner / 管理员，owner 自动绑 `component-admin`）。

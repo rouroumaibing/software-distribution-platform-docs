@@ -23,6 +23,8 @@
 
 **现状快照（2026-09-14 更新）**：Console 前端 MOD-0~MOD-10 全部页面与组件已落地，`vue-tsc` + `vite build` 全绿；hub 后端 G1–G6 缺口已于 2026-09-06 全部补齐，**G7（权限校验）已于 P3a 通过 §7 Enforcement 落地**；runner 剩 **R1–R3（生产化收尾：chart 鉴权 / values 注入验证 / 镜像固化）**。端到端链路「构建→测试→发布(灰度可控)→审批→看日志→下制品」已可跑通，只待 runner 联调。
 
+> ⚠️ **状态勘误（2026-09-15，doc-code-consistency-audit）**：上句「MOD-0~MOD-10 全部已落地」为过度声称。代码探查确认以下能力**尚未实现**：⌘K 全局搜索（顶栏🔍纯装饰）、暗色主题（仅亮色 token）、懒加载服务树（非懒加载 / 非服务端搜索 / 无虚拟滚动）、平台级 RBAC HTTP 端点（仅模型+仓库+内部判定，无 `/platform-roles` 路由）、实时日志流（`log_chunk` 仅定义从不发送，console 走轮询）。详情见 `DOC-CODE-CALIBRATION-2026-09-15.html`。这些项在 v3 重设计文档中已诚实标注为「未落地」（§未落地段 / N-8 后端依赖），本句与之对齐修正。
+
 > **文档完整性**：核心任务流程的**执行模型 + 异常分支**已于 §6 补全（权限分支已由 §7 Enforcement 实现，见 §1.2）；各页面**四态**已于 §8.2 按双向钢人论证补充；**用户侧验收（按目标执行、达成目标）**已于 §10.2 定义；**自动化功能测试（API 各阶段组合）**范围已于 §10.3 锁定，实现推迟到后期独立自动化测试项目。当前无遗留 `【待补充】` 主块。唯一未决的架构项 `stage_runs` 已据双向钢人论证**确认不建**（见 [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) §6.3）。
 
 ---
@@ -141,13 +143,13 @@
   - `Parallel`（默认，**当前唯一已实现**）：阶段内子任务并发启动，互不等待；
   - `Serial`（**待实现**）：计划由 hub `buildSpec` 在各子任务间按序推导 `DependsOn` 链，严格先后；
   - **阶段完成条件**：该阶段所有子任务 `Succeeded` 或 `Skipped` 即视为完成；任一 `Failed` 且不可重试 → 阶段失败，下游不调度（DAG `Skipped`）。
-- **数据与执行解耦（推送模型，已确认）**：触发 `POST /runs` 时 hub 先把"任务落实到数据库"（`pipeline_runs` + 按 DAG 种子的 `task_runs` + `dispatch_jobs`），再把整份已解析 spec 经 WebSocket **推送**给目标环境 runner；runner 在集群内建 CRD 执行，**不直连 hub DB**，状态经 WS `status_update` 流回 hub 写回 `task_runs`。详见 [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) §6 / runner `STORY` §4.3。
+- **数据与执行解耦（推送模型，已确认）**：触发 `POST /pipelines/:id/runs` 时 hub 先把"任务落实到数据库"（`pipeline_runs` + 按 DAG 种子的 `task_runs` + `dispatch_jobs`），再把整份已解析 spec 经 WebSocket **推送**给目标环境 runner；runner 在集群内建 CRD 执行，**不直连 hub DB**，状态经 WS `status_update` 流回 hub 写回 `task_runs`。详见 [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) §6 / runner `STORY` §4.3。
 
 ### 6.1 用户旅程（正向主干）
 
 1. **配置参数**：组件详情 → config Tab → 增/改/删 ComponentConfig（key/value/isSecret/来源/环境）。
 2. **编排流水线**：服务树→组件→pipelines → 编排器阶段组横向流；加阶段时设 `executionMode`（串行/并行开关），加子任务（三态 Build/Release/Approval 抽屉表单）。
-3. **触发运行**：编排器 / 组件详情 → 触发对话框（选集群 + 注入本次 params，可预填参数管理 key）→ `POST /runs`。
+3. **触发运行**：编排器 / 组件详情 → 触发对话框（选集群 + 注入本次 params，可预填参数管理 key）→ `POST /pipelines/:id/runs`。
 4. **监控运行**：运行中心 / 下钻 → 运行监控（顶部**阶段进展条** + 子任务网格 + DAG + 进度轮询 2~3s + 重新投递 + 日志面板）。
 5. **审批卡点**：轮询发现 task `phase==WaitingApproval` → 审批卡 → `POST .../decision`。
 6. **灰度控制**：releases → 灰度（步骤器 + 健康指标 + 暂停/晋升/回滚，经 G4 端点）。
@@ -433,7 +435,7 @@
 - §10.3（API 组合测试）= 工程视角：**各阶段组合的编排/执行逻辑是否正确**；穷举组合、可重复、CI 可跑。两者互补，不互相替代。
 
 **测试对象与入口（直连 hub API，不经 UI）**
-- 复用 hub 的契约（`POST /pipelines` 编排、`POST /runs` 触发、`GET /runs/:id/progress` + `GET /runs/:id/stage-progress` 查进展，详见附 A 与 [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) §6.5）。
+- 复用 hub 的契约（`POST /pipelines` 编排、`POST /pipelines/:id/runs` 触发、`GET /runs/:id/progress` + `GET /runs/:id/stage-progress` 查进展，详见附 A 与 [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) §6.5）。
 - 绕开 console 前端，直接构造 pipeline spec（stages + tasks + `ExecutionMode` + task 类型 Build/Release/Approval），调 hub 触发，断言 `task_runs`/`pipeline_runs` 的最终态与阶段进展聚合符合 §6 执行模型。
 
 **组合维度（穷举的"各阶段组合"指这些）**
@@ -465,14 +467,14 @@
 | Cluster | `GET /clusters` | cluster.ts ✅ |
 | Environment | `GET /components/:componentId/environments` | environment.ts ✅ |
 | Pipeline | `GET /components/:componentId/pipelines` | pipeline.ts ⚠（旧假定单查端点，后端无） |
-| Stage | `POST/GET/DELETE /pipelines/:pipelineId/stages` `/stages/:id` | pipeline.ts ✅ |
+| Stage | `POST/GET/DELETE /pipelines/:id/stages` `/stages/:id` | pipeline.ts ✅ |
 | Task | `POST/GET/PUT/DELETE /stages/:stageId/tasks` `/tasks/:id` | pipeline.ts ✅ |
-| Run | `POST /pipelines/:pipelineId/runs` | run.ts ✅ |
-| Run | `GET /pipelines/:pipelineId/runs` `/runs/:id` `/runs/:id/tasks` | run.ts ✅ |
+| Run | `POST /pipelines/:id/runs` | run.ts ✅ |
+| Run | `GET /pipelines/:id/runs` `/runs/:id` `/runs/:id/tasks` | run.ts ✅ |
 | Run | `GET /runs/:id/progress` | run.ts ✅ |
 | Run | `GET /runs/:id/stage-progress` | run.ts（**确认新增**；后端按 `StageName` 聚合下发，见 [hub 数据模型 §6.3/§6.5](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)） |
-| Run | `POST /runs/:id/redispatch` | run.ts ✅ |
-| Run | `POST /pipelines/:pipelineId/runs/:runId/tasks/:taskName/decision` | run.ts ✅（后端 `h.Approve` 已实现） |
+| Run | `POST /pipelines/:id/runs/:id/redispatch` | run.ts ✅ |
+| Run | `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision` | run.ts ✅（后端 `h.Approve` 已实现） |
 | Artifact | `GET /components/:componentId/artifacts` `/artifacts/:id` `/download` `/DELETE` | artifact.ts ✅ |
 | Permission | `GET /component-roles`（P3c 新增，§7 组件角色选择器数据源）`POST/GET /components/:componentId/role-bindings` `/DELETE /role-bindings/:id` `GET /roles` `GET /users` | permission.ts ✅ |
 

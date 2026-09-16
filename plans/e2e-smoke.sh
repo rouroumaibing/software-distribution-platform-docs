@@ -66,6 +66,26 @@ RUN=$(echo "$R" | jqf "d['data']['id']")
   req GET "/runs/$RUN/tasks"
 }
 
+echo "===== 5.5) 发布 (releases, P0-1) ====="
+req GET "/releases"
+# 创建 Release 需要真实的 TaskRun（FK → task_runs）；从刚触发的运行里取，取不到则跳过创建/详情（路由仍已验证）。
+TRID=$(req GET "/runs/$RUN/tasks" | jqf "(d.get('data',{}).get('items',[]) or [{}])[0].get('id','')")
+if [ -n "${TRID:-}" ] && [ "$TRID" != "None" ]; then
+  R=$(req POST "/releases" "{\"taskRunId\":\"$TRID\",\"workloadRef\":\"e2e-workload\",\"phase\":\"Progressing\"}")
+  REL=$(echo "$R" | jqf "d['data']['id']")
+  [ -n "$REL" ] && [ "$REL" != "None" ] && {
+    req GET "/releases/$REL"
+    req PUT "/releases/$REL" "{\"phase\":\"Succeeded\"}"
+    req DELETE "/releases/$REL"
+  }
+fi
+
+echo "===== 5.6) 全局流水线列表 (P0-2) ====="
+req GET "/pipelines?page=1&pageSize=100"
+req GET "/pipelines?componentId=$COMP"
+req GET "/pipelines?kind=build"
+req GET "/pipelines?name=E2E流水线"
+
 echo "===== 6) 权限 ====="
 req GET "/users?page=1&pageSize=100"
 req GET "/roles"

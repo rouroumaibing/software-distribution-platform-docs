@@ -15,7 +15,7 @@
 |---|--------|--------|------|------|-----------|
 | B-01 | **Console 前端** | 服务树导航、流水线可视化编排、运行 DAG 监控、灰度监控页面 | ⬜ 未做 | hub §6:381 | Epic 2/4/5/6 |
 | B-02 | **实时日志流** | `log_chunk` 仅打印未落库；Runner 侧 Pod 日志抓取与发送未实现（类型/`LogChunkPayload` 已定义） | ⬜ 未做 | hub §6:383, runner §6:193 | Epic 7 |
-| B-03 | **审批下发闭环** | Hub 侧补齐 approve_task 决策发送：新增 `POST /pipelines/:pipelineId/runs/:runId/tasks/:taskName/decision`，经 `gateway.Approve` → `MessageApproveTask` 下发，接上 Runner 已就绪的 `ApproveTask` handler | ✅ 已完成 | hub gateway/run svc+handler + main | Epic 7 |
+| B-03 | **审批下发闭环** | Hub 侧补齐 approve_task 决策发送：新增 `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision`，经 `gateway.Approve` → `MessageApproveTask` 下发，接上 Runner 已就绪的 `ApproveTask` handler | ✅ 已完成 | hub gateway/run svc+handler + main | Epic 7 |
 | B-04 | **IngressCanary 路由** | `TrafficRoutingIngressCanary` 已记录，M1 降级为副本切分；专用 canary Ingress 资源为后续项 | ⬜ 未做 | runner §6:194 | Epic 6 |
 | B-05 | **HTTP/Prometheus 健康检查** | M1 实际只校验 `PodReady`；`HTTPProbe`/`PrometheusQuery` 引擎分支已留但未接真实探测 | ⬜ 未做 | runner §6:195 | Epic 6 |
 | B-06 | **Rollout 副本数读取真实 Deployment** | M1 默认 `total=2`，未读线上 Deployment 的 `spec.replicas` | ⬜ 未做 | runner §6:196 | — |
@@ -24,6 +24,11 @@
 | B-09 | **监控告警与降级开关验证** | 依赖后续 Epic 5 离线告警与 console 灰度监控；Prometheus 指标埋点未接入 | ⬜ 未做 | hub §5:374, runner §5:187, hub §3:66 | Epic 5 |
 | B-10 | **QA 负责人待补** | Story 责任人 QA 字段、（3-Corner 澄清）QA 待补 | ⬜ 待补 | hub §1:13, hub §5:370 | 协作流程 |
 | B-11 | **主规格细化项** | 审批超时 / 生产强审批 / 产物签名下载 / 版本对比 / 自定义角色等主规格 ⬜ 项 | ⬜ 未做 | hub §6:384 | 多 Epic |
+| B-12 | **后端 DELETE 级联校验** | `services`/`components` 的 Delete handler 无级联校验（`catalog/service/service.go:31`、`component/service/component.go:98` 均 TODO 直删）；`pipelines` 已校验但与 N-5 契约语义不符（应仅拦 running/waiting）；`APIError` 无 `reasons[]` 字段 → 契约 `409 + {reasons}` 无法表达。计划见 `hub/DELETE-CONTRACT.md` §4 | ⬜ 未做 | DELETE-CONTRACT §4 | N-15 / N-5 |
+| B-13 | **环境分组落库** | console 环境页/配置页左侧的"分组（类生产/生产）"只存在于原型内存（`ENV[comp].groups`），hub 无落库位置。已拍板"需要落库"：新表 `environment_groups` + `environments.group_id`（可空）。DDL + 删除语义 + gate 见 `hub/DATA-MODEL.md` §8 | ⬜ 未做 | DATA-MODEL §8 | 环境/配置 |
+| B-14 | **`component_config_history` 去 FK + 快照列** | `environment_id` 现为 `NO ACTION` FK（`0002_component_management.sql:93`）→ 删环境若历史表有该环境行则 **FK 500**；而 `component_configs.environment_id` 是 `ON DELETE CASCADE` → 同一操作两种结果。且审计表无环境快照 → 溯源不健全。方案：去 FK + 加 `environment_key` 快照列（详 `DELETE-CONTRACT.md` §6.6-2） | ⬜ 未做 | DELETE-CONTRACT §6.6-2 | 配置审计 |
+| B-15 | **stages/templates 软删标记 + 父存在性校验 + `pipelines` 唯一约束** | (a) `pipeline_stages`/`pipeline_task_templates` 无 `deleted_at`，pipeline 软删后其行物理留下（且 cascade 不触发）→ 孤儿可见固定通道；(b) `StageHandler.Create`/`List` **不校验父存在**，可在已软删 pipeline 下新建阶段；(c) `pipelines` 的 `unique(component_id,name)` 不含 `deleted_at` → 软删后建不回同名（500） | 🟡 **(a)(b)(c) 已落地（2026-09-16）**；`deleted_at` 待拍板 | DELETE-CONTRACT §6.6-3 | 流水线定义 |
+| B-16 | **Artifact 治理（源头 + 对账）** | (a) `_ = s.store.Delete()` 吞错无重试；(b) hub **无任何 GC**，`expires_at` 全仓无读取点（DDL 注释承诺的后台清理任务不存在）；(c) `artifacts.component_id` 是 cascade 但 components 软删 → 每次删组件批量留孤儿（行 + 对象）。顺序：先堵源头（级联 + 清理标记 + `expires_at` 生效），后做对账且**仅报告不自动删** | ⬜ 未做 | DELETE-CONTRACT §6.6-4 | 产物管理 |
 
 ---
 
@@ -42,10 +47,13 @@
 
 ## 3. 汇总统计
 
-- **真实未做项**：11 项（B-01 ~ B-11），其中 🚧 半做 1 项（B-03 审批下发）、⬜ 未做 10 项。
+- **真实未做项**：16 项（B-01 ~ B-16）。其中 ✅ 已完成 2 项（B-03 审批下发；B-15 的 (a)(b)(c) 三项修复，2026-09-16）、🟡 部分完成 1 项（B-15 仍余 `deleted_at` 待拍板）、⬜ 未做/待补 14 项。
+  - **本轮（2026-09-16）新增 4 项**：B-13 ~ B-16，来源为删除检查项梳理 + 三项双向钢人论证（`hub/DELETE-CONTRACT.md` §6.5~§6.7、`hub/DATA-MODEL.md` §8.8）。
+  - **本轮（2026-09-16）落地 1 项**：B-15 的 (a) 父存在性校验 + (b) `pipelines` 改 partial unique index + (c) 模型时间列映射，见 `hub/DELETE-CONTRACT.md` §6.6-3「落地记录」。
 - **过时期待办**：2 项（已在 Runner 实现中消化，待回填 Hub 文档）。
 - **优先级提示**（按 M1 验收阻塞程度）：
   - 阻塞 M1 端到端验收：B-07（端到端验证）、B-03（审批下发，若用审批任务）。
   - 影响可观测/质量基线：B-08（单测）、B-09（监控告警）。
-  - 功能完整性：B-01/B-02/B-04/B-05/B-06/B-11。
+  - **数据模型/一致性（本轮新增，建议紧随 B-13）**：B-14（config_history 快照列，消除"删环境随机 500"）、B-15（**仅剩** stages/templates 补 `deleted_at`，待"是否支持恢复已删流水线结构"拍板）、B-16（artifacts 源头治理）。
+  - 功能完整性：B-01/B-02/B-04/B-05/B-06/B-11/B-12/B-13。
   - 协作流程：B-10（QA 待补）。

@@ -8,11 +8,15 @@
   结构契约核对（本原型须体现的硬性设计决策）：
   1) 左栏"精简 + 有界"：**恒 5 项** —— 总览 / 服务树 / 运行中心 / 用户与权限 / 集群。
      不放 Org→Service→Component 全量树，也不放任何随资源增长的列表（如"最近访问"）；
-     跨组件浏览统一收在"运行中心"的三个视图(运行/流水线/发布)内  ✔
+     跨组件浏览统一收在"运行中心"的两个视图(运行/发布)内；运行实例以「流水线名称」为主标识、附「流水线ID(uuid)」，点名称看该流水线运行详情  ✔
   2) 全局搜索：顶栏搜索 = 任意资源直达主路径(服务端 GET /search?q=)，替代"树里找"  ✔
-  3) 服务树独立页(/catalog)：懒加载(展开才请求子层) + 服务端搜索 + 虚拟滚动(≥200 节点) + master-detail  ✔
-  4) 组件详情 Tab 收敛：6 主 Tab(概览/交付/配置/制品/权限/日志)，交付含子 Tab(流水线/运行/发布)，配置含子 Tab(参数/环境)  ✔
-  5) 流水线 CRUD：新建入口 + 列表(编排/删除) + 编辑器工具条(保存/触发/删除) + 删除强确认(影响面)  ✔
+  3) 服务树独立页(/catalog)：懒加载(展开才请求子层) + 服务端搜索 + 虚拟滚动(≥200 节点) + master-detail；
+     新建/删除为"功能型"(非示意)：根级「＋ 新建 Org」+ 节点 hover「＋」真落库(org→service→component)；
+     删除不走树内联图标，统一在右侧详情面板(输入名称二次确认 + 后端 verdict 真校验，通过才移除)；编辑文案按节点类型(Org/Service/组件)  ✔
+  4) 组件详情 Tab：概览/交付/配置/环境/制品/权限/日志（环境独立为顶级 Tab）；交付含子 Tab(流水线/运行/发布)；配置=左侧环境选择+右侧 YAML(导入/导出/编辑/保存)；环境=左侧环境树+右侧对接配置+测试对接；
+     删除入口：分组**仅当为空**时在树内「＋」右侧露出「－」删除分组（非空分组无删除入口）；环境删除在右侧详情面板**右上角「删除」**；两者均走强确认 + 后端 verdict；
+     环境展示与服务树**同一套树行(.tnode/.tree)**：分组=父节点(chev 折叠 + hover「＋」新建环境)，环境=叶子子节点(状态 dot)；配置页左侧环境选择复用同一棵树(SSOT)  ✔
+  5) 流水线 CRUD：新建入口 + 列表(运行/编辑/删除，列表仅存在于组件详情·交付·流水线) + 编辑器工具条(保存/触发/删除) + 删除强确认(后端 verdict)  ✔
   6) 总览指挥中心：待办(可点) + KPI + 最近运行(全局) + 异常集群条  ✔
   7) 双主题：明/暗切换 + 灰阶开关；状态=图标+文字+色  ✔
   8) 四态演示：组件→交付→流水线 列表可切 空/加载/错误/成功  ✔
@@ -91,6 +95,11 @@ a{color:var(--accent);text-decoration:none;cursor:pointer}
 .tnode .dot{width:6px;height:6px;border-radius:50%;background:var(--text-sub);flex:0 0 6px}
 .tnode.svc .dot{background:var(--accent)}
 .tnode .lazy{font-size:10.5px;color:var(--text-sub);opacity:.75;margin-left:auto;padding-left:8px}
+.tnode-actions{margin-left:auto;display:flex;gap:4px;opacity:0;transition:opacity .15s;padding-left:8px}
+.tnode:hover .tnode-actions{opacity:1}
+.tnode-actions .tbtn{font:inherit;font-size:12px;line-height:1;border:1px solid var(--hairline);background:var(--surface);color:var(--text-sub);border-radius:6px;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.tnode-actions .tbtn:hover{border-color:var(--accent);color:var(--accent)}
+.tnode-actions .tbtn-del:hover{border-color:var(--fail-fg);color:var(--fail-fg)}
 /* 树容器：自身滚动 + 虚拟滚动窗口 */
 .treepane{max-height:420px;overflow:auto;padding:10px 12px;border-bottom:1px solid var(--hairline-2)}
 .treepane.tall{max-height:none}
@@ -120,6 +129,22 @@ a{color:var(--accent);text-decoration:none;cursor:pointer}
 .tbtn:hover{background:var(--surface-2);color:var(--text)}
 .tbtn.on{background:var(--accent-soft);color:var(--accent);border-color:transparent}
 .tbtn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8}
+/* 右上角账户菜单（头像 + 点击展开下拉） */
+.usermenu{position:relative;display:inline-flex;align-items:center}
+.avatar-btn{border:none;background:none;cursor:pointer;padding:0;border-radius:50%;display:inline-flex;line-height:0}
+.avatar-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.avatar{border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:700}
+.usermenu-drop{position:absolute;top:calc(100% + 12px);right:0;min-width:188px;background:var(--surface);border:1px solid var(--hairline);
+  border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:8px;z-index:60}
+.usermenu-drop[hidden]{display:none}
+.um-head{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px}
+.um-name{font-size:13.5px;font-weight:600;color:var(--text)}
+.um-mail{font-size:11.5px;color:var(--text-sub)}
+.um-item{padding:9px 10px;border-radius:8px;font-size:13.5px;color:var(--text);cursor:pointer;user-select:none}
+.um-item:hover{background:var(--surface-2)}
+.um-item.danger{color:var(--fail-fg)}
+.um-item.danger:hover{background:var(--fail-bg)}
+.um-sep{height:1px;background:var(--hairline);margin:5px 4px}
 .content{flex:1;overflow-y:auto;padding:24px 28px 60px}
 .wrap{max-width:1280px;margin:0 auto}
 
@@ -195,13 +220,12 @@ a{color:var(--accent);text-decoration:none;cursor:pointer}
 
 /* pipeline editor */
 .flow{display:flex;gap:0;align-items:stretch;overflow-x:auto;padding:6px 2px 14px}
-.stage{flex:0 0 230px;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);padding:12px;margin-right:30px;position:relative;box-shadow:var(--shadow)}
+.stage{flex:0 0 264px;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);padding:12px;margin-right:30px;position:relative;box-shadow:var(--shadow)}
 .stage:last-child{margin-right:0}
 .stage::after{content:"→";position:absolute;right:-24px;top:50%;transform:translateY(-50%);color:var(--text-sub);font-size:17px}
 .stage:last-child::after{display:none}
-.stage-head{display:flex;align-items:center;gap:7px;font-weight:650;font-size:13.5px;margin-bottom:10px}
+.stage-head{display:flex;flex-wrap:wrap;align-items:center;gap:7px;font-weight:650;font-size:13.5px;margin-bottom:10px}
 .stage-no{width:20px;height:20px;border-radius:6px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-size:11px;font-weight:700}
-.mode{margin-left:auto;font-size:11px;color:var(--text-sub);border:1px solid var(--hairline);border-radius:6px;padding:1px 7px;cursor:pointer}
 .task{display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--hairline-2);border-radius:9px;padding:8px 10px;margin-bottom:7px;font-size:13px;cursor:pointer}
 .task:hover{border-color:var(--accent)}
 .task .ti{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:12px;flex:0 0 22px;background:var(--surface-3)}
@@ -210,6 +234,17 @@ a{color:var(--accent);text-decoration:none;cursor:pointer}
 .task:hover .tacts{display:flex}
 .add-task{width:100%;border:1px dashed var(--hairline);background:none;color:var(--text-sub);border-radius:9px;padding:7px;font-size:12.5px;cursor:pointer;font-family:inherit}
 .add-task:hover{border-color:var(--accent);color:var(--accent)}
+/* 编排页：阶段头（名称可编辑 + 前移/后移/删除/并行↔串行） */
+.stage-name-input{border:1px solid var(--hairline);background:var(--surface-2);border-radius:6px;padding:2px 6px;font:inherit;font-weight:650;font-size:13px;width:90px;color:var(--text);min-width:0}
+.stage-name-input:focus{outline:none;border-color:var(--accent)}
+.stage-acts{display:flex;gap:4px;margin-left:auto}
+.mini{border:1px solid var(--hairline);background:var(--surface);color:var(--text-sub);border-radius:6px;padding:2px 7px;font-size:11px;cursor:pointer;font-family:inherit;line-height:1.4}
+.mini:hover{border-color:var(--accent);color:var(--accent)}
+.mini:disabled{opacity:.4;cursor:not-allowed}
+.mini.danger:hover{border-color:var(--fail-fg);color:var(--fail-fg)}
+.task.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.task .tacts .link{font-size:11.5px}
+.code-block{max-height:360px;overflow:auto;background:var(--surface-2);border:1px solid var(--hairline);border-radius:10px;padding:14px;margin-top:10px;font-size:12.5px;line-height:1.6;white-space:pre}
 .toolbar2{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
 .toolbar2 .spacer{flex:1}
 
@@ -244,6 +279,21 @@ a{color:var(--accent);text-decoration:none;cursor:pointer}
 .notebar li{margin:4px 0;line-height:1.55}
 .notebar .close{margin-left:auto;cursor:pointer;opacity:.7;background:none;border:none;font:inherit;color:inherit}
 .master{display:grid;grid-template-columns:290px 1fr;gap:18px}
+/* ===== 配置（环境选择 + YAML）与环境管理 ===== */
+.config-split{display:flex;gap:16px;align-items:flex-start;margin-top:16px}
+.env-list,.env-tree{flex:0 0 248px;width:248px;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);padding:10px;align-self:stretch}
+.env-list-h{font-size:12px;color:var(--text-sub);margin:2px 6px 8px}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:0 0 auto}
+.dot.succeeded{background:var(--succ-fg)} .dot.paused{background:var(--warn-fg)} .dot.unknown{background:var(--pend-fg)}
+.yaml-wrap{flex:1;min-width:0;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);display:flex;flex-direction:column;overflow:hidden}
+.yaml-editor{width:100%;min-height:440px;border:none;outline:none;resize:vertical;padding:14px;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--text);background:var(--surface-2);box-sizing:border-box}
+/* 环境树 = 与服务树同一套树行（.tnode / .tree），分组是父节点、环境是叶子子节点 */
+.env-tree .tnode,.env-list .tnode{padding:5px 8px;font-size:13px}
+.env-tree .tnode .tlabel,.env-list .tnode .tlabel{overflow:hidden;text-overflow:ellipsis}
+.env-tree .tree,.env-list .tree{margin-top:2px}
+.env-tree .tnode-fake,.env-list .tnode-fake{color:var(--text-sub);cursor:default}
+.block{width:100%;text-align:left}
+.env-detail{flex:1;min-width:0}
 </style>
 </head>
 <body>
@@ -260,6 +310,20 @@ a{color:var(--accent);text-decoration:none;cursor:pointer}
         <button class="tbtn" id="noteBtn" title="显示/隐藏设计备注（后端依赖与待确认项，仅评审用）">ⓘ 设计备注</button>
         <button class="tbtn" id="themeBtn" title="切换明/暗主题"></button>
         <button class="tbtn" id="grayBtn" title="灰阶模式（验证状态是否仍可辨）">灰阶</button>
+        <div class="usermenu" id="usermenu">
+          <button class="avatar-btn" id="userBtn" title="账户（点击展开）">
+            <span class="avatar" style="width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700">ZS</span>
+          </button>
+          <div class="usermenu-drop" id="userDrop" hidden>
+            <div class="um-head">
+              <span class="avatar" style="width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:13px;font-weight:700">ZS</span>
+              <div><div class="um-name">张三</div><div class="um-mail">zhangsan@sdp.local</div></div>
+            </div>
+            <div class="um-item" data-user-act="profile">个人中心</div>
+            <div class="um-sep"></div>
+            <div class="um-item danger" data-user-act="logout">退出</div>
+          </div>
+        </div>
       </div>
     </header>
     <main class="content" id="content"></main>
@@ -285,22 +349,22 @@ const svg = (n)=>`<svg viewBox="0 0 24 24">${ICON[n]||''}</svg>`;
 
 /* ============ data (中性占位示例) ============ */
 const TREE = [
-  {id:'o1', label:'platform-eng', children:[
-    {id:'s1', label:'svc-a', children:[{id:'c1', label:'comp-web',comp:1},{id:'c2', label:'comp-api',comp:1}]},
-    {id:'s2', label:'svc-b', children:[{id:'c3', label:'comp-worker',comp:1},{id:'c4', label:'comp-gateway',comp:1}]},
-    {id:'s4', label:'svc-c', children:[{id:'c6', label:'comp-cron',comp:1}]},
+  {id:'o1', label:'platform-eng', type:'org', children:[
+    {id:'s1', label:'svc-a', type:'service', children:[{id:'c1', label:'comp-web', type:'component', comp:1, uuid:'f47ac10b-58cc-4372-a567-0e02b2c3d479'},{id:'c2', label:'comp-api', type:'component', comp:1, uuid:'6ba7b810-9dad-11d1-80b4-00c04fd430c8'}]},
+    {id:'s2', label:'svc-b', type:'service', children:[{id:'c3', label:'comp-worker', type:'component', comp:1, uuid:'6ba7b811-9dad-11d1-80b4-00c04fd430c9'},{id:'c4', label:'comp-gateway', type:'component', comp:1, uuid:'6ba7b812-9dad-11d1-80b4-00c04fd430ca'}]},
+    {id:'s4', label:'svc-c', type:'service', children:[{id:'c6', label:'comp-cron', type:'component', comp:1, uuid:'6ba7b813-9dad-11d1-80b4-00c04fd430cb'}]},
   ]},
-  {id:'o2', label:'data-platform', children:[
-    {id:'s3', label:'svc-data', children:[{id:'c5', label:'comp-etl',comp:1}]},
-    {id:'s5', label:'svc-ml', children:[{id:'c7', label:'comp-train',comp:1}]},
+  {id:'o2', label:'data-platform', type:'org', children:[
+    {id:'s3', label:'svc-data', type:'service', children:[{id:'c5', label:'comp-etl', type:'component', comp:1, uuid:'6ba7b814-9dad-11d1-80b4-00c04fd430cc'}]},
+    {id:'s5', label:'svc-ml', type:'service', children:[{id:'c7', label:'comp-train', type:'component', comp:1, uuid:'6ba7b815-9dad-11d1-80b4-00c04fd430cd'}]},
   ]},
 ];
 const RUNS = [
-  {id:'run-8f21', pipeline:'comp-web / 日常流水线', by:'张三', phase:'succeeded', dur:'2m14s', at:'09-14 19:02'},
-  {id:'run-7c04', pipeline:'comp-api / 生产发布', by:'李四', phase:'running', dur:'52s', at:'09-14 19:18'},
-  {id:'run-6b90', pipeline:'comp-worker / 版本归档', by:'王五', phase:'failed', dur:'1m03s', at:'09-14 18:47'},
-  {id:'run-5a11', pipeline:'comp-web / 转测流水线', by:'张三', phase:'waiting', dur:'—', at:'09-14 18:31'},
-  {id:'run-4e77', pipeline:'comp-etl / 日常流水线', by:'赵六', phase:'succeeded', dur:'3m40s', at:'09-14 18:12'},
+  {id:'run-8f21', pid:'pl-3f9a2c7e-1b44-4d2a-9c11-7e2f0a5b8c33', pipeline:'comp-web / 日常流水线', by:'张三', phase:'succeeded', dur:'2m14s', at:'09-14 19:02'},
+  {id:'run-7c04', pid:'pl-9b21de04-2c88-4a13-8f55-1d77c4e9a120', pipeline:'comp-api / 生产发布', by:'李四', phase:'running', dur:'52s', at:'09-14 19:18'},
+  {id:'run-6b90', pid:'pl-5c70a1f2-3e90-4b62-9d33-2a88b1c7e045', pipeline:'comp-worker / 版本归档', by:'王五', phase:'failed', dur:'1m03s', at:'09-14 18:47'},
+  {id:'run-5a11', pid:'pl-7d11bf83-4f22-4c50-8e77-3b99d2a6c158', pipeline:'comp-web / 转测流水线', by:'张三', phase:'waiting', dur:'—', at:'09-14 18:31'},
+  {id:'run-4e77', pid:'pl-2e34cc91-5a11-4d39-8b21-4c00e3f7d269', pipeline:'comp-etl / 日常流水线', by:'赵六', phase:'succeeded', dur:'3m40s', at:'09-14 18:12'},
 ];
 const PIPELINES = [
   {id:'p1', name:'日常流水线', comp:'comp-web', kind:'build', ver:3, last:'09-14 19:02'},
@@ -320,12 +384,155 @@ const badge = (p)=>{const m=PH[p]||PH.pending;return `<span class="badge ${m[0]}
 /* ============ state ============ */
 const S = {
   page:'dashboard', theme:'light', gray:false, collapsed:false,
-  open:{o1:true,s1:true}, comp:'comp-web',
-  compTab:'delivery', sub:{delivery:'pipelines', configure:'params'},
-  plState:'success', editorName:'日常流水线', catq:'', notes:false,
+  open:{o1:true,s1:true}, comp:'comp-web', catSel:'c1',
+  compTab:'delivery', sub:{delivery:'pipelines'}, envGroup:'', envName:'', envEdit:false, collapsedGroups:[],
+  plState:'success', editorName:'日常流水线', editorKind:'build', editorDesc:'', editorStages:[], editorSel:null, catq:'', notes:false,
   /* 运行中心的三个视图（跨组件巡视统一入口，不再是左栏三个独立菜单） */
   runTab:'runs', runFilter:'all',
 };
+
+/* ============ 流水线编排：编辑器状态（阶段可前后移动、子任务上下移动、并行↔串行切换） ============ */
+/* 按流水线名存结构图；进入编排页时载入，保存时写回。hub 模型映射见 NOTE.editor：
+   stage = pipeline_stages(sequence 顺序执行)；stage 内 task = pipeline_task_templates(displayOrder)，
+   executionMode(parallel/serial) 控制 stage 内任务是并行还是串行。 */
+const PIPELINE_GRAPHS = {
+  '日常流水线':{kind:'build', desc:'编译、构建镜像与单元自测', stages:[
+    {name:'构建', mode:'parallel', tasks:[
+      {type:'Build', label:'compile & test', image:'localhost:5000/toolchain/go:1.22', cmd:'go build ./... && go test ./...', args:'', timeout:'600'},
+      {type:'Build', label:'docker build', image:'docker:24', cmd:'docker build -t ${comp}:${VERSION} .', args:'', timeout:'600'}]},
+    {name:'测试', mode:'parallel', tasks:[
+      {type:'Build', label:'pytest -q', image:'localhost:5000/toolchain/python:3.12', cmd:'pytest -q', args:'', timeout:'300'}]},
+  ]},
+  '版本归档':{kind:'release', desc:'归档发布产物', stages:[
+    {name:'归档', mode:'serial', tasks:[
+      {type:'Release', label:'helm upgrade '+S.comp, image:'', cmd:'', args:'', timeout:''}]},
+  ]},
+  '生产发布':{kind:'release', desc:'灰度发布到生产', stages:[
+    {name:'发布', mode:'parallel', tasks:[
+      {type:'Release', label:'helm upgrade '+S.comp, image:'', cmd:'', args:'', timeout:''},
+      {type:'Approval', label:'人工卡点', image:'', cmd:'', args:'', timeout:''}]},
+  ]},
+  '转测流水线':{kind:'custom', desc:'打包并转测', stages:[
+    {name:'转测', mode:'serial', tasks:[
+      {type:'Build', label:'打包转测镜像', image:'', cmd:'', args:'', timeout:''}]},
+  ]},
+};
+function enterEditor(name){
+  const g = PIPELINE_GRAPHS[name];
+  const p = PIPELINES.find(x=>x.name===name);
+  S.editorName = name;
+  S.editorKind = g ? g.kind : (p ? p.kind : 'build');
+  S.editorDesc = g ? (g.desc||'') : (p ? (p.desc||'') : '');
+  S.editorStages = g ? JSON.parse(JSON.stringify(g.stages)) : [{name:'阶段 1', mode:'parallel', tasks:[]}];
+  S.editorSel = null; S.editorDirty = true;
+  go('editor');
+}
+/* 保存草稿：写回 PIPELINE_GRAPHS 与内存 PIPELINES（kind/desc/last/ver） */
+function savePipelineDraft(){
+  const name = S.editorName;
+  PIPELINE_GRAPHS[name] = {kind:S.editorKind, desc:S.editorDesc, stages:S.editorStages};
+  let p = PIPELINES.find(x=>x.name===name);
+  if(!p){ p = {id:'p'+Date.now(), name, comp:S.comp, kind:S.editorKind, ver:0, last:'', synced:false}; PIPELINES.push(p); }
+  p.kind = S.editorKind; p.desc = S.editorDesc;
+  const now = new Date(), pad = n=>String(n).padStart(2,'0');
+  p.last = `${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  p.ver = (p.ver||0) + 1;
+  S.editorDirty = false;
+}
+/* 编排完成 → 生成请求体：映射到 hub 流水线创建(POST) / 更新(PUT) 接口 */
+function buildPipelineRequest(){
+  const p = PIPELINES.find(x=>x.name===S.editorName);
+  const exists = p && p.synced !== false;          // 已在 hub 的流水线 → 更新；本次新建 → 创建
+  const body = {
+    componentId: curUuid(), name: S.editorName, kind: S.editorKind,
+    description: S.editorDesc || undefined,
+    stages: S.editorStages.map((st,i)=>({
+      name: st.name, sequence: i+1, executionMode: st.mode,
+      tasks: st.tasks.map((t,j)=>{
+        const o = {type:t.type, name:t.label, displayOrder:j+1};
+        if(t.image)     o.image = t.image;
+        if(t.cmd)       o.command = [t.cmd];
+        if(t.args)      o.args = [t.args];
+        if(t.timeout)   o.timeoutSeconds = parseInt(t.timeout,10) || undefined;
+        return o;
+      })
+    }))
+  };
+  return {method: exists ? 'PUT' : 'POST', url: exists ? `/api/v1/pipelines/${p.id}` : '/api/v1/pipelines', body};
+}
+function yamlScalar(v){
+  if(typeof v==='number') return String(v);
+  if(typeof v==='boolean') return String(v);
+  const s = String(v);
+  if(s==='' || !/^[A-Za-z0-9_./@-]+$/.test(s)) return JSON.stringify(s);
+  return s;
+}
+function objToYaml(obj, indent){
+  indent = indent || '';
+  const pad = '  ';
+  if(Array.isArray(obj)){
+    if(obj.length===0) return indent+'[]\n';
+    let out = '';
+    for(const item of obj){
+      if(item && typeof item==='object' && !Array.isArray(item)){
+        const inner = objToYaml(item, indent+pad);
+        out += inner.replace(indent+pad, indent+'- ');   // 首行加 "- " 前缀
+      } else { out += indent+'- '+yamlScalar(item)+'\n'; }
+    }
+    return out;
+  }
+  if(obj && typeof obj==='object'){
+    const keys = Object.keys(obj);
+    if(keys.length===0) return indent+'{}\n';
+    let out = '';
+    for(const k of keys){
+      const val = obj[k];
+      if(val===undefined || val===null) continue;
+      if(val && typeof val==='object') out += indent+k+':\n'+objToYaml(val, indent+pad);
+      else out += indent+k+': '+yamlScalar(val)+'\n';
+    }
+    return out;
+  }
+  return indent+yamlScalar(obj)+'\n';
+}
+/* 弹出请求体预览（JSON / YAML 切换 + 发送到 hub） */
+function openRequestModal(){
+  const {method, url, body} = buildPipelineRequest();
+  const json = JSON.stringify(body, null, 2);
+  const yaml = objToYaml(body);
+  const renderBody = (fmt)=> `<pre class="code-block mono">${esc(fmt==='yaml'?yaml:json)}</pre>`;
+  openModal(`<h3>流水线请求体</h3>
+    <div class="mb">
+      <div>编排完成，生成的请求体将发送到 hub 流水线接口：</div>
+      <div style="margin-top:8px"><span class="chip">${method}</span> <b class="mono">${url}</b></div>
+      <div class="sub" style="margin-top:7px">hub 当前 <span class="mono">POST /pipelines</span> 扁平创建、阶段/任务经 <span class="mono">/pipelines/:id/stages</span> 级联落库；console 侧发出完整 DAG，由 console 展开为多次调用（见设计备注 · 编辑器）。</div>
+    </div>
+    <div class="seg" id="reqFmt">
+      <button class="on" data-req-fmt="json">JSON</button>
+      <button data-req-fmt="yaml">YAML</button>
+    </div>
+    <div id="reqBody">${renderBody('json')}</div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="reqBack">返回列表</button>
+      <button class="btn btn-primary" id="reqSend">发送到 hub</button>
+    </div>`,
+    null
+  );
+  const m = document.getElementById('modal');
+  m.querySelector('#reqFmt').addEventListener('click', (e)=>{
+    const b = e.target.closest('[data-req-fmt]'); if(!b) return;
+    m.querySelectorAll('#reqFmt button').forEach(x=>x.classList.toggle('on', x===b));
+    document.getElementById('reqBody').innerHTML = renderBody(b.dataset.reqFmt);
+  });
+  m.querySelector('#reqSend').addEventListener('click', ()=>{
+    const pp = PIPELINES.find(x=>x.name===S.editorName); if(pp) pp.synced = true;
+    toast(`${method} ${url}（原型占位发送）`);
+    closeModal();
+  });
+  m.querySelector('#reqBack').addEventListener('click', ()=>{
+    S.compTab='delivery'; S.sub.delivery='pipelines'; closeModal(); go('component');
+  });
+}
 
 /* ============ rail（精简且有界：恒 5 项，与资源数量无关） ============ */
 /* 主区（不挂分组标签）：总览 → 服务树 → 运行中心，顺序 = 用户心智顺序（看态势 → 找资源 → 巡视运行）。
@@ -350,11 +557,6 @@ function renderRail(){
       ${MAIN_NAV.map(([k,l,ic])=>`<div class="nav-item ${navActive(k)}" data-nav="${k}"><span class="ni">${svg(ic)}</span><span class="nlabel">${l}</span></div>`).join('')}
       <div class="rgroup nlabel" style="margin-top:16px">平台管理</div>
       ${ADMIN_NAV.map(([k,l,ic])=>`<div class="nav-item ${navActive(k)}" data-nav="${k}"><span class="ni">${svg(ic)}</span><span class="nlabel">${l}</span></div>`).join('')}
-    </div>
-    <div class="rail-foot">
-      <span class="avatar" style="width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:700">ZS</span>
-      <span class="nlabel" style="font-size:13px">张三</span>
-      <span class="nlabel" style="margin-left:auto;color:var(--text-sub);font-size:12px">退出</span>
     </div>`;
 }
 /* 左栏规模不变量：条目数 = 3(主区:总览/服务树/运行中心) + 2(平台管理:用户与权限/集群) = 恒 5，与组件数量无关 */
@@ -365,9 +567,7 @@ const NOTE = {
   dashboard:['KPI 与「最近运行」所需的全局运行端点 <span class="mono">GET /runs</span> 已落地（支持 <span class="mono">page/pageSize/phase</span>，附 A · N-1）；KPI 的时间窗/聚合口径仍待补。',
              '「待我审批」的"待我"这层身份过滤需 <span class="mono">assignee=me</span>（附 A · N-2），未落地前退化按 <span class="mono">phase=WaitingApproval</span> 筛。'],
   runs:['「待我审批」当前只能按 <span class="mono">phase=WaitingApproval</span> 筛；按人过滤需 <span class="mono">assignee=me</span>（附 A · N-2）。',
-        '三视图 URL 形态已裁决并落地 = <span class="mono">/runs?view=runs|pipelines|releases&amp;phase=&amp;page=</span>（query，非嵌套子路由）；本原型以内存状态模拟该 query。论证与实现记录见文档 <b>附 B</b>（N-13 / B.9）。'],
-  'runs-pipelines':['hub 无全局流水线列表端点（<span class="mono">GET /pipelines</span> 只有按组件列，附 A · N-3）；实现版以服务树索引前端聚合兜底，全局端点落地后切换（附 B · B.9）。',
-             '<span class="mono">/pipelines</span> 的 CRUD 端点已核对存在（<span class="mono">POST /pipelines</span>、<span class="mono">GET/PUT/DELETE /pipelines/:id</span>、附 A · N-4）；删除语义（硬删/软删/保留历史）仍待拍板（附 A · N-5）。'],
+        '运行中心两视图 URL 形态 = <span class="mono">/runs?view=runs|releases&amp;phase=&amp;page=</span>（query，非嵌套子路由；流水线视图已于 2026-09-15 移除，N-13 的 ?view= 形态对余下两视图继续有效）。本原型以内存状态模拟该 query。见文档 <b>附 B</b>（N-13 / B.9）。'],
   'runs-releases':['hub 无全局发布列表端点（附 A · N-3）；实现版以服务树索引 + 扫描运行（取 <span class="mono">kind=release</span>）前端聚合兜底。',
              '本原型的「已暂停」筛选在实现版<b>刻意未提供</b>：<span class="mono">Paused</span> 是 Rollout 任务级状态，不在 PipelineRun 的 6 个 phase 枚举里，逐 run 查 tasks 才能判定（N+1）——等 <span class="mono">GET /releases?scope=global&amp;state=paused</span>（附 B · B.9）。'],
   catalog:['<b>本页不常驻左栏的理由</b>：组件数会持续增长，树放左栏会导致条目无界增长 + 首屏变慢。左栏条目数恒为 5，与资源数无关。',
@@ -375,17 +575,22 @@ const NOTE = {
            '搜索依赖 <span class="mono">GET /search?q=</span>（附 A · N-8）。',
            '节点数 ≥200 启用虚拟滚动窗口。'],
   component:['组件详情 Tab 由 9 项平铺收敛为 6 主 Tab + 2 组子 Tab；旧子路由保留 redirect 兼容 deep link。',
-             '「配置」= 参数 + 环境；「交付」= 流水线 + 运行 + 发布。'],
-  editor:['阶段间恒为依赖（前阶段完成才解锁）；阶段内按 <span class="mono">executionMode</span> 串行/并行。',
+             '「配置」= 参数 + 环境；「交付」= 流水线 + 运行 + 发布（流水线列表的唯一归属地；跨组件巡视不再单列流水线视图）。',
+             '详情页所有信息查询（概览 / 流水线 / 运行 / 发布 / 环境 / 参数 / 制品 / 权限 / 日志）统一以<b>组件 uuid</b> 为作用域主键——对齐 old 后端 <span class="mono">/api/component/:uuid/...</span>（<span class="mono">:uuid</span> 即组件主键，<span class="mono">CreateComponent</span> 生成 <span class="mono">uuid.New().String()</span>）：<span class="mono">GET /api/component/:uuid</span>、<span class="mono">/pipelines</span>、<span class="mono">/environments</span>、<span class="mono">/parameters/:environment_id</span>、<span class="mono">/products</span>、<span class="mono">/changes</span>。本原型以 <span class="mono">ComponentAPI</span> 内存模拟：入参统一为 uuid，内部按 uuid→label 解析后过滤，与后端"查询按 component_id(uuid) 过滤"一致。',
+             '<span class="mono">/pipelines</span> 的 CRUD 端点已核对存在（<span class="mono">POST /pipelines</span>、<span class="mono">GET/PUT/DELETE /pipelines/:id</span>、<span class="mono">GET /api/component/:uuid/pipelines</span>，附 A · N-4）；删除语义（硬删/软删/保留历史）仍待拍板（附 A · N-5）。',
+             '「新建流水线」在组件详情内触发：组件上下文已锁定为当前组件，对话框不再提供跨组件选择，POST /pipelines 的 componentId 直接取当前组件 uuid（数据库归属同一组件，不出现其它组件）。'],
+  editor:['阶段可前后移动（重排执行顺序）；阶段内子任务可上下移动（重排 displayOrder）；阶段内由 <span class="mono">executionMode</span>（并行/串行）一键切换（原静态「并行 ▾」已改为可点击切换）。',
+          '编排完成「保存」→ 生成请求体（JSON / YAML 可切换预览），映射到 hub 流水线接口：已在 hub 的流水线 = <span class="mono">PUT /api/v1/pipelines/:id</span>（更新），本次新建 = <span class="mono">POST /api/v1/pipelines</span>（创建）；请求体含 componentId / name / kind / description / stages[]（name / sequence / executionMode / tasks[]：type / name / displayOrder / image / command / args / timeoutSeconds）。',
+          '注意：hub 现 <span class="mono">POST /pipelines</span> 为扁平创建（仅 componentId / name / kind / description），阶段/任务经 <span class="mono">POST /pipelines/:id/stages</span> → <span class="mono">/stages/:id/tasks</span> 级联落库；console 侧发出完整 DAG，由 console 展开为多次调用（待拍：是否新增「整 DAG 一次提交」端点）。',
           '保存 = 阶段/任务的 <span class="mono">POST/PUT/DELETE</span>；流水线级删除见附 A · N-4 / N-5。',
           '现编辑器仅 <span class="mono">kind=build</span> 可编排，是否放开 release/custom 待定（附 A · N-7）。'],
   'admin-cluster':['集群健康来自 Runner 心跳；离线 Runner 重连后自动重放 Pending 任务。'],
   'admin-perm':['平台角色来自 Keycloak 组映射，仅平台管理员可见。'],
 };
-/* 运行中心承载三个视图，备注按当前视图出（评审信息与附 A 同源，一处不落） */
+/* 运行中心承载两个视图（运行/发布），备注按当前视图出（评审信息与附 A 同源，一处不落） */
 function noteKey(){
   if(S.page!=='runs') return S.page;
-  return S.runTab==='pipelines' ? 'runs-pipelines' : S.runTab==='releases' ? 'runs-releases' : 'runs';
+  return S.runTab==='releases' ? 'runs-releases' : 'runs';
 }
 function noteBar(page){
   const items = NOTE[page]; if(!items || !items.length) return '';
@@ -403,10 +608,6 @@ function pageDashboard(){
   return `<div class="wrap">
     <div class="row" style="align-items:flex-end">
       <div><div class="title">你好，张三 👋</div><div class="sub">跨集群运行态势与你的待办</div></div>
-      <div style="margin-left:auto" class="row">
-        <button class="btn btn-ghost" data-act="new-comp">＋ 新建组件</button>
-        <button class="btn btn-primary" data-act="trigger">▶ 触发运行</button>
-      </div>
     </div>
 
     <div class="warnbox">⚠ 1 个集群离线（kind-e2e-02），Runner 重连后将自动重放 Pending 任务。</div>
@@ -427,8 +628,8 @@ function pageDashboard(){
 
     <div class="h2">最近运行 <span class="spacer"></span><a class="link" data-nav="runs" style="font-size:12.5px;font-weight:500">查看全部 42 条 →</a></div>
     <div class="card flush"><table class="table">
-      <thead><tr><th>运行</th><th>组件 / 流水线</th><th>触发人</th><th>状态</th><th>耗时</th><th>开始时间</th></tr></thead>
-      <tbody>${RUNS.slice(0,3).map(r=>`<tr class="click" data-act="goto-run"><td class="mono">${r.id}</td><td>${r.pipeline}</td><td>${r.by}</td><td>${badge(r.phase)}</td><td>${r.dur}</td><td class="mono">${r.at}</td></tr>`).join('')}</tbody>
+      <thead><tr><th>流水线</th><th>流水线ID</th><th>组件</th><th>触发人</th><th>状态</th><th>耗时</th><th>开始时间</th></tr></thead>
+      <tbody>${RUNS.slice(0,3).map(r=>{ const sp=r.pipeline.split(' / '); return `<tr><td><a class="link" data-act="open-pl-runs" data-pname="${sp[1]}" data-pid="${r.pid}">${sp[1]}</a></td><td class="mono">${r.pid}</td><td>${sp[0]}</td><td>${r.by}</td><td>${badge(r.phase)}</td><td>${r.dur}</td><td class="mono">${r.at}</td></tr>`; }).join('')}</tbody>
     </table></div>
   </div>`;
 }
@@ -438,7 +639,7 @@ const todoCard = (ic,bg,fg,count,title,desc,to,toTab,toFilter)=>`<div class="car
   <div style="margin-left:auto;color:var(--text-sub)">→</div></div>`;
 
 /* 运行中心 = 跨组件巡视的唯一入口，内含三个视图；左栏不再为「流水线 / 发布」各占一项 */
-const RUN_VIEWS = [['runs','运行'],['pipelines','流水线'],['releases','发布']];
+const RUN_VIEWS = [['runs','运行'],['releases','发布']];
 const RUN_FILTERS = {runs:[['all','全部'],['running','运行中'],['failed','失败'],['waiting','待我审批']],
   releases:[['all','全部'],['running','进行中'],['paused','已暂停'],['succeeded','成功']]};
 
@@ -446,31 +647,26 @@ function pageRuns(){
   const tab = S.runTab;
   const filters = RUN_FILTERS[tab];
   const rows = tab==='releases' ? RELEASES.filter(r=>S.runFilter==='all'||r.phase===S.runFilter)
-             : tab==='runs'     ? RUNS.filter(r=>S.runFilter==='all'||r.phase===S.runFilter)
-             : PIPELINES;
+             : RUNS.filter(r=>S.runFilter==='all'||r.phase===S.runFilter);
+  const colN = tab==='runs'?7:6;
   let head, body;
-  if(tab==='pipelines'){
-    head = pipelineHead(true);
-    body = PIPELINES.map(p=>pipelineRow(p,true)).join('');
-  } else if(tab==='releases'){
+  if(tab==='releases'){
     head = `<tr><th>组件</th><th>环境</th><th>灰度步骤</th><th>健康度</th><th>状态</th><th></th></tr>`;
     body = rows.map(r=>`<tr><td><b>${r.comp}</b></td><td><span class="chip">${r.env}</span></td><td>${r.step}</td><td>${r.health}</td><td>${badge(r.phase)}</td>
         <td style="text-align:right"><button class="link">控制 →</button></td></tr>`).join('');
   } else {
-    head = `<tr><th>运行</th><th>组件 / 流水线</th><th>触发人</th><th>状态</th><th>耗时</th><th>开始时间</th></tr>`;
-    body = rows.map(r=>`<tr class="click" data-act="goto-run"><td class="mono">${r.id}</td><td>${r.pipeline}</td><td>${r.by}</td><td>${badge(r.phase)}</td><td>${r.dur}</td><td class="mono">${r.at}</td></tr>`).join('');
+    head = `<tr><th>流水线</th><th>流水线ID</th><th>组件</th><th>触发人</th><th>状态</th><th>耗时</th><th>开始时间</th></tr>`;
+    body = rows.map(r=>{ const sp=r.pipeline.split(' / '); const comp=sp[0], pname=sp[1];
+      return `<tr><td><a class="link" data-act="open-pl-runs" data-pname="${pname}" data-pid="${r.pid}">${pname}</a></td><td class="mono">${r.pid}</td><td>${comp}</td><td>${r.by}</td><td>${badge(r.phase)}</td><td>${r.dur}</td><td class="mono">${r.at}</td></tr>`; }).join('');
   }
-  const noHit = `<tr><td colspan="6" style="color:var(--text-sub);padding:22px 14px">无匹配记录</td></tr>`;
+  const noHit = `<tr><td colspan="${colN}" style="color:var(--text-sub);padding:22px 14px">无匹配记录</td></tr>`;
   return `<div class="wrap">
     <div class="row" style="align-items:flex-end">
-      <div><div class="title">运行中心</div><div class="sub">跨组件巡视 · 运行 / 流水线 / 发布</div></div>
-      ${tab==='pipelines'?`<div style="margin-left:auto"><button class="btn btn-primary" data-act="new-pl">＋ 新建流水线</button></div>`:''}
+      <div><div class="title">运行中心</div><div class="sub">跨组件巡视 · 运行 / 发布</div></div>
     </div>
     <div class="toolbar2" style="margin-top:18px">
       <span class="seg">${RUN_VIEWS.map(([k,l])=>`<button class="${tab===k?'on':''}" data-run-tab="${k}">${l}</button>`).join('')}</span>
       ${filters?`<span class="seg">${filters.map(([k,l])=>`<button class="${S.runFilter===k?'on':''}" data-run-filter="${k}">${l}</button>`).join('')}</span>`:''}
-      ${tab==='pipelines'?`<select class="input" style="width:170px"><option>全部组件</option><option>comp-web</option><option>comp-api</option></select>
-        <select class="input" style="width:140px"><option>全部类型</option><option>build</option><option>release</option><option>custom</option></select>`:''}
       <div class="spacer"></div><span class="hint">共 ${rows.length} 条</span>
     </div>
     <div class="card flush"><table class="table">
@@ -481,9 +677,12 @@ function pageRuns(){
 }
 
 /* 流水线行渲染：全局页(withComp) 与组件内列表共用，避免两处重复维护 */
-function pipelineRow(p, withComp){
+function pipelineRow(p, withComp, compPage){
+  const acts = compPage
+    ? `<button class="link" data-act="run-pl" data-name="${p.name}">运行</button> · <button class="link" data-act="open-pl" data-name="${p.name}">编辑</button> · <button class="link" style="color:var(--fail-fg)" data-act="del-pl" data-name="${p.name}">删除</button>`
+    : `<button class="link" data-act="open-pl" data-name="${p.name}">编排</button> · <button class="link" style="color:var(--fail-fg)" data-act="del-pl" data-name="${p.name}">删除</button>`;
   return `<tr><td><b>${p.name}</b></td>${withComp?`<td>${p.comp}</td>`:''}<td><span class="chip">${p.kind}</span></td><td>v${p.ver}</td><td class="mono">${p.last}</td>
-    <td style="text-align:right;white-space:nowrap"><button class="link" data-act="open-pl" data-name="${p.name}">编排</button> · <button class="link" style="color:var(--fail-fg)" data-act="del-pl" data-name="${p.name}">删除</button></td></tr>`;
+    <td style="text-align:right;white-space:nowrap">${acts}</td></tr>`;
 }
 function pipelineHead(withComp){
   return `<tr><th>名称</th>${withComp?'<th>所属组件</th>':''}<th>类型</th><th>版本</th><th>最近运行</th><th></th></tr>`;
@@ -497,10 +696,63 @@ function treeHtml(nodes, depth){
     const isComp = !!n.comp;
     const sub = hasC ? `<div class="tree" ${open?'':'style="display:none"'}>${treeHtml(n.children, depth+1)}</div>` : '';
     const lazy = (hasC && !open) ? `<span class="lazy">${n.children.length} 项 · 点开时加载</span>` : '';
+    const acts = `${!isComp?`<button class="tbtn" data-act="add-node" data-target="${n.id}" data-label="${n.label}" title="增加子节点">＋</button>`:''}`;
     return `<div class="tnode ${isComp?'comp':'svc'} ${isComp&&n.label===S.comp?'active':''}" data-node="${n.id}" data-label="${n.label}" data-comp="${isComp?1:0}">
       <span class="chev ${open?'open':''}">${hasC?'▶':''}</span>
-      <span class="dot"></span><span>${n.label}</span>${lazy}</div>${sub}`;
+      <span class="dot"></span><span class="tlabel">${n.label}</span>${lazy}<span class="tnode-actions">${acts}</span></div>${sub}`;
   }).join('');
+}
+/* 按 id 查找节点 + 拼出路径（仿 old 的 service_tree 路径展示） */
+function findNode(id, nodes, trail){
+  nodes = nodes||TREE; trail = trail||[];
+  for(const n of nodes){
+    const t=[...trail, n.label];
+    if(n.id===id) return {node:n, path:t};
+    if(n.children){ const r=findNode(id, n.children, t); if(r) return r; }
+  }
+  return null;
+}
+function nodePath(id){ const r=findNode(id); return r?r.path.join(' / '):'(未知路径)'; }
+/* 组件元信息：等同后端 GET /node 返回的字段，仅用于详情页展示，不参与删除判定 */
+const compPipelines = (id)=>PIPELINES.filter(p=>p.comp===id).length;
+const compEnvs = (id)=>RELEASES.filter(r=>r.comp===id).length;
+/* ===== 后端模拟（服务端权威判定，前端不持有此逻辑） =====
+   真实实现位于 hub 的 DeleteServiceTreeById：在事务内级联校验，
+   不满足则返回 409 + 结构化原因（逐层向上）。此处仅用前端全局数据模拟"数据库状态"，
+   用来演示"前端触发 → 后端判定 → 前端渲染 verdict"的契约。 */
+function mockDeleteNode(id){
+  const node = findNode(id)?.node;
+  if(!node) return {ok:false, reasons:['节点不存在']};
+  const reasons=[];
+  const collect=(n, prefix)=>{
+    prefix = prefix || n.label;
+    if(n.comp){
+      // 关键修正：组件 id(c1…) 与其 label(comp-web…) 不同，PIPELINES/RELEASES 以 label 关联，
+      // 故必须用 n.label 过滤，否则校验永远 0 命中、verdict 恒 ok（原型主打功能失效）。
+      const ps=compPipelines(n.label), es=compEnvs(n.label), w=[];
+      if(ps>0) w.push(`${ps} 条流水线`);
+      if(es>0) w.push(`${es} 个环境`);
+      if(w.length) reasons.push(`${prefix}：${w.join('、')}未清理`);
+    } else { (n.children||[]).forEach(c=>collect(c, `${prefix} / ${c.label}`)); }
+  };
+  collect(node);
+  return reasons.length ? {ok:false, reasons} : {ok:true};
+}
+/* 从 TREE 真正移除节点（含顶层 org）；等价于后端 DELETE 成功后前端刷新树。 */
+function removeNode(id){
+  const ti=TREE.findIndex(n=>n.id===id);
+  if(ti>=0){ TREE.splice(ti,1); return true; }
+  const dfs=(nodes)=>{
+    for(const n of nodes){
+      if(n.children){
+        const i=n.children.findIndex(c=>c.id===id);
+        if(i>=0){ n.children.splice(i,1); return true; }
+        if(dfs(n.children)) return true;
+      }
+    }
+    return false;
+  };
+  return dfs(TREE);
 }
 /* 服务端搜索的本地模拟：命中"任意层级"的节点，含其路径 */
 const SEARCH_HITS = [
@@ -526,10 +778,6 @@ function pageCatalog(){
     <div class="row" style="align-items:flex-end">
       <div><div class="title">服务树</div>
         <div class="sub">Org → Service → Component 的浏览与管理（<b>独立页</b>，不再常驻左栏）</div></div>
-      <div style="margin-left:auto" class="row">
-        <button class="btn btn-ghost" data-act="new-svc">＋ 新建 Service</button>
-        <button class="btn btn-primary" data-act="new-comp">＋ 新建组件</button>
-      </div>
     </div>
 
     <div class="master" style="margin-top:18px">
@@ -541,125 +789,320 @@ function pageCatalog(){
               style="border:none;background:none;outline:none;font:inherit;color:inherit;width:100%" />
           </div>
         </div>
+        <div style="padding:8px 12px;border-bottom:1px solid var(--hairline-2);display:flex;align-items:center;gap:8px">
+          <button class="btn btn-ghost btn-sm" data-act="add-org">＋ 新建 Org</button>
+          <span style="color:var(--text-sub);font-size:12px">顶层租户</span>
+        </div>
         <div class="treepane" id="treepane">${q?'<div class="rgroup" style="margin:0 0 6px">搜索结果</div>':''}${pane}</div>
         <div class="vhint">⚡ 懒加载：默认仅请求 <span class="mono">GET /orgs</span>；展开才请求 <span class="mono">/services</span>·<span class="mono">/components</span>
           <span style="margin-left:auto" class="mono">≥200 节点启用虚拟滚动</span></div>
       </div>
 
       <div class="card">
-        <div class="h2" style="margin-top:0">${S.catq?'搜索结果':'comp-web'} <span class="chip">${S.catq?'Search':'Component'}</span></div>
         ${S.catq
-          ? `<div class="card flush" style="box-shadow:none"><table class="table"><tbody>
+          ? `<div class="h2" style="margin-top:0">搜索结果 <span class="chip">Search</span></div>
+             <div class="card flush" style="box-shadow:none"><table class="table"><tbody>
                ${hits.length?hits.map(h=>`<tr class="click" data-node="hit" data-label="${h.n}" data-comp="${h.k==='组件'?1:0}"><td><b>${h.n}</b></td><td><span class="chip">${h.k}</span></td><td style="color:var(--text-sub)">${h.p}</td><td style="text-align:right"><button class="link">打开</button></td></tr>`).join(''):'<tr><td colspan="4" style="color:var(--text-sub)">无命中</td></tr>'}
              </tbody></table></div>`
-          : `<div class="row" style="margin-top:4px"><button class="btn btn-primary" data-nav="component">进入组件详情</button><button class="btn btn-ghost" data-act="edit-comp">编辑</button></div>
+          : (()=>{ const f=findNode(S.catSel), node=(f&&f.node)||TREE[0]||{label:'(暂无节点)',type:'org',children:[]};
+              const isComp=!!node.comp, kind=node.type==='component'?'Component':node.type==='service'?'Service':'Org';
+              const ps=isComp?compPipelines(node.label):0, es=isComp?compEnvs(node.label):0;
+              return `<div class="row" style="justify-content:space-between;align-items:center;gap:10px;margin-top:0">
+               <div class="h2" style="margin-top:0">${node.label} <span class="chip">${kind}</span></div>
+               <div class="row" style="margin-left:auto;gap:8px;flex:none">
+                 ${isComp?`<button class="btn btn-primary" data-nav="component">进入组件详情</button>`:''}
+                 <button class="btn btn-ghost" data-act="edit-node" data-type="${node.type}">${isComp?'编辑组件':node.type==='service'?'编辑 Service':'编辑 Org'}</button>
+                 <button class="btn btn-danger" data-act="del-detail" data-target="${node.id}" data-label="${node.label}">删除</button>
+               </div>
+             </div>
              <div class="h2">节点信息</div>
              <table class="table"><tbody>
-               <tr><td style="color:var(--text-sub);width:96px">路径</td><td class="mono">platform-eng / svc-a / comp-web</td></tr>
-               <tr><td style="color:var(--text-sub)">仓库</td><td class="mono">git@…/comp-web.git</td></tr>
+               <tr><td style="color:var(--text-sub);width:96px">路径</td><td class="mono">${f?f.path.join(' / '):nodePath(node.id)}</td></tr>
+               ${isComp?`<tr><td style="color:var(--text-sub)">仓库</td><td class="mono">git@…/${node.label}.git</td></tr>
                <tr><td style="color:var(--text-sub)">语言 / 分支</td><td>Go · <span class="mono">main</span></td></tr>
-               <tr><td style="color:var(--text-sub)">流水线</td><td>2 条</td></tr>
-             </tbody></table>`}
+               <tr><td style="color:var(--text-sub)">流水线</td><td>${ps} 条</td></tr>
+               <tr><td style="color:var(--text-sub)">环境</td><td>${es} 个</td></tr>`
+               :`<tr><td style="color:var(--text-sub)">节点类型</td><td>${kind}</td></tr>
+               <tr><td style="color:var(--text-sub)">子节点</td><td>${(node.children||[]).length} 个</td></tr>`}
+             </tbody></table>`; })()}
       </div>
     </div>
   </div>`;
 }
 
+/* ============ 组件详情查询层（按组件 uuid 作用域；对齐 old 后端 /api/component/:id/...，:id=组件 uuid） ============
+   真实后端以组件 uuid 为主键（CreateComponent 生成 uuid.New().String()），所有子资源查询都按 uuid 作用域：
+     GET /api/component/:uuid                              → 组件元信息（概览）
+     GET /api/component/:uuid/pipelines                    → 该组件流水线
+     GET /api/component/:uuid/environments                → 该组件环境
+     GET /api/component/:uuid/parameters/:environment_id  → 某环境参数
+     GET /api/component/:uuid/products                     → 该组件制品（old 后端有）
+     GET /api/component/:uuid/changes                      → 该组件变更（old 后端有）
+   本原型在内存模拟上述查询：入参统一为组件 uuid，内部按 uuid→label 解析后过滤内存数据，
+   与后端"查询按 component_id(uuid) 过滤"一致。运行/发布为组件内视图，对应
+   GET /runs?componentId=:uuid 与 GET /releases?componentId=:uuid（hub 暂无全局发布端点，见 NOTE）。 */
+const COMP_BY_UUID = {};
+(function indexComps(ns){ ns.forEach(n=>{ if(n.type==='component'&&n.uuid) COMP_BY_UUID[n.uuid]=n; if(n.children) indexComps(n.children); }); })(TREE);
+const compLabel = (uuid)=> (COMP_BY_UUID[uuid]||{}).label || S.comp;
+const curUuid = ()=>{ for(const u in COMP_BY_UUID){ if(COMP_BY_UUID[u].label===S.comp) return u; } return null; };
+const ComponentAPI = {
+  /* GET /api/component/:uuid —— 概览 KPI（最近一次运行 / 活跃环境 / 成员 / 待处理） */
+  overview(uuid){
+    const lbl = compLabel(uuid);
+    const runs = RUNS.filter(r=>(r.pipeline.split(' / ')[0]||'')===lbl);
+    const last = runs[0] || null;
+    const envs = allEnvs(envModel(lbl));
+    const pending = RUNS.filter(r=>(r.pipeline.split(' / ')[0]||'')===lbl && r.phase==='waiting').length;
+    return [
+      {label:'最近一次运行', value: last?last.id:'—', phase: last?last.phase:null},
+      {label:'活跃环境', value: envs.length+' 套', phase: null},
+      {label:'成员', value: '6 人', phase: null},
+      {label:'待处理', value: pending+' 条审批', phase: pending?'waiting':null},
+    ];
+  },
+  /* GET /api/component/:uuid/pipelines */
+  pipelines(uuid){ return PIPELINES.filter(p=>p.comp===compLabel(uuid)); },
+  /* GET /runs?componentId=:uuid —— 组件内运行视图 */
+  runs(uuid){
+    const lbl = compLabel(uuid);
+    return RUNS.filter(r=>(r.pipeline.split(' / ')[0]||'')===lbl).map(r=>({
+      name:r.pipeline.split(' / ')[1], pid:r.pid, phase:r.phase, at:r.at
+    }));
+  },
+  /* GET /releases?componentId=:uuid —— 组件内发布视图（hub 无全局发布端点，前端聚合兜底） */
+  releases(uuid){
+    const lbl = compLabel(uuid);
+    return RELEASES.filter(r=>r.comp===lbl).map(r=>({env:r.env, step:r.step, health:r.health, phase:r.phase}));
+  },
+  /* GET /api/component/:uuid/environments */
+  environments(uuid){ return allEnvs(envModel(compLabel(uuid))); },
+  /* GET /api/component/:uuid/parameters/:environment_id */
+  parameter(uuid, envId){ return { componentId:uuid, environmentId:envId, yaml: yamlOf(compLabel(uuid), envId) }; },
+  /* GET /api/component/:uuid/artifacts —— 原型占位（old 后端无独立 artifacts 端点） */
+  artifacts(uuid){ return []; },
+  /* GET /api/component/:uuid/permissions —— 原型占位（组件级权限，沿用平台角色） */
+  permissions(uuid){ return []; },
+  /* GET /api/component/:uuid/logs —— 原型占位 */
+  logs(uuid){ return []; },
+  /* GET /api/component/:uuid/changes —— old 后端有此端点，原型未单列 Tab，保留查询以备扩展 */
+  changes(uuid){ return []; },
+};
+
 function pageComponent(){
-  const mainTabs = [['overview','概览'],['delivery','交付'],['configure','配置'],['artifacts','制品'],['permissions','权限'],['logs','日志']];
-  const subs = {delivery:[['pipelines','流水线'],['runs','运行'],['releases','发布']], configure:[['params','参数'],['envs','环境']]};
+  const uuid = curUuid();                       // 当前组件 uuid：详情页所有查询的作用域主键
+  const mainTabs = [['overview','概览'],['delivery','交付'],['configure','配置'],['env','环境'],['artifacts','制品'],['permissions','权限'],['logs','日志']];
+  const subs = {delivery:[['pipelines','流水线'],['runs','运行'],['releases','发布']]};
   const tabBtn = ([k,l])=>`<div class="tab ${S.compTab===k?'active':''}" data-ctab="${k}">${l}${subs[k]?'<span class="caret">▾</span>':''}</div>`;
   let body='';
   if(S.compTab==='overview'){
+    const cards = ComponentAPI.overview(uuid);   // GET /api/component/:uuid
     body = `<div class="row" style="gap:14px;align-items:stretch">
-      ${['最近一次运行|run-8f21|succeeded','活跃环境|4 套|','成员|6 人|','待处理|1 条审批|waiting'].map(x=>{const[c,v,p]=x.split('|');return `<div class="card kpi" style="flex:1"><div class="label">${c}</div><div class="num" style="font-size:22px">${v}</div>${p?badge(p):''}</div>`}).join('')}
+      ${cards.map(c=>`<div class="card kpi" style="flex:1"><div class="label">${c.label}</div><div class="num" style="font-size:22px">${c.value}</div>${c.phase?badge(c.phase):''}</div>`).join('')}
     </div>`;
   } else if(S.compTab==='delivery'){
     body = S.sub.delivery==='pipelines' ? pipelinesListView() : (S.sub.delivery==='runs'
-      ? `<div class="card flush"><table class="table"><thead><tr><th>运行</th><th>流水线</th><th>状态</th><th>开始时间</th></tr></thead><tbody>
-          ${RUNS.slice(0,3).map(r=>`<tr class="click" data-act="goto-run"><td class="mono">${r.id}</td><td>${r.pipeline.split(' / ')[1]}</td><td>${badge(r.phase)}</td><td class="mono">${r.at}</td></tr>`).join('')}
-        </tbody></table></div>`
-      : `<div class="card flush"><table class="table"><thead><tr><th>环境</th><th>灰度步骤</th><th>健康度</th><th>状态</th></tr></thead><tbody>
-          <tr><td>staging</td><td>100%</td><td>良好</td><td>${badge('succeeded')}</td></tr>
-          <tr><td>production</td><td>50%</td><td>良好</td><td>${badge('paused')}</td></tr></tbody></table></div>`);
+      ? (()=>{ const rs = ComponentAPI.runs(uuid);   // GET /runs?componentId=:uuid
+          return `<div class="card flush"><table class="table"><thead><tr><th>流水线</th><th>流水线ID</th><th>状态</th><th>开始时间</th></tr></thead><tbody>
+          ${rs.slice(0,3).map(r=>`<tr><td><a class="link" data-act="open-pl-runs" data-pname="${r.name}" data-pid="${r.pid}">${r.name}</a></td><td class="mono">${r.pid}</td><td>${badge(r.phase)}</td><td class="mono">${r.at}</td></tr>`).join('')}
+        </tbody></table></div>`; })()
+      : (()=>{ const rs = ComponentAPI.releases(uuid);   // GET /releases?componentId=:uuid
+          return `<div class="card flush"><table class="table"><thead><tr><th>环境</th><th>灰度步骤</th><th>健康度</th><th>状态</th></tr></thead><tbody>
+          ${rs.length?rs.map(r=>`<tr><td>${r.env}</td><td>${r.step}</td><td>${r.health}</td><td>${badge(r.phase)}</td></tr>`).join(''):'<tr><td colspan="4" style="color:var(--text-sub);padding:14px">无发布记录</td></tr>'}
+        </tbody></table></div>`; })());
   } else if(S.compTab==='configure'){
-    body = S.sub.configure==='params'
-      ? `<div class="card flush"><table class="table"><thead><tr><th>Key</th><th>值</th><th>来源</th><th>环境</th></tr></thead><tbody>
-          <tr><td class="mono">REGISTRY</td><td class="mono">localhost:5000</td><td>变量库</td><td>全部</td></tr>
-          <tr><td class="mono">REPLICAS</td><td class="mono">3</td><td>变量库</td><td>production</td></tr></tbody></table></div>`
-      : `<div class="card flush"><table class="table"><thead><tr><th>环境</th><th>集群</th><th>命名空间</th></tr></thead><tbody>
-          <tr><td>staging</td><td>kind-e2e-01</td><td class="mono">staging</td></tr>
-          <tr><td>production</td><td>kind-e2e-02</td><td class="mono">prod</td></tr></tbody></table></div>`;
+    body = pageConfigure();
+  } else if(S.compTab==='env'){
+    body = pageEnv();
   } else {
     body = `<div class="card"><div class="empty"><span class="big">◍</span>「${mainTabs.find(t=>t[0]===S.compTab)[1]}」Tab 占位——结构同旧版，本原型聚焦重设计项。</div></div>`;
   }
   return `<div class="wrap">
     <div class="row" style="align-items:flex-end">
       <div><div class="title">${S.comp}</div>
-        <div class="sub"><span class="mono">git@…/comp-web.git</span> · Go · 默认分支 <span class="mono">main</span></div></div>
-      <div style="margin-left:auto" class="row">
-        <button class="btn btn-ghost btn-sm" data-act="edit-comp">编辑</button>
-        <button class="btn btn-primary btn-sm" data-act="trigger">▶ 触发运行</button>
-        <button class="btn btn-danger btn-sm" data-act="del-comp">⋯ 删除</button>
-      </div>
+        <div class="sub"><span class="mono">git@…/${S.comp}.git</span> · Go · 默认分支 <span class="mono">main</span> · <span class="mono">${uuid}</span></div></div>
     </div>
     <div class="tabs">${mainTabs.map(tabBtn).join('')}</div>
     ${S.compTab==='delivery'?`<div class="pills">${subs.delivery.map(([k,l])=>`<div class="pill ${S.sub.delivery===k?'on':''}" data-sub="delivery:${k}">${l}</div>`).join('')}</div>`:''}
-    ${S.compTab==='configure'?`<div class="pills">${subs.configure.map(([k,l])=>`<div class="pill ${S.sub.configure===k?'on':''}" data-sub="configure:${k}">${l}</div>`).join('')}</div>`:''}
     ${body}
   </div>`;
 }
 
+/* ============ 配置（左侧环境选择 + 右侧 YAML 查看/编辑/导入/导出）与环境管理 ============ */
+/* 环境数据按组件隔离：ENV[S.comp] 下含 groups（分组）→ envs（环境），及每环境 yaml；组件上下文锁定为当前组件。 */
+const ENV = {};
+function envModel(comp){
+  if(!ENV[comp]){
+    ENV[comp] = { groups:[
+      { name:'类生产', envs:[
+        { name:'staging',   cluster:'kind-e2e-01', namespace:'staging', status:'succeeded', lastTest:'12s 前' },
+        { name:'alpha',     cluster:'kind-e2e-02', namespace:'alpha',   status:'succeeded', lastTest:'3m 前' },
+      ]},
+      { name:'生产', envs:[
+        { name:'production', cluster:'kind-e2e-03', namespace:'prod', status:'paused', lastTest:'8m 前' },
+      ]},
+    ], yaml:{} };
+  }
+  return ENV[comp];
+}
+function defaultYaml(comp, env){
+  return `# ${comp} · ${env}\nreplicaCount: 3\nimage:\n  repository: localhost:5000/toolchain/go\n  tag: "1.22"\nresources:\n  requests:\n    cpu: 100m\n    memory: 128Mi\n  limits:\n    cpu: 500m\n    memory: 256Mi\n`;
+}
+function yamlOf(comp, env){
+  const m = envModel(comp);
+  if(!m.yaml[env]) m.yaml[env] = defaultYaml(comp, env);
+  return m.yaml[env];
+}
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function allEnvs(m){ const out=[]; m.groups.forEach(g=>g.envs.forEach(e=>out.push(e))); return out; }
+function findEnv(m, name){ for(const g of m.groups){ const e=g.envs.find(x=>x.name===name); if(e) return e; } return null; }
+/* 环境树渲染（组件详情·环境页 与 配置页左侧共用同一份，SSOT）：
+   复用服务树同一套树行样式 .tnode / .tree —— 分组=父节点(chev 折叠 + hover ＋ 新建环境)，
+   环境=叶子子节点(状态 dot)。
+   删除入口：分组"且仅当为空"时，在 ＋ 右侧露出 － 删除分组(opts.manage 开启，见环境页)；
+   环境删除不进树内，走右侧详情面板右上角「删除」。 */
+function envTreeRows(m, opts){
+  opts = opts || {};
+  return m.groups.map(g=>{
+    const collapsed = S.collapsedGroups.includes(g.name);
+    const empty = !g.envs.length;
+    /* 删除分组只在"分组为空"时出现，位于 ＋ 新建环境右侧（非空分组不给删除入口） */
+    const delGrp = (opts.manage && empty)
+      ? `<button class="tbtn tbtn-del" data-act="del-group" data-name="${g.name}" title="删除分组">－</button>`
+      : '';
+    const kids = empty
+      ? `<div class="tnode tnode-fake"><span class="chev"></span><span class="tlabel">（暂无环境，点上方 ＋ 新建）</span></div>`
+      : g.envs.map(e=>`<div class="tnode ${S.envName===e.name?'active':''}" data-act="sel-env" data-name="${e.name}">
+          <span class="chev"></span><span class="dot ${e.status||'unknown'}"></span><span class="tlabel">${e.name}</span></div>`).join('');
+    const chev = empty
+      ? `<span class="chev"></span>`
+      : `<span class="chev${collapsed?'':' open'}" data-act="toggle-group" data-name="${g.name}" title="折叠/展开">▶</span>`;
+    return `<div class="tnode svc ${S.envGroup===g.name?'active':''}" data-act="sel-group" data-name="${g.name}">
+      ${chev}<span class="dot"></span><span class="tlabel">${g.name}</span>
+      <span class="tnode-actions"><button class="tbtn" data-act="add-env" data-group="${g.name}" title="新建环境">＋</button>${delGrp}</span></div>
+      <div class="tree"${collapsed?' style="display:none"':''}>${kids}</div>`;
+  }).join('');
+}
+
+function pageConfigure(){
+  const uuid = curUuid();                       // GET /api/component/:uuid/environments（按组件 uuid 拉取环境树）
+  ComponentAPI.environments(uuid);
+  const m = envModel(S.comp);
+  const list = allEnvs(m);
+  if(!S.envName && list[0]) S.envName = list[0].name;
+  const left = `<div class="env-list">
+    <div class="env-list-h">环境（${S.comp}）</div>
+    ${envTreeRows(m)}
+  </div>`;
+  const editing = S.envEdit;
+  const right = `<div class="yaml-wrap">
+    <div class="toolbar2">
+      <div class="title">${S.envName||'—'} · values.yaml</div>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm" data-act="yaml-import">导入</button>
+      <button class="btn btn-ghost btn-sm" data-act="yaml-export">导出</button>
+      ${editing
+        ? `<button class="btn btn-ghost btn-sm" data-act="yaml-cancel">取消</button><button class="btn btn-primary btn-sm" data-act="yaml-save">保存</button>`
+        : `<button class="btn btn-ghost btn-sm" data-act="yaml-edit">编辑</button>`}
+    </div>
+    <textarea class="yaml-editor mono" data-env-yaml ${editing?'':'readonly'}>${esc(yamlOf(S.comp, S.envName))}</textarea>
+  </div>`;
+  return `<div class="config-split">${left}${right}</div>`;
+}
+
+function pageEnv(){
+  const uuid = curUuid();                       // GET /api/component/:uuid/environments（按组件 uuid 拉取环境树）
+  ComponentAPI.environments(uuid);
+  const m = envModel(S.comp);
+  if(!S.envGroup && m.groups[0]) S.envGroup = m.groups[0].name;
+  if(!S.envName){ const f=allEnvs(m); if(f[0]) S.envName=f[0].name; }
+  const left = `<div class="env-tree">
+    <button class="btn btn-ghost btn-sm block" data-act="add-group">＋ 新建分组</button>
+    <div style="margin-top:8px">${envTreeRows(m, {manage:true})}</div>
+  </div>`;
+  const env = findEnv(m, S.envName) || {};
+  const right = `<div class="env-detail card">
+    <div class="row" style="justify-content:space-between">
+      <div class="title">${S.envName||'—'} · 对接配置</div>
+      ${env.name?`<button class="btn btn-ghost btn-danger btn-sm" data-act="del-env" data-name="${env.name}">删除</button>`:''}
+    </div>
+    <div class="field"><label>集群</label><input class="input mono" data-env-field="cluster" value="${esc(env.cluster)}" /></div>
+    <div class="field"><label>命名空间</label><input class="input mono" data-env-field="namespace" value="${esc(env.namespace)}" /></div>
+    <div class="field"><label>状态</label>${badge(env.status||'unknown')}</div>
+    <div class="field"><label>最近测试对接</label><span class="mono">${env.lastTest||'—'}</span></div>
+    <div class="modal-foot"><button class="btn btn-primary" data-act="test-env">测试对接</button></div>
+  </div>`;
+  return `<div class="config-split">${left}${right}</div>`;
+}
+
 function pipelinesListView(){
+  const uuid = curUuid();                       // GET /api/component/:uuid/pipelines（按组件 uuid 拉取流水线）
   const seg = `<span class="seg">
     ${['success:成功（默认）','empty:空态','loading:加载中','error:错误'].map(x=>{const[k,l]=x.split(':');return `<button class="${S.plState===k?'on':''}" data-pl-state="${k}">${l}</button>`}).join('')}
   </span>`;
-  const mine = PIPELINES.filter(p=>p.comp===S.comp);
+  const mine = ComponentAPI.pipelines(uuid);
   let inner;
   if(S.plState==='loading') inner = `<div class="loading"><span class="spinner"></span><div>加载中…</div></div>`;
   else if(S.plState==='error') inner = `<div style="padding:22px"><div class="errbox">✕ 拉取流水线失败：网络/5xx。<button class="btn btn-ghost btn-sm" style="margin-left:auto">重试</button></div></div>`;
   else if(S.plState==='empty' || !mine.length) inner = `<div class="empty"><span class="big">⛓</span>${S.comp} 还没有流水线<div style="margin-top:12px"><button class="btn btn-primary" data-act="new-pl">＋ 新建流水线</button></div></div>`;
   else inner = `<table class="table">
       <thead>${pipelineHead(false)}</thead>
-      <tbody>${mine.map(p=>pipelineRow(p,false)).join('')}</tbody>
+      <tbody>${mine.map(p=>pipelineRow(p,false,true)).join('')}</tbody>
     </table>`;
   return `<div class="toolbar2"><span class="hint">四态演示：</span>${seg}<div class="spacer"></div><button class="btn btn-primary btn-sm" data-act="new-pl">＋ 新建流水线</button></div>
     <div class="card flush">${inner}</div>`;
 }
 
 function pageEditor(){
-  const tasks = {
-    '构建':[['Build','compile & test'],['Build','docker build']],
-    '测试':[['Build','pytest -q']],
-    '发布':[['Release',`helm upgrade ${S.comp}`],['Approval','人工卡点']],
-  };
-  const stages = Object.entries(tasks).map(([name,ts],i)=>`
+  const stages = S.editorStages;
+  const stageHtml = stages.map((st,si)=>`
     <div class="stage">
-      <div class="stage-head"><span class="stage-no">${i+1}</span>${name}
-        <span class="mode" title="executionMode（Stage 级）">并行 ▾</span></div>
-      ${ts.map(([ty,label])=>`<div class="task"><span class="ti">${ty==='Build'?'⌘':ty==='Release'?'⬇':'✓'}</span>
-        <span class="tn">${label}</span>
-        <span class="tacts"><button class="link" data-act="edit-task">编辑</button><button class="link" style="color:var(--fail-fg)" data-act="del-task">✕</button></span></div>`).join('')}
-      <button class="add-task" data-act="add-task">＋ 子任务</button>
+      <div class="stage-head">
+        <span class="stage-no">${si+1}</span>
+        <input class="stage-name-input mono" data-stage-name="${si}" value="${esc(st.name)}" />
+        <div class="stage-acts">
+          <button class="mini" data-act="toggle-mode" data-si="${si}" title="切换并行 / 串行（executionMode）">${st.mode==='parallel'?'并行':'串行'}</button>
+          <button class="mini" data-act="mv-stage" data-si="${si}" data-dir="left" ${si===0?'disabled':''} title="阶段前移">◀</button>
+          <button class="mini" data-act="mv-stage" data-si="${si}" data-dir="right" ${si===stages.length-1?'disabled':''} title="阶段后移">▶</button>
+          <button class="mini danger" data-act="del-stage" data-si="${si}" title="删除阶段">✕</button>
+        </div>
+      </div>
+      ${st.tasks.map((t,ti)=>`<div class="task ${S.editorSel&&S.editorSel.si===si&&S.editorSel.ti===ti?'sel':''}" data-act="sel-task" data-si="${si}" data-ti="${ti}">
+        <span class="ti">${t.type==='Build'?'⌘':t.type==='Release'?'⬇':'✓'}</span>
+        <span class="tn">${esc(t.label)}</span>
+        <span class="tacts">
+          <button class="link" data-act="mv-task" data-si="${si}" data-ti="${ti}" data-dir="up" ${ti===0?'disabled':''} title="上移">▲</button>
+          <button class="link" data-act="mv-task" data-si="${si}" data-ti="${ti}" data-dir="down" ${ti===st.tasks.length-1?'disabled':''} title="下移">▼</button>
+          <button class="link" data-act="edit-task" data-si="${si}" data-ti="${ti}">编辑</button>
+          <button class="link" style="color:var(--fail-fg)" data-act="del-task" data-si="${si}" data-ti="${ti}">✕</button>
+        </span></div>`).join('')}
+      <button class="add-task" data-act="add-task" data-si="${si}">＋ 子任务</button>
     </div>`).join('');
-  const kindOf = (PIPELINES.find(p=>p.name===S.editorName)||{kind:'build'}).kind;
+  let cfg = '<div class="empty"><span class="big">◍</span>点选上方任一子任务以编辑其镜像 / 命令 / 超时；阶段内 executionMode 控制该阶段子任务并行或串行。</div>';
+  if(S.editorSel){
+    const t = stages[S.editorSel.si] && stages[S.editorSel.si].tasks[S.editorSel.ti];
+    if(t){
+      cfg = `<div class="row" style="gap:8px"><span class="chip">类型</span>
+        ${['Build','Release','Approval'].map(tp=>`<button class="pill ${t.type===tp?'on':''}" data-act="set-type" data-si="${S.editorSel.si}" data-ti="${S.editorSel.ti}" data-type="${tp}">${tp}</button>`).join('')}</div>
+        <div class="field" style="margin-top:14px"><label>名称</label><input class="input mono" data-task-field="label" data-si="${S.editorSel.si}" data-ti="${S.editorSel.ti}" value="${esc(t.label)}" /></div>
+        <div class="field"><label>image</label><input class="input mono" data-task-field="image" data-si="${S.editorSel.si}" data-ti="${S.editorSel.ti}" value="${esc(t.image||'')}" /></div>
+        <div class="field"><label>command / args</label><input class="input mono" data-task-field="cmd" data-si="${S.editorSel.si}" data-ti="${S.editorSel.ti}" value="${esc(t.cmd||'')}" /></div>
+        <div class="field"><label>timeoutSeconds / retryPolicy</label><input class="input mono" data-task-field="timeout" data-si="${S.editorSel.si}" data-ti="${S.editorSel.ti}" value="${esc(t.timeout||'')}" /></div>`;
+    }
+  }
   return `<div class="wrap">
     <div class="toolbar2">
-      <div class="title" style="font-size:20px">${S.editorName} <span class="chip" style="vertical-align:middle">${kindOf}</span></div>
+      <button class="btn btn-ghost btn-sm" data-act="back-pl">← 返回</button>
+      <div class="title" style="font-size:20px">${esc(S.editorName)} <span class="chip" style="vertical-align:middle">${S.editorKind}</span></div>
       <div class="spacer"></div>
-      <button class="btn btn-ghost btn-sm" data-act="save-pl">保存</button>
-      <button class="btn btn-primary btn-sm" data-act="trigger">▶ 触发</button>
-      <button class="btn btn-danger btn-sm" data-act="del-pl" data-name="${S.editorName}">🗑 删除流水线</button>
+      <button class="btn btn-ghost btn-sm" data-act="preview-req">查看请求体</button>
+      <button class="btn btn-ghost btn-sm" data-act="trigger">▶ 触发</button>
+      <button class="btn btn-primary btn-sm" data-act="save-pl">保存</button>
+      <button class="btn btn-danger btn-sm" data-act="del-pl" data-name="${esc(S.editorName)}">🗑 删除流水线</button>
     </div>
-    <div class="flow">${stages}</div>
+    <div class="flow">${stageHtml}</div>
     <button class="btn btn-ghost" data-act="add-stage">＋ 新建阶段</button>
     <div class="h2">子任务配置</div>
-    <div class="card">
-      <div class="row" style="gap:8px"><span class="chip">类型</span><span class="pill on" style="border:1px solid var(--accent)">Build</span><span class="pill">Release</span><span class="pill">Approval</span></div>
-      <div class="field" style="margin-top:14px"><label>image</label><input class="input mono" value="localhost:5000/toolchain/go:1.22" /></div>
-      <div class="field"><label>command / args</label><input class="input mono" value="go test ./... -run TestUnit" /></div>
-      <div class="field"><label>timeoutSeconds / retryPolicy</label><input class="input mono" value="600 / ≤3 次退避" /></div>
-    </div>
+    <div class="card">${cfg}</div>
   </div>`;
 }
 
@@ -688,7 +1131,7 @@ const PAGES = {dashboard:pageDashboard, runs:pageRuns,
 function renderCrumb(){
   const sep = `<span style="opacity:.45">/</span>`;
   let segs;
-  if(S.page==='component')      segs = [['服务树','catalog'],[S.comp]];
+  if(S.page==='component')      segs = [['服务树','catalog'],[`${S.comp} · <span class="mono">${curUuid()}</span>`]];
   else if(S.page==='editor')    segs = [[S.comp,'component'],['交付'],[S.editorName]];
   else if(S.page==='runs')      segs = S.runTab==='runs' ? [['运行中心']]
                                       : [['运行中心','runs'],[(RUN_VIEWS.find(v=>v[0]===S.runTab)||[])[1]||'']];
@@ -717,6 +1160,7 @@ function render(){
 /* go(page, runTab, runFilter)：进"运行中心"默认落在"运行"视图；显式带参数才切视图/筛选（左栏点菜单=回到默认） */
 function go(page, runTab, runFilter){
   S.page=page; S.plState='success';
+  if(page==='editor') S.editorDirty=true;   // 进入编排页即视为有未保存配置，供「返回」做未保存确认
   if(page==='runs'){ S.runTab = runTab||'runs'; S.runFilter = (runTab&&runTab!=='runs') ? 'all' : (runFilter||'all'); }
   render(); document.getElementById('content').scrollTop=0;
 }
@@ -729,33 +1173,213 @@ function openModal(html, onOk){
   m.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeModal);
   const ok = m.querySelector('[data-ok]'); if(ok) ok.onclick = ()=>{ onOk&&onOk(); closeModal(); };
 }
+
+/* 通用确认弹窗（取消/确定）；确定回调里自行决定是否跳转 */
+function openConfirm(msg, onYes){
+  openModal(`<h3>确认</h3><div class="mb">${msg}</div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>确定返回</button></div>`,
+    ()=>{ onYes&&onYes(); });
+}
+
+/* 编排页「返回」：若配置未保存则先确认，再回到组件详情·交付·流水线（组件不变） */
+function backFromEditor(){
+  const ret = ()=>{ S.editorDirty=false; S.compTab='delivery'; S.sub.delivery='pipelines'; go('component'); };
+  if(S.editorDirty) openConfirm('配置未保存，是否返回？', ret);
+  else ret();
+}
 function closeModal(){ document.getElementById('mhost').classList.remove('on'); }
 function toast(msg, err){
   const t=document.createElement('div'); t.className='toast'+(err?' err':''); t.textContent=msg;
   document.getElementById('thost').appendChild(t); setTimeout(()=>t.remove(), 2200);
 }
 
-/* ============ delete pipeline modal (强确认 + 影响面) ============ */
+/* ============ delete pipeline（强确认 → DELETE → 渲染后端 verdict） ============ */
+/* 后端模拟（服务端权威判定，前端不持有此逻辑）
+   真实实现位于 hub 的 DeletePipeline：在事务内校验该流水线是否仍有进行中 / 待审批的运行，
+   有则返回 409 + 结构化原因（前端仅渲染）；历史运行不阻塞删除（仅解除编排关联，日志保留）。 */
+function mockDeletePipeline(name){
+  const runs = RUNS.filter(r => (r.pipeline.split(' / ')[1]||'') === name);
+  if(!runs.length) return {ok:false, reasons:['流水线不存在或已被删除']};
+  const active = runs.filter(r => r.phase==='running' || r.phase==='waiting');
+  const reasons=[];
+  if(active.length) reasons.push(`${active.length} 条运行仍在进行（${active.map(r=>r.phase==='running'?'运行中':'待审批').join('、')}），需先终止后再删除`);
+  return reasons.length ? {ok:false, reasons} : {ok:true};
+}
 function delPipeline(name){
+  // 前端只负责触发 + 渲染后端 verdict，不做数据判定（判定的权威在后端 DeletePipeline）。
   openModal(`<h3>删除流水线「${name}」？</h3>
-    <div class="mb">此操作不可撤销，请确认影响面：</div>
-    <ul class="impact">
-      <li><span class="k">进行中运行</span><span class="v danger">0 条</span></li>
-      <li><span class="k">历史运行（将保留）</span><span class="v">12 条</span></li>
-      <li><span class="k">阶段 / 子任务（将一并删除）</span><span class="v danger">3 阶段 · 5 任务</span></li>
-    </ul>
-    <div class="field"><label>输入流水线名称以确认</label><input class="input" placeholder="${name}" /></div>
+    <div class="mb">点击确认后将提交后端删除。若流水线仍有进行中 / 待审批的运行，后端将拒绝并返回原因（前端仅渲染，不判定）。历史运行不被删除——仅解除编排关联，运行日志保留。</div>
+    <div class="field"><label>输入流水线名称以确认</label><input id="dp-name" class="input" placeholder="${name}" /></div>
     <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-danger" data-ok>确认删除</button></div>`,
-    ()=>toast('流水线已删除'));
+    ()=>{
+      const el=document.getElementById('dp-name');
+      if(el && el.value.trim() && el.value.trim()!==name){ toast('流水线名称不匹配', true); return; }
+      // 调后端删除（此处为后端模拟；真实为 DELETE /pipelines/:id，不满足返回 409 + reasons）
+      const res=mockDeletePipeline(name);
+      if(res.ok){ toast(`已删除流水线「${name}」（历史运行日志保留，示意）`); return; }
+      // 后端拒绝：把结构化原因渲染进弹窗（不删除）
+      openModal(`<h3>无法删除「${name}」</h3>
+        <div class="mb">后端判定：该流水线仍存在未结束的运行，需先终止后再删除。</div>
+        <ul class="impact">
+          ${res.reasons.map(r=>`<li><span class="v danger">${r}</span></li>`).join('')}
+        </ul>
+        <div class="modal-foot"><button class="btn btn-ghost" data-close>我知道了</button></div>`, null);
+    });
 }
 function newPipeline(){
-  openModal(`<h3>新建流水线</h3><div class="mb">选择所属组件并命名，保存后进入编排。</div>
-    <div class="field"><label>所属组件</label><select class="input"><option>${S.comp}</option><option>comp-api</option><option>comp-worker</option></select></div>
-    <div class="field"><label>名称</label><input class="input" placeholder="例如：日常流水线" /></div>
-    <div class="field"><label>类型</label><select class="input"><option>build</option><option>release</option><option>custom</option></select></div>
-    <div class="field"><label>描述</label><input class="input" placeholder="可选" /></div>
+  // 组件上下文已锁定为当前组件：创建对话框不再检索 / 选择其它服务组件；
+  // 保存后该流水线直接归属 S.comp（数据库对应同一组件，见 NOTE.component 的 /components/:id/pipelines）。
+  const comp = S.comp;
+  openModal(`<h3>新建流水线</h3>
+    <div class="mb">当前组件：<b class="mono">${comp}</b>（已锁定）。流水线将直接归属该组件，无需、也不能选择其它组件。</div>
+    <div class="field"><label>所属组件（只读）</label><input class="input mono" value="${comp}" disabled style="background:var(--surface-2);color:var(--text-sub)" /></div>
+    <div class="field"><label>名称</label><input id="np-name" class="input" placeholder="例如：日常流水线" /></div>
+    <div class="field"><label>类型</label><select id="np-kind" class="input"><option value="build">build</option><option value="release">release</option><option value="custom">custom</option></select></div>
+    <div class="field"><label>描述</label><input id="np-desc" class="input" placeholder="可选" /></div>
     <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>保存并编排</button></div>`,
-    ()=>{ S.editorName='新建流水线'; go('editor'); toast('已创建，进入编排'); });
+    ()=>{
+      const nameEl=document.getElementById('np-name');
+      const name=(nameEl && nameEl.value||'').trim();
+      if(!name){ toast('请填写流水线名称', true); return; }
+      const kind=document.getElementById('np-kind').value;
+      const desc=(document.getElementById('np-desc').value||'').trim();
+      const now=new Date(), pad=(n)=>String(n).padStart(2,'0');
+      const last=`${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      // 写入"数据库"（内存模拟）：comp 锁定为当前组件，绝不跨组件
+      const newPl={id:'p'+Date.now(), name, comp, kind, ver:1, last, desc, synced:false};
+      PIPELINES.push(newPl);
+      PIPELINE_GRAPHS[name] = {kind, desc:'', stages:[{name:'阶段 1', mode:'parallel', tasks:[]}]};
+      enterEditor(name);
+      toast(`已为「${comp}」创建流水线「${name}」，进入编排`);
+    });
+}
+
+/* ============ 服务树：增加 / 删除节点（逻辑参照 old/ ServiceTreeManage.vue） ============ */
+function showAddNodeDialog(parentId, parentLabel){
+  const parent = findNode(parentId)?.node;
+  const parentType = parent ? parent.type : 'org';
+  // 默认子节点类型：org→service，service→component（与树实际结构一致）
+  const defaultType = parentType==='org' ? 'service' : 'component';
+  openModal(`<h3>增加子节点</h3>
+    <div class="mb">父节点：<b>${parentLabel}</b>（<span class="mono">${parentId}</span>）</div>
+    <div class="field"><label>节点名称</label><input id="an-name" class="input" placeholder="例如：svc-c / comp-x" /></div>
+    <div class="field"><label>节点类型</label>
+      <select id="an-type" class="input">
+        <option value="service" ${defaultType==='service'?'selected':''}>微服务</option>
+        <option value="component" ${defaultType==='component'?'selected':''}>组件</option>
+        <option value="subcategory">子类别</option>
+        <option value="category">同级类别</option>
+      </select></div>
+    <div id="an-svc" style="display:none">
+      <div class="field"><label>代码库地址</label><input id="an-repo" class="input" placeholder="git@…/repo.git" /></div>
+      <div class="field"><label>代码库分支</label><input id="an-branch" class="input" value="main" /></div>
+      <div class="field"><label>责任人</label><input id="an-owner" class="input" placeholder="例如：张三" /></div>
+      <div class="field"><label>描述</label><input id="an-desc" class="input" placeholder="可选" /></div>
+    </div>
+    <div class="field" id="an-cat" style="display:none"><label>节点描述</label><input id="an-desc2" class="input" placeholder="可选" /></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>确定</button></div>`,
+    ()=>{
+      const name=document.getElementById('an-name').value.trim();
+      const type=document.getElementById('an-type').value;
+      if(!name){ toast('请填写节点名称', true); return; }
+      // 功能性：真正把节点插入 TREE（old 前端此处据 node_type 计算 parent_id/level/full_path：
+      // service → POST /services；component → POST /components；成功后刷新树）
+      const newId = (type==='service'?'s':'c') + Math.random().toString(36).slice(2,7);
+      const newNode = type==='component'
+        ? {id:newId, label:name, type:'component', comp:1}
+        : {id:newId, label:name, type, children:[]};
+      if(parent){ parent.children = parent.children||[]; parent.children.push(newNode); S.open[parentId]=true; S.catSel=newId; }
+      toast(`已添加节点「${name}」到 ${parentLabel}`);
+      render();
+    });
+  const typeSel=document.getElementById('an-type');
+  const sync=()=>{
+    const show = typeSel.value==='service'||typeSel.value==='component';
+    document.getElementById('an-svc').style.display = show ? 'block' : 'none';
+    document.getElementById('an-cat').style.display = show ? 'none' : 'block';
+  };
+  typeSel.onchange=sync; sync();
+}
+function delDetail(id, label){
+  // 前端只负责触发 + 渲染后端 verdict，不做数据判定（判定的权威在后端 DeleteServiceTreeById）。
+  openModal(`<h3>删除节点「${label}」？</h3>
+    <div class="mb">点击确认后将提交后端删除。若节点或其下层仍有未清理的流水线 / 环境 / 子节点，后端将拒绝并返回原因（前端仅渲染，不判定）。</div>
+    <div class="field"><label>输入节点名称以确认</label><input id="dd-name" class="input" placeholder="${label}" /></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-danger" data-ok>确认删除</button></div>`,
+    ()=>{
+      const name=document.getElementById('dd-name');
+      if(name && name.value.trim() && name.value.trim()!==label){ toast('节点名称不匹配', true); return; }
+      // 调后端删除（此处为后端模拟；真实为 DELETE /services/:id 或 DELETE /components/:id，不满足返回 409 + reasons，见 hub/DELETE-CONTRACT.md）
+      const res=mockDeleteNode(id);
+      if(res.ok){
+        // 后端判定通过 → 真正从 TREE 移除（等价于 DELETE 成功后前端刷新树）
+        removeNode(id);
+        S.catSel = TREE.length ? TREE[0].id : '';
+        toast(`已删除节点「${label}」`);
+        render();
+        return;
+      }
+      // 后端拒绝：把结构化原因渲染进弹窗（不删除）
+      openModal(`<h3>无法删除「${label}」</h3>
+        <div class="mb">后端判定：该节点及其下层仍存在未清理的资源，需<b>逐层向上</b>清理后才能删除。</div>
+        <ul class="impact">
+          ${res.reasons.map(r=>`<li><span class="v danger">${r}</span></li>`).join('')}
+        </ul>
+        <div class="mb" style="color:var(--text-sub)">清理顺序：组件 → 流水线 / 环境 → 服务 → 组件 … → Org</div>
+        <div class="modal-foot"><button class="btn btn-ghost" data-close>我知道了</button></div>`, null);
+    });
+}
+/* ============ 环境树：删除分组 / 环境（模式同服务树 delDetail：前端只触发 + 渲染后端 verdict） ============ */
+/* 后端模拟：判定权威在后端（DELETE 事务内级联校验），前端仅渲染原因。环境绑定关系以 RELEASES.env 为"被引用"信号。 */
+function mockDeleteGroup(comp, name){
+  const m=envModel(comp); const g=m.groups.find(x=>x.name===name);
+  if(!g) return {ok:false, reasons:['分组不存在']};
+  const reasons=[];
+  if(g.envs.length>0) reasons.push(`仍有 ${g.envs.length} 个环境未清理：${g.envs.map(e=>e.name).join('、')}`);
+  return reasons.length?{ok:false,reasons}:{ok:true};
+}
+function mockDeleteEnv(comp, name){
+  const used=RELEASES.filter(r=>r.comp===comp && r.env===name).length;
+  const reasons=[];
+  if(used>0) reasons.push(`${used} 条发布仍绑定该环境（需先解除发布）`);
+  return reasons.length?{ok:false,reasons}:{ok:true};
+}
+function delGroup(name){
+  openModal(`<h3>删除分组「${name}」？</h3>
+    <div class="mb">点击确认后提交后端删除。若分组下仍有环境未清理，后端将拒绝并返回原因（前端仅渲染，不判定）。</div>
+    <div class="field"><label>输入分组名称以确认</label><input id="dg-name" class="input" placeholder="${name}" /></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-danger" data-ok>确认删除</button></div>`,
+    ()=>{
+      const v=document.getElementById('dg-name'); if(v && v.value.trim() && v.value.trim()!==name){ toast('分组名称不匹配', true); return; }
+      const res=mockDeleteGroup(S.comp, name);
+      if(res.ok){ const m=envModel(S.comp); m.groups=m.groups.filter(x=>x.name!==name);
+        if(S.envGroup===name) S.envGroup='';
+        if(!findEnv(m,S.envName)){ const f=allEnvs(m); S.envName=f[0]?f[0].name:''; }
+        toast(`已删除分组「${name}」（后端已落库，示意）`); return; }
+      openModal(`<h3>无法删除分组「${name}」</h3>
+        <div class="mb">后端判定：该分组下仍存在未清理的环境，需清理后才能删除。</div>
+        <ul class="impact">${res.reasons.map(r=>`<li><span class="v danger">${r}</span></li>`).join('')}</ul>
+        <div class="modal-foot"><button class="btn btn-ghost" data-close>我知道了</button></div>`, null);
+    });
+}
+function delEnv(name){
+  openModal(`<h3>删除环境「${name}」？</h3>
+    <div class="mb">组件 <b>${S.comp}</b> · 点击确认后提交后端删除。若该环境仍被发布绑定，后端将拒绝并返回原因（前端仅渲染，不判定）。</div>
+    <div class="field"><label>输入环境名称以确认</label><input id="de-name" class="input" placeholder="${name}" /></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-danger" data-ok>确认删除</button></div>`,
+    ()=>{
+      const v=document.getElementById('de-name'); if(v && v.value.trim() && v.value.trim()!==name){ toast('环境名称不匹配', true); return; }
+      const res=mockDeleteEnv(S.comp, name);
+      if(res.ok){ const m=envModel(S.comp); const g=m.groups.find(x=>x.envs.some(e=>e.name===name));
+        if(g) g.envs=g.envs.filter(e=>e.name!==name);
+        if(m.yaml && m.yaml[name]) delete m.yaml[name];
+        if(S.envName===name){ const f=allEnvs(m); S.envName=f[0]?f[0].name:''; }
+        toast(`已删除环境「${name}」（后端已落库，示意）`); return; }
+      openModal(`<h3>无法删除环境「${name}」</h3>
+        <div class="mb">后端判定：该环境仍被以下资源引用，需先解除后才能删除。</div>
+        <ul class="impact">${res.reasons.map(r=>`<li><span class="v danger">${r}</span></li>`).join('')}</ul>
+        <div class="modal-foot"><button class="btn btn-ghost" data-close>我知道了</button></div>`, null);
+    });
 }
 
 /* ============ events ============ */
@@ -776,17 +1400,28 @@ document.getElementById('content').addEventListener('input', (e)=>{
     const el = document.querySelector('.catq');
     if(el){ el.focus(); try{ el.setSelectionRange(pos,pos); }catch(_){} }
   }
+  const ef=e.target.closest('[data-env-field]');
+  if(ef){ const env=findEnv(envModel(S.comp), S.envName); if(env) env[ef.dataset.envField]=ef.value; }
+  const sn=e.target.closest('[data-stage-name]');
+  if(sn){ S.editorStages[+sn.dataset.stageName].name=e.target.value; S.editorDirty=true; }
+  const tf=e.target.closest('[data-task-field]');
+  if(tf){ const si=+tf.dataset.si, ti=+tf.dataset.ti; const t=S.editorStages[si]&&S.editorStages[si].tasks[ti]; if(t) t[tf.dataset.taskField]=e.target.value; S.editorDirty=true; }
 });
 document.getElementById('content').addEventListener('click', (e)=>{
   const nav=e.target.closest('[data-nav]'); if(nav){ go(nav.dataset.nav, nav.dataset.runTab, nav.dataset.runFilter); return; }
   const rt=e.target.closest('[data-run-tab]'); if(rt){ S.runTab=rt.dataset.runTab; S.runFilter='all'; render(); return; }
   const rf=e.target.closest('[data-run-filter]'); if(rf){ S.runFilter=rf.dataset.runFilter; render(); return; }
+  const an=e.target.closest('[data-act="add-node"]'); if(an){ showAddNodeDialog(an.dataset.target, an.dataset.label); return; }
   const nd=e.target.closest('[data-node]');
   if(nd){
     const id=nd.dataset.node, isComp=nd.dataset.comp==='1', lbl=nd.dataset.label||'';
-    if(isComp){ S.comp=lbl; S.catq=''; go('component'); return; }
+    if(id==='hit'){ if(isComp){ S.comp=lbl; go('component'); } else toast(`打开 ${lbl}（示意）`); return; }
+    S.catSel=id;
+    // 组件：只选中并刷新右侧详情页，不自动跳转（跳转由详情页「进入组件详情」触发）
+    if(isComp){ S.comp=lbl; S.catq=''; render(); return; }
+    // org / service：展开+收起，同时刷新右侧详情页（三层都有详情）
     if(/^(o|s)\d+$/.test(id)){ S.open[id]=!S.open[id]; render(); return; }
-    toast(`打开 ${lbl}（示意）`); return;
+    render(); return;
   }
   const ct=e.target.closest('[data-ctab]'); if(ct){ S.compTab=ct.dataset.ctab; render(); return; }
   const sb=e.target.closest('[data-sub]'); if(sb){ const[g,k]=sb.dataset.sub.split(':'); S.sub[g]=k; render(); return; }
@@ -794,21 +1429,106 @@ document.getElementById('content').addEventListener('click', (e)=>{
   const act=e.target.closest('[data-act]'); if(!act) return;
   const a=act.dataset.act, name=act.dataset.name;
   if(a==='hide-notes'){ S.notes=false; render(); }
-  else if(a==='goto-run') go('runs');
+  else if(a==='open-pl-runs') openPipelineRuns(act.dataset.pname);
   else if(a==='new-pl') newPipeline();
-  else if(a==='open-pl'){ S.editorName=name||'日常流水线'; go('editor'); }
+  else if(a==='open-pl'){ enterEditor(name||'日常流水线'); }
+  else if(a==='run-pl') toast('已提交运行「'+(name||'日常流水线')+'」（示意）');
   else if(a==='del-pl') delPipeline(name||S.editorName);
-  else if(a==='save-pl') toast('流水线已保存');
+  else if(a==='back-pl') backFromEditor();
+  else if(a==='save-pl'){ savePipelineDraft(); openRequestModal(); }
+  else if(a==='sel-env'){ S.envName=name; const g=envModel(S.comp).groups.find(x=>x.envs.some(e=>e.name===name)); if(g) S.envGroup=g.name; S.envEdit=false; render(); }
+  else if(a==='toggle-group'){ const i=S.collapsedGroups.indexOf(name); if(i>=0) S.collapsedGroups.splice(i,1); else S.collapsedGroups.push(name); render(); }
+  else if(a==='sel-group'){ S.envGroup=name; const ci=S.collapsedGroups.indexOf(name); if(ci>=0) S.collapsedGroups.splice(ci,1); const g=envModel(S.comp).groups.find(x=>x.name===name); if(g&&g.envs[0]) S.envName=g.envs[0].name; render(); }
+  else if(a==='yaml-edit'){ S.envEdit=true; render(); }
+  else if(a==='yaml-cancel'){ S.envEdit=false; render(); }
+  else if(a==='yaml-save'){ const ta=document.querySelector('[data-env-yaml]'); if(ta) envModel(S.comp).yaml[S.envName]=ta.value; S.envEdit=false; toast('配置已保存（'+S.envName+'）'); render(); }
+  else if(a==='yaml-import'){ openYamlImport(); }
+  else if(a==='yaml-export'){ exportYaml(S.comp, S.envName); }
+  else if(a==='add-group'){ openAddGroup(); }
+  else if(a==='add-org'){ openAddOrg(); }
+  else if(a==='del-group'){ delGroup(name); }
+  else if(a==='del-env'){ delEnv(name); }
+  else if(a==='add-env'){ openAddEnv(name); }
+  else if(a==='test-env'){ const e=findEnv(envModel(S.comp), S.envName); if(e){ e.status='succeeded'; e.lastTest='刚刚'; } toast('测试对接成功'); render(); }
   else if(a==='trigger') toast('已提交运行（触发对话框示意）');
-  else if(a==='add-stage') toast('新建阶段（示意）');
-  else if(a==='add-task') toast('打开子任务抽屉（示意）');
-  else if(a==='edit-task') toast('编辑子任务（示意）');
-  else if(a==='del-task') toast('已删除子任务（示意）');
+  else if(a==='preview-req') openRequestModal();
+  else if(a==='mv-stage'){ const si=+act.dataset.si, dir=act.dataset.dir, j=dir==='left'?si-1:si+1; if(j>=0&&j<S.editorStages.length){ const x=S.editorStages.splice(si,1)[0]; S.editorStages.splice(j,0,x); if(S.editorSel&&S.editorSel.si===si) S.editorSel.si=j; render(); } }
+  else if(a==='toggle-mode'){ const si=+act.dataset.si; S.editorStages[si].mode = S.editorStages[si].mode==='parallel'?'serial':'parallel'; S.editorDirty=true; render(); }
+  else if(a==='add-stage'){ S.editorStages.push({name:'阶段 '+(S.editorStages.length+1), mode:'parallel', tasks:[]}); S.editorDirty=true; render(); }
+  else if(a==='del-stage'){ const si=+act.dataset.si; S.editorStages.splice(si,1); if(S.editorSel&&S.editorSel.si===si) S.editorSel=null; S.editorDirty=true; render(); }
+  else if(a==='mv-task'){ const si=+act.dataset.si, ti=+act.dataset.ti, dir=act.dataset.dir, j=dir==='up'?ti-1:ti+1, ts=S.editorStages[si].tasks; if(j>=0&&j<ts.length){ const x=ts.splice(ti,1)[0]; ts.splice(j,0,x); if(S.editorSel&&S.editorSel.si===si&&S.editorSel.ti===ti) S.editorSel.ti=j; render(); } }
+  else if(a==='add-task'){ const si=+act.dataset.si; S.editorStages[si].tasks.push({type:'Build', label:'新子任务', image:'', cmd:'', args:'', timeout:''}); S.editorSel={si, ti:S.editorStages[si].tasks.length-1}; S.editorDirty=true; render(); }
+  else if(a==='edit-task'){ S.editorSel={si:+act.dataset.si, ti:+act.dataset.ti}; render(); }
+  else if(a==='sel-task'){ S.editorSel={si:+act.dataset.si, ti:+act.dataset.ti}; render(); }
+  else if(a==='set-type'){ const si=+act.dataset.si, ti=+act.dataset.ti; S.editorStages[si].tasks[ti].type=act.dataset.type; S.editorDirty=true; render(); }
+  else if(a==='del-task'){ const si=+act.dataset.si, ti=+act.dataset.ti; S.editorStages[si].tasks.splice(ti,1); if(S.editorSel&&S.editorSel.si===si&&S.editorSel.ti===ti) S.editorSel=null; S.editorDirty=true; render(); }
   else if(a==='new-comp') toast('新建组件（示意）');
   else if(a==='new-svc') toast('新建 Service（示意）');
-  else if(a==='edit-comp') toast('编辑组件（示意）');
+  else if(a==='edit-node') toast('编辑'+(act.dataset.type==='component'?'组件':act.dataset.type==='service'?'Service':'Org')+'（示意）');
+  else if(a==='del-detail') delDetail(act.dataset.target, act.dataset.label);
   else if(a==='del-comp') toast('删除组件需强确认（示意）');
 });
+
+/* 配置导入 / 导出 / 新建分组 / 新建环境 的弹窗与工具 */
+function openYamlImport(){
+  openModal(`<h3>导入 YAML</h3><div class="mb">粘贴 ${S.comp} · ${S.envName} 的 values.yaml 内容：</div>
+    <textarea id="imp-yaml" class="yaml-editor mono" style="min-height:240px">${esc(yamlOf(S.comp, S.envName))}</textarea>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>导入</button></div>`,
+    ()=>{ const ta=document.getElementById('imp-yaml'); if(ta) envModel(S.comp).yaml[S.envName]=ta.value; toast('已导入 YAML'); });
+}
+function exportYaml(comp, env){
+  const text = yamlOf(comp, env);
+  const blob = new Blob([text], {type:'text/yaml'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${comp}-${env}-values.yaml`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  toast('已导出 '+a.download);
+}
+function openAddGroup(){
+  openModal(`<h3>新建分组</h3><div class="field"><label>分组名称</label><input id="ng-name" class="input" placeholder="例如：类生产" /></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>创建</button></div>`,
+    ()=>{ const n=(document.getElementById('ng-name').value||'').trim(); if(!n){ toast('请填写分组名称', true); return; }
+      const m=envModel(S.comp); if(m.groups.find(g=>g.name===n)){ toast('分组已存在', true); return; }
+      m.groups.push({name:n, envs:[]}); S.envGroup=n; toast('已创建分组「'+n+'」'); });
+}
+function openAddOrg(){
+  openModal(`<h3>新建 Org</h3>
+    <div class="mb">Org 为顶层租户，创建后作为服务树的根节点。</div>
+    <div class="field"><label>Org 名称</label><input id="ao-name" class="input" placeholder="例如：platform-eng" /></div>
+    <div class="field"><label>描述</label><input id="ao-desc" class="input" placeholder="可选" /></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>创建</button></div>`,
+    ()=>{ const n=(document.getElementById('ao-name').value||'').trim(); if(!n){ toast('请填写 Org 名称', true); return; }
+      if(TREE.find(o=>o.label===n)){ toast('Org 已存在', true); return; }
+      const id='o'+Math.random().toString(36).slice(2,6);
+      TREE.push({id, label:n, type:'org', children:[]});
+      S.open[id]=true; S.catSel=id;
+      toast('已创建 Org「'+n+'」'); render(); });
+}
+function openAddEnv(group){
+  openModal(`<h3>新建环境</h3><div class="mb">分组：<b>${group}</b></div>
+    <div class="field"><label>环境名称</label><input id="ne-name" class="input" placeholder="例如：alpha" /></div>
+    <div class="field"><label>集群</label><input id="ne-cluster" class="input mono" placeholder="kind-e2e-0x" /></div>
+    <div class="field"><label>命名空间</label><input id="ne-ns" class="input mono" placeholder="alpha" /></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>创建</button></div>`,
+    ()=>{ const n=(document.getElementById('ne-name').value||'').trim(); if(!n){ toast('请填写环境名称', true); return; }
+      const m=envModel(S.comp); const g=m.groups.find(x=>x.name===group); if(!g) return;
+      if(g.envs.find(e=>e.name===n)){ toast('环境已存在', true); return; }
+      g.envs.push({name:n, cluster:document.getElementById('ne-cluster').value||'', namespace:document.getElementById('ne-ns').value||'', status:'unknown', lastTest:'—'});
+      S.envName=n; toast('已创建环境「'+n+'」'); });
+}
+
+/* 点击流水线名称 → 查看该流水线的运行情况详情（按 pipeline 名称聚合 RUNS，示意） */
+function openPipelineRuns(pname){
+  const list = RUNS.filter(r=>(r.pipeline.split(' / ')[1]||'')===pname);
+  const rows = list.length ? list.map(r=>`<tr><td>${badge(r.phase)}</td><td>${r.by}</td><td class="mono">${r.dur}</td><td class="mono">${r.at}</td></tr>`).join('')
+    : `<tr><td colspan="4" style="color:var(--text-sub);padding:14px">无运行记录</td></tr>`;
+  openModal(`<h3>流水线运行情况：${pname}</h3>
+    <div class="mb">该流水线的运行历史（示意，数据来自 RUNS 模拟）。</div>
+    <div class="card flush" style="box-shadow:none"><table class="table"><thead><tr><th>状态</th><th>触发人</th><th>耗时</th><th>开始时间</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="modal-foot"><button class="btn btn-primary" data-close>关闭</button></div>`, null);
+}
 
 /* ---- 全局搜索（替代"树里翻"：任意资源直达） ---- */
 function openSearch(){
@@ -848,6 +1568,23 @@ document.getElementById('themeBtn').addEventListener('click', ()=>{
 });
 document.getElementById('grayBtn').addEventListener('click', ()=>{ S.gray=!S.gray; render(); });
 document.getElementById('noteBtn').addEventListener('click', ()=>{ S.notes=!S.notes; render(); });
+
+/* 右上角账户菜单：点击头像展开/收起，点击外部收起 */
+document.getElementById('userBtn').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  const d=document.getElementById('userDrop');
+  d.hidden=!d.hidden;
+});
+document.getElementById('userDrop').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  const it=e.target.closest('[data-user-act]');
+  if(!it) return;
+  document.getElementById('userDrop').hidden=true;
+  const act=it.dataset.userAct;
+  if(act==='profile') toast('个人中心（原型占位）');
+  else if(act==='logout') toast('已退出登录（原型占位）');
+});
+document.addEventListener('click', ()=>{ const d=document.getElementById('userDrop'); if(d) d.hidden=true; });
 
 /* ============ boot ============ */
 (function(){

@@ -29,7 +29,7 @@ Hub 此前已写好各 domain 的 handler / service / repository / middleware，
 | `internal/db/db.go` | `gorm.Open(postgres)` + `AutoMigrate` 全部 26 张表（基础 22 + §7 多 org RBAC 扩展 4 张：`platform_roles` / `platform_role_bindings` / `component_roles` / `pipeline_approvals`） |
 | `internal/gateway/gateway.go` | Hub 侧 WebSocket：鉴权、按集群跟踪连接、下发 spec、回写状态 |
 | `internal/run/service/pipeline_run.go` | `Trigger` 组装 DAG spec 并下发；`ApplyStatus` 回写运行状态 |
-| `internal/run/models/trigger_request.go` | `POST /pipelines/:pipelineId/runs` 请求 DTO |
+| `internal/run/models/trigger_request.go` | `POST /pipelines/:id/runs` 请求 DTO |
 | `internal/cluster/{repository,service}` | 新增 `GetByName` / `Heartbeat` |
 | `internal/run/repository/*` | 新增 `GetByCRNameCluster` / `SaveStatus` / `Upsert` |
 | `middleware/user_context.go` | 认证关闭时自动置备 dev 用户 |
@@ -41,7 +41,7 @@ Hub 此前已写好各 domain 的 handler / service / repository / middleware，
 
 - [x] **AC-01 (正常路径 · 启动)**: Given 配置了 `DB_DSN` 的 Postgres, When 执行 `go run ./cmd/hub`, Then 进程启动、Gin 监听 `HUB_ADDR`、`AutoMigrate` 建立全部 26 张表（含 §7 多 org RBAC 扩展）、gateway 路由挂载于 `GATEWAY_PATH`，日志输出 `db: auto-migrate complete`。
 - [x] **AC-02 (正常路径 · 集群接入)**: Given 一个已在 `clusters` 表注册的集群且 `GATEWAY_TOKEN` 匹配, When Runner 携带 `X-Cluster-Name` + `Authorization: Bearer <token>` 拨入 WS, Then 连接建立、`clusters.status` 置 `online`、断开后置 `offline`。
-- [x] **AC-03 (正常路径 · 触发运行)**: Given 至少一个在线集群且目标 pipeline 有 task 模板, When `POST /api/pipelines/:pipelineId/runs`, Then Hub 按当前版本组装 `PipelineRunSpec`（跨 stage 推导 `DependsOn`），落 `pipeline_runs`(Pending)+`task_runs`(Pending)×N，并经 gateway `apply_pipeline_run` 单播到目标集群 Runner。
+- [x] **AC-03 (正常路径 · 触发运行)**: Given 至少一个在线集群且目标 pipeline 有 task 模板, When `POST /pipelines/:id/runs`, Then Hub 按当前版本组装 `PipelineRunSpec`（跨 stage 推导 `DependsOn`），落 `pipeline_runs`(Pending)+`task_runs`(Pending)×N，并经 gateway `apply_pipeline_run` 单播到目标集群 Runner。
 - [x] **AC-04 (正常路径 · 状态回写)**: Given 某运行已由 Runner 执行, When Runner 经 WS 回传 `status_update`, Then `pipeline_runs.phase`/`start_time`/`completion_time` 与每个 `task_runs.*` 被同步更新；未知运行（如 Runner 重启后的孤儿消息）被安全忽略。
 - [x] **AC-05 (异常与边界 · 无在线集群)**: Given 没有任何在线 Runner, When 触发运行, Then `selectCluster` 返回 `ErrNoOnlineCluster`，HTTP **503**，不产生脏的 run 记录（除非 `Dispatch` 失败时才标记 Failed 并回写 message）。
 - [x] **AC-06 (异常与边界 · 鉴权失败)**: Given Runner 携带错误 `GATEWAY_TOKEN` 或缺失 `X-Cluster-Name`, When 拨入 WS, Then 分别返回 **401** / **400**，不建立连接。
@@ -73,7 +73,7 @@ Hub 此前已写好各 domain 的 handler / service / repository / middleware，
 
 **触发运行**
 ```
-POST /api/pipelines/:pipelineId/runs
+POST /pipelines/:id/runs
 {
   "clusterId": "uuid|null",        // 空 → 首个在线集群
   "targetNamespace": "sdp-run",    // 缺省 sdp-run
