@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SDP Console 设计文档审计 · 2026-09-19</title>
+<style>
+:root{
+  --bg:#F5F5F7; --surface:#FFFFFF; --surface-2:#FAFAFC; --surface-3:#F1F3F4;
+  --text:#1D1D1F; --text-sub:#5F6368; --hairline:#E0E0E0; --hairline-2:#F0F0F2;
+  --accent:#0066CC; --accent-soft:#E8F0FE;
+  --p0-bg:#FCE8E6; --p0-fg:#C5221F;
+  --p1-bg:#FEF7E0; --p1-fg:#8A5300;
+  --p2-bg:#E8F0FE; --p2-fg:#00529B;
+  --ok-bg:#E6F4EA; --ok-fg:#1E8E3E;
+  --radius:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Inter","Noto Sans SC",-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+  font-size:14px;line-height:1.6;color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:44px 28px 90px}
+.mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:var(--surface-3);border-radius:5px;padding:1px 5px}
+code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:var(--surface-3);border-radius:5px;padding:1px 5px}
+h1{font-size:28px;font-weight:650;letter-spacing:-.01em}
+h2{font-size:19px;font-weight:650;margin:38px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--hairline)}
+h3{font-size:15.5px;font-weight:650;margin:22px 0 8px}
+.sub{color:var(--text-sub);font-size:13.5px;margin-top:6px}
+.card{background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);padding:18px 20px}
+.card.flush{padding:0;overflow:hidden}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:18px}
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.kpi .label{font-size:12.5px;color:var(--text-sub)}
+.kpi .num{font-size:26px;font-weight:650;margin-top:6px;letter-spacing:-.02em}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--hairline-2);vertical-align:top}
+th{background:var(--surface-2);color:var(--text-sub);font-weight:600;font-size:12.5px;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+.chip{display:inline-block;font-size:11.5px;line-height:1.5;border-radius:9999px;padding:1px 9px;border:1px solid var(--hairline);color:var(--text-sub);white-space:nowrap}
+.sev{display:inline-block;font-size:11.5px;font-weight:650;border-radius:9999px;padding:1.5px 9px;white-space:nowrap}
+.p0{background:var(--p0-bg);color:var(--p0-fg)}
+.p1{background:var(--p1-bg);color:var(--p1-fg)}
+.p2{background:var(--p2-bg);color:var(--p2-fg)}
+.ok{background:var(--ok-bg);color:var(--ok-fg)}
+ul{margin:8px 0 0 20px}
+li{margin:4px 0}
+.note{background:var(--accent-soft);border-left:3px solid var(--accent);border-radius:8px;padding:12px 16px;margin:16px 0;font-size:13.5px}
+.finding{background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);padding:16px 18px;margin-top:14px}
+.finding .hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.finding .hd b{font-size:15px}
+.finding .meta{color:var(--text-sub);font-size:12.5px;margin-top:2px}
+.finding p{margin-top:9px}
+.tagrow{margin-top:9px;color:var(--text-sub);font-size:12.5px}
+.fix{background:var(--surface-2);border-radius:8px;padding:10px 14px;margin-top:10px;font-size:13px}
+.fix b{color:var(--text)}
+footer{margin-top:48px;padding-top:16px;border-top:1px solid var(--hairline);color:var(--text-sub);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>SDP Console 设计文档审计</h1>
+<div class="sub">对象：<span class="mono">software-distribution-platform-docs/console/</span> 三份文档 ·
+方法：UI 设计 10 阶段自检 + 跨层（文档 / 原型 / 代码）对账 + 原型运行时自检 · 日期：2026-09-19</div>
+
+<div class="note">
+<b>一句话结论</b>：这套文档的<b>决策质量很高</b>（双向钢人、权重分级判据、回滚成本、验证 gate 齐全），
+但 <b>修订纪律跑在了回写纪律前面</b> —— 头部修订史已推进到 v4.5，正文却仍有 <b>9 处</b>停留在被 v4.4 覆盖的「三视图」形态；
+同类问题在「组件详情 Tab」上进一步演成<b>文档 6 / 原型 7 / 代码 9</b> 的三方漂移。
+本次未修改任何源文档，只输出发现清单与建议改法。
+</div>
+
+<div class="grid3">
+  <div class="card kpi"><div class="label">审计文件</div><div class="num">3</div><div class="sub" style="margin-top:2px">2 md + 1 html</div></div>
+  <div class="card kpi"><div class="label">发现项（P0/P1/P2）</div><div class="num">4 / 6 / 5</div><div class="sub" style="margin-top:2px">共 15 项</div></div>
+  <div class="card kpi"><div class="label">原型运行时自检</div><div class="num" style="color:#1E8E3E">全绿</div><div class="sub" style="margin-top:2px">语法 / boot / 泄漏 / 导航不变量</div></div>
+</div>
+
+<h2>1. 审计对象与职责边界</h2>
+<div class="card flush">
+<table>
+<thead><tr><th>文件</th><th>体量</th><th>自称角色</th><th>本次核对结论</th></tr></thead>
+<tbody>
+<tr>
+  <td><span class="mono">CONSOLE-UI设计文档.md</span></td><td>522 行</td>
+  <td>IA v2「现状实现的事实源」</td>
+  <td>10 阶段覆盖最完整（目标/场景/IA/布局/执行模型+异常分支/状态色/四态/权限审批 UX/验收）。<br>
+      但 §5 菜单、§5 组件 9 Tab、附 A.1「后端无 /pipelines CRUD」三处已被重设计文档明确覆盖，<b>未加覆盖标记</b>。</td>
+</tr>
+<tr>
+  <td><span class="mono">CONSOLE-UI重设计文档.md</span></td><td>828 行</td>
+  <td>IA v3 重设计方案（v1→v4.5 共 12 轮修订）</td>
+  <td>决策记录（附 B / 附 C）是全文最强部分；<b>正文回写滞后 1 个版本</b>（v4.4「两视图」只落进修订史与附 A）。</td>
+</tr>
+<tr>
+  <td><span class="mono">CONSOLE-UI-重设计原型.html</span></td><td>1616 行<br>单文件自包含</td>
+  <td>可交互原型（明暗 + 灰阶 + ⌘K + 设计备注）</td>
+  <td>结构契约已履行（左栏恒 5 项、面包屑唯一、无评审文案污染）；<b>筛选枚举与文档冲突</b>，且留有 1 处过期注记、2 个死代码分支。</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h2>2. 覆盖度体检（对照 UI 设计 10 阶段）</h2>
+<div class="card flush">
+<table>
+<thead><tr><th>阶段</th><th>落点</th><th>评级</th><th>缺口</th></tr></thead>
+<tbody>
+<tr><td>1 问题与目标</td><td>旧文 §1 / 重设计 §1（P1–P6 均带代码证据 + S1–S5 成功标准）</td><td><span class="sev ok">扎实</span></td><td>—</td></tr>
+<tr><td>2 用户与场景</td><td>旧文 §2（A–D）/ 重设计 §2（E–I，含"易错点"）</td><td><span class="sev ok">扎实</span></td><td>场景 E 仍写"三视图"（F1）</td></tr>
+<tr><td>3 竞品与参考</td><td>旧文 §3 / 重设计 §3（Backstage / Argo CD / GH Actions / GitLab / Vercel，均有"借鉴点 + 避坑点"）</td><td><span class="sev ok">扎实</span></td><td>—</td></tr>
+<tr><td>4 范围与功能清单</td><td>旧文 §4（MOD-0~10 + Later）/ 重设计 §4（R-1~R-8 + Later）</td><td><span class="sev ok">扎实</span></td><td>R-2 仍写三视图（F1）</td></tr>
+<tr><td>5 信息架构</td><td>重设计 §5 + §8.4 原则四（导航准入判据：能否表达为某页的视图）</td><td><span class="sev ok">优秀</span></td><td>组件 Tab 三方漂移（F5）</td></tr>
+<tr><td>6 核心任务流程</td><td>旧文 §6.0/§6.2（执行模型 + 三级异常分支）/ 重设计 §6.1（CRUD 全流程 + 异常分支表）</td><td><span class="sev ok">扎实</span></td><td>—</td></tr>
+<tr><td>7 低保真布局</td><td>旧文 §7 / 重设计 §7（ASCII 骨架 + 区域职责）</td><td><span class="sev ok">扎实</span></td><td>原型已越级到高保真，骨架图未随 v4.4/v4.1 回写</td></tr>
+<tr><td>8 交互细节与四态</td><td>旧文 §8.2（逐页 8 行四态映射，经双向论证收敛）/ 重设计 §8.2（补 3 个 CRUD 场景）</td><td><span class="sev p1">部分</span></td><td>新增页（运行中心两视图 / 搜索浮层 / 配置 / 环境 / 概览）无四态映射（F13）</td></tr>
+<tr><td>9 视觉设计系统</td><td>旧文 §9 / 重设计 §9（双主题 token 表 + 5 条原则）</td><td><span class="sev p1">部分</span></td><td>缺无障碍规格清单、文案基调与术语表、数值理由（F11/F12/F14）</td></tr>
+<tr><td>10 测试与迭代</td><td>旧文 §10.1–10.3 / 重设计 §10.1–10.4（gate + 用例表 + 关注信号）</td><td><span class="sev ok">优秀</span></td><td>三视图 gate 需随两视图重写（F10）</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>3. 发现清单</h2>
+<div class="sub" style="margin-bottom:6px">
+<span class="sev p0">P0</span> 同一文档内两处冲突，读者/实现者会选错 &nbsp;
+<span class="sev p1">P1</span> 跨文档或跨层漂移 &nbsp;
+<span class="sev p2">P2</span> 按 10 阶段自检标准应补齐
+</div>
+
+<div class="finding">
+<div class="hd"><span class="sev p0">P0</span><b>F1 · v4.4「两视图」只改了通知层，正文 9 处仍是「三视图」</b></div>
+<div class="meta">CONSOLE-UI重设计文档.md：L62 / L91 / L136 / L212 / L258 / L342 / L425 / L488–489 / L536</div>
+<p>v4.4 修订（L22）声明「运行中心由三视图收敛为两视图，移除「流水线」视图」，但下列正文全部未回写：</p>
+<div class="card flush" style="margin-top:10px">
+<table>
+<thead><tr><th>行</th><th>原文要点</th></tr></thead>
+<tbody>
+<tr><td class="mono">L62</td><td>场景 E：由「左栏运行中心（运行/流水线/发布三视图）」承接</td></tr>
+<tr><td class="mono">L91</td><td>R-2 项名＝「运行 / 流水线 / 发布 <b>三视图</b>」，路由列 <span class="mono">/runs?view=pipelines|releases</span>（连 <span class="mono">runs</span> 本身都漏了）</td></tr>
+<tr><td class="mono">L136</td><td>§5.1 运行中心行：<span class="mono">?view=runs|pipelines|releases</span>，「三个视图：运行 / 流水线 / 发布」</td></tr>
+<tr><td class="mono">L212</td><td>§5.5 路由表：`?view=runs|pipelines|releases` 子视图</td></tr>
+<tr><td class="mono">L258</td><td>§6.2：「深链形态与 §7.6 的<b>三视图</b> URL 契约一致」</td></tr>
+<tr><td class="mono">L342–364</td><td>§7.6 标题「运行中心<b>三视图</b>」＋ 表格仍列出「流水线」视图的列集与 <span class="mono">kind</span> 筛选</td></tr>
+<tr><td class="mono">L425</td><td>§8.4 原则三：「全局那侧降为「运行中心 → 流水线视图」」</td></tr>
+<tr><td class="mono">L488–489</td><td>§10.2：「切「流水线 / 发布」视图」「三视图可切」、三视图深链用例</td></tr>
+<tr><td class="mono">L536</td><td>附 A · N-13 行：仍是「三视图…取 <span class="mono">?view=runs|pipelines|releases</span>」</td></tr>
+</tbody>
+</table>
+</div>
+<div class="fix"><b>建议</b>：按 v4.4 逐行回写为两视图（<span class="mono">?view=runs|releases</span>）；附 A · N-13 与附 B 标题加「<b>历史决策记录</b>，其"三视图"框架已被 v4.4 覆盖」，避免后人把历史当现行规范。</div>
+</div>
+
+<div class="finding">
+<div class="hd"><span class="sev p0">P0</span><b>F2 · <span class="mono">/pipelines</span> 的 redirect 指向一个已被删除的视图</b></div>
+<div class="meta">重设计文档 L213（§5.5）· L645（附 B 约束⑤）· L658（B.7 gate 断言）· L687（B.9 落地记录）· 真实 console <span class="mono">src/router/index.ts</span> L64</div>
+<p>v4.2 建立 <span class="mono">/pipelines → /runs?view=pipelines</span> 映射时该视图存在；v4.4 删掉它之后，这条 redirect 就指向一个不存在的视图 —— 而这正是 v4.2 当初要修的「静默语义漂移」的镜像：老链接过去会看到<b>运行列表</b>，现在是"归一化回默认视图"，同样名不符实。</p>
+<div class="fix"><b>建议</b>：三选一并写进 §5.5 与 B.6 约束⑤ —— ① <span class="mono">/pipelines → /service-tree</span>（流水线已归属组件内，回到资源浏览页）；② 保留 <span class="mono">?view=pipelines</span> 作为<b>只读兼容 alias</b>，收到即 <span class="mono">replace</span> 到 <span class="mono">?view=runs</span>；③ 明确 404。同时更新 B.7 gate 断言与真实 console 路由。</div>
+</div>
+
+<div class="finding">
+<div class="hd"><span class="sev p0">P0</span><b>F3 · 原型筛选枚举与 §7.6 表互相冲突</b></div>
+<div class="meta">原型 L659–660 vs 重设计文档 §7.6 L358–364</div>
+<div class="card flush" style="margin-top:10px">
+<table>
+<thead><tr><th>视图</th><th>文档要求（§7.6）</th><th>原型实测</th><th>差异</th></tr></thead>
+<tbody>
+<tr><td>运行</td><td>全部 / 运行中 / 失败 / 待审批 / <b>成功</b></td><td>全部 / 运行中 / 失败 / 待我审批</td><td>缺「成功」；「待我审批」名不符实（见 F4）</td></tr>
+<tr><td>发布</td><td>全部 / 进行中 / 待审批 / 成功 / <b>失败</b></td><td>全部 / 进行中 / <b>已暂停</b> / 成功</td><td>缺「失败」；多出文档<b>明令不给</b>的「已暂停」</td></tr>
+</tbody>
+</table>
+</div>
+<p>最刺眼的是「已暂停」：§7.6 与附 A · N-3 明确写「<b>刻意没有</b>该筛选项」（<span class="mono">Paused</span> 属 Rollout 任务级状态，不在 PipelineRunPhase 枚举内），原型 NOTE 也自陈"实现版刻意未提供"，但原型自己却渲染了它 —— 一个<b>点下去过滤不了任何东西</b>的分段控件，恰好违反本套文档自己的原型自律（"不渲染没有 handler 的控件 / 筛选必须真实生效"）。</p>
+<div class="fix"><b>建议</b>：原型按 §7.6 对齐为 5 项、移除「已暂停」；若确实要在原型里演示 Paused 数据态，改为徽章演示而非筛选项。</div>
+</div>
+
+<div class="finding">
+<div class="hd"><span class="sev p0">P0</span><b>F4 ·「待我审批」被用在实现不了"待我"的位置</b></div>
+<div class="meta">原型 L659（筛选项文案）· 重设计文档 §7.6 L361 / §6.2 L259–260 / 附 A · N-2</div>
+<p>文档区分得很好：<b>待办卡</b>叫「待我审批」（身份口径，依赖 N-2 的 <span class="mono">assignee=me</span>），<b>运行视图筛选器</b>叫「待审批」（phase 口径）。但原型把「待我审批」放进了筛选器，而该筛选实际只下推 <span class="mono">phase=WaitingApproval</span>，会列出<b>所有人</b>的待审批 —— 用户按字面理解会误判"给我的都在这"。真实 console 用的是「待审批」（<span class="mono">constants/runCenter.ts</span>），这一项原型反而比代码更不准确。</p>
+<div class="fix"><b>建议</b>：筛选器文案统一为「待审批」；等 N-2 落地再加「待我审批」并同步 §7.6 表与 gate。</div>
+</div>
+
+<div class="finding">
+<div class="hd"><span class="sev p1">P1</span><b>F5 · 组件详情 Tab：文档 6 / 原型 7 / 代码 9 三方漂移</b></div>
+<div class="meta">重设计 §5.4 L193–206（6 主）· §5.5 L216（列出的 6 个里没有 env）· 原型 L909 实测 7 主 · 真实 <span class="mono">ComponentDetailView.vue</span> L31–40（9 项）</div>
+<div class="card flush" style="margin-top:10px">
+<table>
+<thead><tr><th>层</th><th>形态</th></tr></thead>
+<tbody>
+<tr><td>文档 §5.4</td><td>概览 / <b>交付</b>▾(流水线·运行·发布) / <b>配置</b>▾(参数·<b>环境</b>) / 制品 / 权限 / 日志 ＝ <b>6 主 + 2 组子</b></td></tr>
+<tr><td>原型（实测）</td><td>概览 / 交付▾ / 配置 / <b>环境</b> / 制品 / 权限 / 日志 ＝ <b>7 主</b>（环境升为顶级，配置只剩 YAML）</td></tr>
+<tr><td>真实 console</td><td>overview / config / pipelines / runs / releases / artifacts / environments / permissions / logs ＝ <b>9 平铺</b></td></tr>
+</tbody>
+</table>
+</div>
+<p>代码 9 项是"未重设计"的现状（可接受），但<b>原型擅自改了分组结论却未回写 §5.4</b> —— 这是 v4.4 之后的第二处"实现先于文档"，且这次是往反方向（Tab 数增加）。按本套文档自己的规矩（导航项要过准入判据），"环境"是否配独立 Tab 恰恰需要一次显式裁决：它与"配置"同属"接入准备"，如果留下就必须给出不比"配置子 Tab"差的理由，否则应回到 §5.4 的 6 主形态。</p>
+<div class="fix"><b>建议</b>：裁决一次并三处同步（文档 §5.4/§5.5 + 原型 + 落地清单）；若采纳 7 主，需更新 §5.4 表、§5.5 子路由清单、README 与 §10.2 验收。</div>
+</div>
+
+<div class="finding">
+<div class="hd"><span class="sev p1">P1</span><b>F6 · README 索引落后正文 3 个版本，且含已废弃方案名</b></div>
+<div class="meta">README.md L49 / L70</div>
+<p>现写：「前端重设计方案（IA v3 方向：<b>AppShell 常驻左栏</b> / 指挥中心 Dashboard / 组件 <b>6 主 Tab</b> / 明暗双主题 / 流水线 CRUD 全链路）」。</p>
+<ul>
+<li><b>「常驻左栏」正是 v1 被用户否决的方案</b>（重设计 §5.1.1 专门论证了为什么不把树放左栏）；v4 是"极简恒 5 项 + 服务树独立页"。</li>
+<li>「组件 6 主 Tab」与原型（7）不符（见 F5）。</li>
+<li>README 完全没记录 v4 / v4.4 / v4.5 三轮修订 —— 对一个"设计文档单一真相源"仓库来说，索引比正文旧是真实误导，尤其当读者是独立小组或独立 AI agent（只读 README 找入口的情形）。</li>
+</ul>
+<div class="fix"><b>建议</b>：README 描述改为「极简左栏（恒 5 项）+ 服务树独立页 / 运行中心两视图 / 明暗双主题 / 流水线 CRUD 全链路」，并补一行"修订索引见文档头部"。</div>
+</div>
+
+<div class="finding">
+<div class="hd"><span class="sev p1">P1</span><b>F7 · 已拍板的产品语言与契约决策只存在于原型注释里</b></div>
+<div class="meta">原型 NOTE.editor L602 · NOTE.component L594 · 对照项目「文档分写铁律」</div>
+<p>原型 <span class="mono">NOTE.editor</span> 记录了 2026-09-17 的拍板：</p>
+<ul>
+<li><b>Build / Release / Approval 不是用户可选的"类型"分类</b>，只是内部派发码（<span class="mono">deriveType()</span>）；编辑器只显示「构建/运行任务 · 发布任务 · 人工审核阶段」产品语言，<b>不露原词</b>；</li>
+<li><b>不引入模版目录</b>；<span class="mono">type</span> 仅作请求体序列化产物供 runner 派发。</li>
+</ul>
+<p>这是典型的"前端交互 + 后端请求体契约"双重决策，按项目铁律应写进 <span class="mono">console/</span> 文档（契约面同步 <span class="mono">hub/API-REFERENCE.md</span> 请求体说明）。目前它只活在 HTML 注记里 —— 原型一旦重生成就会消失，而 §6.1 的 CRUD 流程表里"加三态子任务（Build/Release/Approval 抽屉表单）"的写法与这个结论<b>已经是冲突的措辞</b>（文档说三态表单，产品不允许用户选类型）。同样，<span class="mono">NOTE.component</span> 的"组件详情所有查询以组件 uuid 为作用域主键（对齐 <span class="mono">/api/component/:uuid/...</span>）"也只在原型里。</p>
+<div class="fix"><b>建议</b>：在重设计文档 §5.4 或 §6.1 增一节「子任务产品语言与派发码映射」，并改写 §6.1 中"三态子任务表单"的表述；uuid 作用域写进 §5.4 或 hub API-REFERENCE 的组件作用域一节。</div>
+</div>
+
+<div class="finding">
+<div class="hd"><span class="sev p1">P1</span><b>F8 · 原型注记已过期（N-3 已落地，注记仍说"无端点"）</b></div>
+<div class="meta">原型 NOTE['runs-releases'] L586 vs 重设计文档 附 A · N-3 L526 / N-14 L537</div>
+<p>附 A · N-3 已更新为<b>「已落地（2026-09-16 后代码新增）」</b>：hub 现暴露全局 <span class="mono">GET /pipelines</span> 与完整 <span class="mono">/releases</span> CRUD；而原型注记仍写"hub 无全局发布列表端点（附 A · N-3）"。同一处信息在文档与原型之间<b>指向了相反的结论</b>，而 N-14 又仍写"流水线/发布视图因走前端聚合（N-3）"—— 文档内部也不一致。</p>
+<div class="fix"><b>建议</b>：N-14 重写为"发布数据可走后端聚合（N-3 已落地）；是否切换待实现层排期"；原型注记同步删除对 N-3 的旧描述。</div>
+</div>
+
+<div class="finding">
+<div class="hd"><span class="sev p1">P1</span><b>F9 · "后端能力已具备、产品侧仍不给入口"需要显式记录；原型留死代码</b></div>
+<div class="meta">附 A · N-3 与 v4.4 的关系 · 原型 L696–705（<span class="mono">pipelineRow/pipelineHead</span>）</div>
+<p>v4.4 删「流水线」视图的<b>消解理由</b>之一是"不再有全局流水线列表这个消费面，N-3 随之消解"；但 N-3 现在又说后端已提供全局列表。两者组合起来读会像"漏做"。这本身不是矛盾（产品取舍 vs 后端能力是两件事），但缺少一句显式说明。</p>
+<p>实测副产品：<span class="mono">pipelineRow(p, withComp, compPage)</span> 与 <span class="mono">pipelineHead(withComp)</span> 是为"全局列表 + 组件内列表共用"而抽的，现在<b>唯一调用点传 <span class="mono">false</span></b>（L1064–1065），跨组件分支已成死代码。</p>
+<div class="fix"><b>建议</b>：① 在 §7.6 或 N-3 增一句"后端已具备全局列表能力，产品侧仍不提供跨组件流水线列表（理由：流水线是组件级资源）"，避免后人误读为缺口；② 原型删掉 <span class="mono">withComp</span> 分支或加注保留理由。</div>
+</div>
+
+<div class="finding">
+<div class="hd"><span class="sev p1">P1</span><b>F10 · 设计已裁决两视图，真实 console 与 gate 仍是三视图</b></div>
+<div class="meta"><span class="mono">console/src/constants/runCenter.ts</span>（<span class="mono">RUN_VIEWS</span> 含 pipelines）· <span class="mono">router/index.ts</span> L64 · 重设计文档 §10.2 L489 / 附 B · B.7 L649–658</div>
+<p>三个点位互相锁死：常量仍是三视图 → 路由 <span class="mono">/pipelines → ?view=pipelines</span> 成立 → <span class="mono">pnpm test:runcenter</span> 的 14 条断言里包含"流水线视图"的断言。改两视图时若只改常量，<b>gate 会保护一个已被否决的形态</b>；改 gate 又要同时改 B.7 表与 §10.2 用例。</p>
+<div class="fix"><b>建议</b>：作为一次原子改动落地 —— 常量（2 视图）+ 路由 redirect（按 F2 的处理）+ B.7 断言表 + §10.2 用例 + 死链扫描，改完跑 <span class="mono">pnpm test:runcenter</span> + 原型自检。</div>
+</div>
+
+<div class="finding">
+<div class="hd"><span class="sev p2">P2</span><b>F11 · 无障碍规格清单缺失（阶段 9 必答项）</b></div>
+<div class="meta">重设计 §9（令牌 + 5 原则 + 主题机制）· 对比 skill 阶段 9「条件问 1」要求的四项</div>
+<div class="card flush" style="margin-top:10px">
+<table>
+<thead><tr><th>要求项</th><th>现状</th></tr></thead>
+<tbody>
+<tr><td>键盘可操作全部关键流程</td><td><span class="sev p1">部分</span> ⌘K 有键盘路径（§5.3）；但树展开/编辑器拖拽序/弹窗焦点回收未定义</td></tr>
+<tr><td>焦点态清晰可见</td><td><span class="sev p0">缺</span> token 表里<b>没有任何 focus ring 值</b></td></tr>
+<tr><td>屏幕阅读器可读标签</td><td><span class="sev p0">缺</span> 未提及；状态徽章含图标 + 文字（对 SR 友好），但图标字形（✓●✕⏳⏸○）是纯符号，需要 <span class="mono">aria-label</span> 约定</td></tr>
+<tr><td>最低对比度数值</td><td><span class="sev p0">缺</span> 只有"状态非纯色 + 灰阶自检"，未给 WCAG 目标（如正文 4.5:1、大字 3:1）与核验方式</td></tr>
+<tr><td>动效与 reduced-motion</td><td><span class="sev p2">缺</span> §9.2 只写"克制动效 0.15s"，未提 <span class="mono">prefers-reduced-motion</span></td></tr>
+</tbody>
+</table>
+</div>
+<div class="fix"><b>建议</b>：在 §9 增「无障碍规格」小节，把 focus ring token（如 <span class="mono">outline: 2px solid var(--accent); outline-offset: 2px</span>）、对比度目标、键盘序与 <span class="mono">aria-label</span> 规则一并写死，否则不同实现者会做出不一致的结果。</div>
+</div>
+
+<div class="finding">
+<div class="hd"><span class="sev p2">P2</span><b>F12 · 文案基调与术语表缺失，且已有术语漂移实例</b></div>
+<div class="meta">重设计 §8.3/§9.2 · 实例散布在 §7.6 / 原型 / 真实 console</div>
+<div class="card flush" style="margin-top:10px">
+<table>
+<thead><tr><th>概念</th><th>出现过的叫法</th></tr></thead>
+<tbody>
+<tr><td>Rollout 暂停</td><td>「已暂停」（原型徽章）·「暂停的灰度」（Dashboard 待办卡）·「暂停」（§7.2 骨架）</td></tr>
+<tr><td>等审批的 phase</td><td>「待审批」（§7.6 筛选项 / 真实 console）·「待我审批」（原型筛选项）</td></tr>
+<tr><td>视图容器</td><td>「运行中心」（v4.1 前称「工作台」，§5.1 有备注要求复用旧名，但正文无术语表）</td></tr>
+</tbody>
+</table>
+</div>
+<div class="fix"><b>建议</b>：在 §9 补一段「文案基调 + 术语表」：错误提示语气（建议"说明原因 + 下一步"）、专有名词单一叫法（如统一「流水线」不写 Pipeline）、状态词与 phase 枚举的对照。这条同时是 F3/F4 的根治手段。</div>
+</div>
+
+<div class="finding">
+<div class="hd"><span class="sev p2">P2</span><b>F13 · 新增页面的四态没有映射</b></div>
+<div class="meta">旧文 §8.2（8 行逐页映射，质量很高）vs 重设计 §8.2（只补 3 个 CRUD 场景）</div>
+<p>重设计新增/改写的这些页面<b>没有四态描述</b>：运行中心两视图、服务树页（懒加载 + 搜索空态/命中空态）、⌘K 搜索浮层（无命中 / 后端未就绪）、组件概览、配置 YAML 编辑器（导入非法 YAML）、环境页（分组空 / 环境测试失败）、编辑器（保存校验失败已有行内定位）。原型也只对"组件→交付→流水线"一处做了四态演示。</p>
+<p>按 skill 自检"随便指一个页面，能否回答它没数据/在加载/出错了/刚成功分别长什么样" —— 目前对上述页面答不出。</p>
+<div class="fix"><b>建议</b>：在 §8.2 续一张"重设计新增页四态补充表"（7 行即可），并在原型里至少补运行中心与搜索浮层两处演示。</div>
+</div>
+
+<div class="finding">
+<div class="hd"><span class="sev p2">P2</span><b>F14 · 视觉规格给了数值但没给"数值背后的理由"</b></div>
+<div class="meta">重设计 §9.1（token 表）· §9.2（5 条原则）</div>
+<p>skill 明确要求：<b>逐项写明数值背后的理由</b> —— 只给数值不给理由，下游无从判断哪些能改、哪些是刻意的，容易被"顺手优化"改走样。目前只有原则级理由（"单一调性 / 状态非纯色 / 结构先行 / 密度可调 / 克制动效"），单条如"为什么 accent 用 #0066CC""为什么卡片圆角 12、徽章 9999""为什么字阶从 13/14 起跳"没有依据陈述。</p>
+<div class="fix"><b>建议</b>：若这份规格要长期交给独立小组/独立编码 agent 消费，按 skill 导出 <span class="mono">DESIGN.md</span>（以 prose 叙述设计意图、token 作为被引用的具名常量），并用 <span class="mono">npx @google/design.md lint</span> 校验；真相源仍是 DRD，DESIGN.md 只是导出形态。</div>
+</div>
+
+<div class="finding">
+<div class="hd"><span class="sev p2">P2</span><b>F15 · 文档编辑性：修订史无索引、孤立段落、旧文覆盖标记缺失</b></div>
+<div class="meta">重设计文档 L9–28（12 段修订史）· L26–28（孤立段）· 旧文 §5/附 A.1</div>
+<ul>
+<li>头部堆了 12 段"⚠️ vN → vN+1 修订"，无汇总表；读者要在 30 行内读完 12 次决策才知道现状，建议加一张「修订索引表（版本 / 日期 / 触发 / 受影响章节）」并折叠细节。</li>
+<li>L26–28 的「① 删「最近访问」…」三行悬在 v4.5 修订说明之后，语义上属 v3 banner，是排版遗留的孤立段。</li>
+<li>旧文（现状事实源）里被重设计覆盖的段落（§5 菜单、§5 组件 9 Tab、附 A.1「后端无 /pipelines CRUD」）未加覆盖标记 —— 旧文对 CONSOLE-DESIGN 已用过"曾被 LAYOUT 标记为被覆盖"的手法（L19），可复用同一标注，否则两份文档会持续互相矛盾（例如附 A.1 的"后端无 <span class="mono">GET/POST/PUT/DELETE /pipelines/:id</span>"与重设计 N-4 的"该说法作废"）。</li>
+</ul>
+</div>
+
+<h2>4. 已验证为"做得好"的部分（建议保留，勿在返工时改掉）</h2>
+<div class="card flush">
+<table>
+<thead><tr><th>项</th><th>证据</th></tr></thead>
+<tbody>
+<tr><td>决策记录用<b>双向钢人 + 权重分级判据表 + 回滚成本 + gate</b></td><td>附 B（N-13 URL 形态，10 条判据含"刻意找不区分两者的伪论据"）、附 C（删除判定权，7 条判据）—— 这套体例在同类项目里罕见，是本文档最值得复用的资产</td></tr>
+<tr><td>导航自律有可执行判据</td><td>§8.4 原则四「能被表达为某页视图的东西就不是导航项」+「分组标签只给一组用」；<b>原型实测左栏恒 5 项、顺序正确</b></td></tr>
+<tr><td>去冗余三原则</td><td>「评审信息不进产品 UI / SSOT 同页只一次 / <b>刻意保留的重复不是冗余</b>」—— 第三原则尤其成熟（区分"作用域不同"与"真冗余"）</td></tr>
+<tr><td>四态不是机械四态</td><td>旧文 §8.2 先做"必须有 / 可降级"双向论证再收敛（加载态仅首屏骨架、成功态不作整页态）</td></tr>
+<tr><td>删除逻辑跨仓闭环</td><td>前端零判断、只渲染 <span class="mono">409 + {reasons}</span>；后端契约已迁至 <span class="mono">hub/DELETE-CONTRACT.md</span> §1（N-15）/§2（N-5）—— 分工干净</td></tr>
+<tr><td>验收可执行</td><td>§10.2 七条用例（纯 UI 操作 → 达成判据）+ 通用验收 7 条 + 明确 gate 清单</td></tr>
+<tr><td>原型运行时自检（本次实测）</td><td>语法解析 OK · boot 无抛错 · 全页渲染无 <span class="mono">undefined/NaN/[object Object]</span> 泄漏 · 左栏 5 项 · 状态图标一套（✓●✕⏳⏸○）与文档一致</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>5. 建议的修复顺序（按"改一处、消一片"排序）</h2>
+<div class="card flush">
+<table>
+<thead><tr><th>#</th><th>动作</th><th>覆盖发现</th><th>性质</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><b>一次裁决组件详情 Tab 归属</b>（6 / 7）并三处同步</td><td>F5、F6 的一半</td><td>决策 + 回写</td></tr>
+<tr><td>2</td><td><b>回写 v4.4 两视图</b>（9 处正文 + 附 A N-13 + 附 B 标题加历史标记）</td><td>F1</td><td>纯回写</td></tr>
+<tr><td>3</td><td><b>定 <span class="mono">/pipelines</span> redirect 新语义</b>并同步 gate 与真实 console</td><td>F2、F10</td><td>决策 + 跨仓</td></tr>
+<tr><td>4</td><td><b>原型筛选枚举对齐</b>（去掉已暂停 / 补成功 / 改名"待审批"）</td><td>F3、F4</td><td>原型修正</td></tr>
+<tr><td>5</td><td><b>把原型注记里的拍板决策搬进文档</b>（产品语言、uuid 作用域）</td><td>F7、F8</td><td>文档补写</td></tr>
+<tr><td>6</td><td>补 §9 无障碍规格 + 文案术语表</td><td>F11、F12</td><td>文档补写</td></tr>
+<tr><td>7</td><td>补新增页四态表 + 原型两处四态演示</td><td>F13</td><td>文档 + 原型</td></tr>
+<tr><td>8</td><td>README 索引对齐 + 修订索引表 + 旧文覆盖标记 + 删死代码</td><td>F6、F9、F15</td><td>编辑性</td></tr>
+<tr><td>9</td><td>（条件）导出 <span class="mono">DESIGN.md</span></td><td>F14</td><td>可选</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>6. 本次审计的验证方式</h2>
+<div class="card flush">
+<table>
+<thead><tr><th>层</th><th>手段</th><th>结果</th></tr></thead>
+<tbody>
+<tr><td>文档一致性</td><td>关键词交叉检索（三视图 / view=pipelines / 6 主 Tab / N-3 / 已暂停）+ 逐行定位</td><td>15 项发现，全部带文件与行号</td></tr>
+<tr><td>文档 ↔ 原型</td><td>对原型 <span class="mono">&lt;script&gt;</span> 做 <span class="mono">new Function()</span> 语法解析 + DOM stub 渲染全部 9 个页面 + 泄漏扫描 + 不变量断言</td><td>语法 OK / boot OK / 无泄漏 / 左栏 5 项 / 主 Tab 7（与文档 6 冲突）</td></tr>
+<tr><td>文档 ↔ 代码</td><td>读 <span class="mono">console/src/constants/runCenter.ts</span>、<span class="mono">router/index.ts</span>、<span class="mono">ComponentDetailView.vue</span>、<span class="mono">hub/DELETE-CONTRACT.md</span></td><td>三视图漂移确认为"设计已裁决、实现未跟"；DELETE 契约 §1/§2 已跨仓落地</td></tr>
+<tr><td>源文档改动</td><td>—</td><td><b>本次未修改任何文件</b>（仅新增本审计报告）</td></tr>
+</tbody>
+</table>
+</div>
+
+<footer>
+SDP Console 设计文档审计 · 2026-09-19 · 报告路径 <span class="mono">software-distribution-platform-docs/console/CONSOLE-UI-DOC-AUDIT-2026-09-19.html</span><br>
+所有引用行号对应审计当日工作区快照；若源文档已更新，请以行号锚定的<b>原文片段</b>复核而非行号。
+</footer>
+
+</div>
+</body>
+</html>

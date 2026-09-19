@@ -2,7 +2,7 @@
 
 > **权威端点清单（单一真相源）**。本文档由直接读取 `software-distribution-platform-hub/cmd/hub/main.go` 与各 `internal/*/handler/*.go` 的 `RegisterRoutes` 得出（非推测，核对日期 2026-09-16）。
 > Swagger（`hub/docs/docs.go` / `swagger.json` / `swagger.yaml`）是同一清单的自动生成产物，不在此重复。
-> 关联文档：`hub/DATA-MODEL.md`（数据模型）、`hub/DELETE-CONTRACT.md`（删除契约）、`console/CONSOLE-UI重设计文档.md`（前端 IA / 运行中心）、`runner/STORY-runner-implementation.md`（WS 线协议）。
+> 关联文档：`hub/DATA-MODEL.md`（数据模型）、`hub/DELETE-CONTRACT.md`（删除契约）、`console/CONSOLE-UI-DESIGN.md`（前端 IA / 运行中心）、`runner/STORY-runner-implementation.md`（WS 线协议）。
 
 ---
 
@@ -66,7 +66,7 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 - **新建**：`POST /pipelines`（body 不含 `id`）
 - **更新**：`PUT /pipelines/:id`（body 同结构；`:id` 取 `GET /pipelines` 返回的流水线主键）
 
-该 contract 由 `console/CONSOLE-UI-重设计原型.html` 的 `buildPipelineRequest()` 生成（JSON / YAML 可切换预览），字段名与 `internal/pipeline/models`（pipeline.go / stage.go / task_template.go）对齐。
+该 contract 由 `console/CONSOLE-UI-原型.html` 的 `buildPipelineRequest()` 生成（JSON / YAML 可切换预览），字段名与 `internal/pipeline/models`（pipeline.go / stage.go / task_template.go）对齐。
 
 **请求体字段**
 
@@ -81,7 +81,7 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 | `stages[].sequence` | int | 执行顺序，从 1 递增 |
 | `stages[].executionMode` | string | `parallel` \| `serial`：阶段内子任务并行 / 串行（→ `pipeline_stages.execution_mode`） |
 | `stages[].tasks[]` | array | 子任务，**按 `displayOrder` 排序** |
-| `stages[].tasks[].type` | string | `Build` \| `Release` \| `Approval`（→ `pipeline_task_templates.type`） |
+| `stages[].tasks[].type` | string | `Build` \| `Release` \| `Approval`（→ `pipeline_task_templates.type`，runner 派发码）。**派生字段，产品层不暴露为「类型」**：有 `release_config`/`rollout_config` → `Release`（产品语言＝「发布任务」，即阶段任务在做什么），有 `approval_config` → `Approval`（产品语言＝「人工审核阶段」），否则 `Build`（产品语言＝「构建/运行任务」）。三者均为对阶段任务的描述，并非用户可选的类别；`type` 仅作请求体序列化产物进入 hub 供 runner 派发（2026-09-17 用户拍板：UI 不出现 Build/Release/Approval 原词、改用产品语言描述；不引入模版目录） |
 | `stages[].tasks[].name` | string | 子任务展示名（→ `pipeline_task_templates.name`） |
 | `stages[].tasks[].displayOrder` | int | 阶段内顺序，从 1 递增 |
 | `stages[].tasks[].image` | string? | Build 类型：镜像（如 `localhost:5000/toolchain/go:1.22`） |
@@ -118,7 +118,7 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 }
 ```
 
-**与 hub 实际端点的对账（重要）**：现 hub `POST /pipelines`（见上）为**扁平创建**——对应 handler 仅取 `componentId / name / kind / description`，阶段 / 任务经 `POST /pipelines/:id/stages` → `POST /stages/:stageId/tasks` 级联写入（与 §2 端点清单一致）。因此 console 发出的完整 DAG body **当前不能直接被单个 `POST /pipelines` 消费**，需由 console 展开为「先 `POST /pipelines` 建壳 → 再逐个 `POST /pipelines/:id/stages` + `POST /stages/:stageId/tasks` 填充」，或待补「整 DAG 一次提交」端点（见 `console/CONSOLE-UI重设计文档.md` 附 A · N-7 / NOTE.editor）。本文仅定义 **contract（请求体形状）**；落地形态以 `hub/internal/pipeline/handler/pipeline.go` 代码为准。
+**与 hub 实际端点的对账（重要）**：现 hub `POST /pipelines`（见上）为**扁平创建**——对应 handler 仅取 `componentId / name / kind / description`，阶段 / 任务经 `POST /pipelines/:id/stages` → `POST /stages/:stageId/tasks` 级联写入（与 §2 端点清单一致）。因此 console 发出的完整 DAG body **当前不能直接被单个 `POST /pipelines` 消费**，需由 console 展开为「先 `POST /pipelines` 建壳 → 再逐个 `POST /pipelines/:id/stages` + `POST /stages/:stageId/tasks` 填充」，或待补「整 DAG 一次提交」端点（见 `console/CONSOLE-UI-DESIGN.md` 附 A · N-7 / NOTE.editor）。本文仅定义 **contract（请求体形状）**；落地形态以 `hub/internal/pipeline/handler/pipeline.go` 代码为准。
 
 ### 运行 / 审批 / 回滚
 - `POST /pipelines/:id/runs`（触发）· `GET /pipelines/:id/runs`
@@ -181,7 +181,7 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 
 - `GET /runs/:id/stage-progress`：`DATA-MODEL.md` §6.5 已确认新增、**待实现**（现仅 `GET /runs/:id/progress`）。
 - `platform_roles` / `platform_role_bindings` HTTP 端点：待补（P1-1）。
-- 全局 `/pipelines` 与 `/releases` 列表：**已实现**（2026-09-15 之后的代码新增）。旧文 `console/CONSOLE-UI重设计文档.md` 附 A N-3、`DOC-CODE-CALIBRATION-2026-09-15.html` S2 称"无全局 /pipelines、无 /releases 端点"已过时，本文即其更正，console 文档 N-3 已同步更新。
+- 全局 `/pipelines` 与 `/releases` 列表：**已实现**（2026-09-15 之后的代码新增）。旧文 `console/CONSOLE-UI-DESIGN.md` 附 A N-3、`DOC-CODE-CALIBRATION-2026-09-15.html` S2 称"无全局 /pipelines、无 /releases 端点"已过时，本文即其更正，console 文档 N-3 已同步更新。
 
 ---
 

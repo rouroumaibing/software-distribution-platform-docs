@@ -1,6 +1,6 @@
 # 删除契约：级联校验 + 409 verdict（hub API 行为契约）
 
-> 本文档是 hub 侧删除端点的**权威实现契约**，由 console `CONSOLE-UI重设计文档.md` 附 A（N-15 / N-5）与 附 C 中"hub 实现细节"迁出归位而来（2026-09-16，按"对应内容放对应 docs 文件"整理）。
+> 本文档是 hub 侧删除端点的**权威实现契约**，由 console `CONSOLE-UI-DESIGN.md` 附 A（N-15 / N-5）与 附 C 中"hub 实现细节"迁出归位而来（2026-09-16，按"对应内容放对应 docs 文件"整理）。
 > console 文档保留**前后端分工决策（附 C）**与 **UX 行为**，本文档保留 **hub 端点的行为规格**——单一真相源在 hub。
 
 ## 0. 总则（与 console 决策一致）
@@ -99,7 +99,7 @@
 - `hub/STORY-BACKLOG.md` 新增 **B-12：后端 DELETE 级联校验（N-15 / N-5）落地**（见该文 §1）；本轮另增 B-13~B-16（见 §6.7）。
 
 ## 5. 关联文档
-- console 设计决策（前后端分工 + 钢人论证）：[`../console/CONSOLE-UI重设计文档.md`](../console/CONSOLE-UI重设计文档.md) 附 C
+- console 设计决策（前后端分工 + 钢人论证）：[`../console/CONSOLE-UI-DESIGN.md`](../console/CONSOLE-UI-DESIGN.md) 附 C
 - console 后端依赖索引：同上 附 A（N-15 / N-5）
 - hub API 参考：`hub/API-REFERENCE.md` §3/§4
 - 数据模型（环境分组落库）：`hub/DATA-MODEL.md` §8

@@ -2,7 +2,7 @@
 
 > 配套文档：`STORY-hub-implementation.md`（控制面接线层）。本 Story 覆盖 M1 全链路的 **Runner 侧**：接收 Hub 下发 → 落地 CRD → DAG 调度 → 任务执行（Job/Deploy/Approval）→ 状态/审批回写 Hub。
 >
-> **项目目标（对齐 console / hub）**：runner 是 SDP 的执行平面，把 hub 下发的流水线 DAG 在目标集群真正执行——构建（Build Job）、施加发布（Release chart/manifest + 金丝雀）、人工卡点（Approval）——从而让"界面触发一次发布"端到端跑通到多套环境。它支撑 console 定义的 4 类标准流水线（日常 / 版本归档 / 转测 / 生产，见 console `CONSOLE-UI设计文档.md` §1.1）。落地顺序：先贯通基本功能（R1–R3 生产化收尾），**权限管控由 hub 侧 G7 统一落实（已实现：P1 建表 / P2 审批子系统 / P3a Enforcement）**。
+> **项目目标（对齐 console / hub）**：runner 是 SDP 的执行平面，把 hub 下发的流水线 DAG 在目标集群真正执行——构建（Build Job）、施加发布（Release chart/manifest + 金丝雀）、人工卡点（Approval）——从而让"界面触发一次发布"端到端跑通到多套环境。它支撑 console 定义的 4 类标准流水线（日常 / 版本归档 / 转测 / 生产，见 console `CONSOLE-UI-DESIGN.md` §1.1）。落地顺序：先贯通基本功能（R1–R3 生产化收尾），**权限管控由 hub 侧 G7 统一落实（已实现：P1 建表 / P2 审批子系统 / P3a Enforcement）**。
 
 ## 1. 元信息与业务价值 (Context & Value)
 - **类型**: [x] Tech Story (架构/重构/技术债)   [ ] Biz Story (业务)
@@ -224,7 +224,7 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 
 ### 4.4 授权边界（Runner 侧；不持有授权逻辑）
 
-> 完整授权模型见 [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)，前端交互见 [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI设计文档.md)。本小节只界定 Runner 在授权链路中的边界。
+> 完整授权模型见 [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)，前端交互见 [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md)。本小节只界定 Runner 在授权链路中的边界。
 
 - **Runner 只消费 hub 已鉴权下发的 spec**：`ApplyPipelineRunPayload` 由 hub 在通过 §7.5 Enforcement 后下发，Runner 不解析用户身份、不判断"谁有权触发/修改"。
 - **审批决策不在 Runner**：Approval 子任务的通过/拒绝由 Hub 经 `approve_task` 帧（§4.1）下发；Runner 仅据此解除挂起或终止，不判断"谁有权审批"（防自审等规则在 [hub 数据模型 §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) 落实）。

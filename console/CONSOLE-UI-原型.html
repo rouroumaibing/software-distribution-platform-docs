@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>SDP Console · UI 重设计原型</title>
+<title>SDP Console · UI 原型</title>
 <!--
   结构契约核对（本原型须体现的硬性设计决策）：
   1) 左栏"精简 + 有界"：**恒 5 项** —— 总览 / 服务树 / 运行中心 / 用户与权限 / 集群。
@@ -405,12 +405,12 @@ const PIPELINE_GRAPHS = {
   ]},
   '版本归档':{kind:'release', desc:'归档发布产物', stages:[
     {name:'归档', mode:'serial', tasks:[
-      {type:'Release', label:'helm upgrade '+S.comp, image:'', cmd:'', args:'', timeout:''}]},
+      {label:'helm upgrade '+S.comp, image:'', cmd:'', args:'', timeout:'', target:'staging'}]},
   ]},
   '生产发布':{kind:'release', desc:'灰度发布到生产', stages:[
     {name:'发布', mode:'parallel', tasks:[
-      {type:'Release', label:'helm upgrade '+S.comp, image:'', cmd:'', args:'', timeout:''},
-      {type:'Approval', label:'人工卡点', image:'', cmd:'', args:'', timeout:''}]},
+      {label:'helm upgrade '+S.comp, image:'', cmd:'', args:'', timeout:'', target:'staging'},
+      {label:'人工卡点', image:'', cmd:'', args:'', timeout:'', approvers:'release-manager'}]},
   ]},
   '转测流水线':{kind:'custom', desc:'打包并转测', stages:[
     {name:'转测', mode:'serial', tasks:[
@@ -439,6 +439,21 @@ function savePipelineDraft(){
   p.ver = (p.ver||0) + 1;
   S.editorDirty = false;
 }
+/* 子任务类型派生（不暴露手动单选）：有发布目标/rollout → Release；有审批人 → Approval；否则 Build。
+   对齐 hub pipeline_task_templates 的 release_config / approval_config 列——type 本就是配置的派生属性，非用户选择。 */
+function deriveType(t){
+  if(t.target || t.rollout) return 'Release';
+  if(t.approvers) return 'Approval';
+  return 'Build';
+}
+/* Build/Release/Approval 只是「阶段任务在做什么」的内部派发码（喂 runner），并非用户可选的「类型」分类。
+   产品语言：填了发布目标 → 发布任务；填了审批人 → 人工审核阶段；否则 → 构建/运行任务。
+   编辑器只显产品语言描述，不露 Build/Release/Approval 原词；type 仅进入请求体供 runner 派发。 */
+function taskNature(t){
+  if(t.target || t.rollout) return '发布任务';
+  if(t.approvers) return '人工审核阶段';
+  return '构建 / 运行任务';
+}
 /* 编排完成 → 生成请求体：映射到 hub 流水线创建(POST) / 更新(PUT) 接口 */
 function buildPipelineRequest(){
   const p = PIPELINES.find(x=>x.name===S.editorName);
@@ -449,7 +464,7 @@ function buildPipelineRequest(){
     stages: S.editorStages.map((st,i)=>({
       name: st.name, sequence: i+1, executionMode: st.mode,
       tasks: st.tasks.map((t,j)=>{
-        const o = {type:t.type, name:t.label, displayOrder:j+1};
+        const o = {type:deriveType(t), name:t.label, displayOrder:j+1};
         if(t.image)     o.image = t.image;
         if(t.cmd)       o.command = [t.cmd];
         if(t.args)      o.args = [t.args];
@@ -568,14 +583,14 @@ const NOTE = {
              '「待我审批」的"待我"这层身份过滤需 <span class="mono">assignee=me</span>（附 A · N-2），未落地前退化按 <span class="mono">phase=WaitingApproval</span> 筛。'],
   runs:['「待我审批」当前只能按 <span class="mono">phase=WaitingApproval</span> 筛；按人过滤需 <span class="mono">assignee=me</span>（附 A · N-2）。',
         '运行中心两视图 URL 形态 = <span class="mono">/runs?view=runs|releases&amp;phase=&amp;page=</span>（query，非嵌套子路由；流水线视图已于 2026-09-15 移除，N-13 的 ?view= 形态对余下两视图继续有效）。本原型以内存状态模拟该 query。见文档 <b>附 B</b>（N-13 / B.9）。'],
-  'runs-releases':['hub 无全局发布列表端点（附 A · N-3）；实现版以服务树索引 + 扫描运行（取 <span class="mono">kind=release</span>）前端聚合兜底。',
-             '本原型的「已暂停」筛选在实现版<b>刻意未提供</b>：<span class="mono">Paused</span> 是 Rollout 任务级状态，不在 PipelineRun 的 6 个 phase 枚举里，逐 run 查 tasks 才能判定（N+1）——等 <span class="mono">GET /releases?scope=global&amp;state=paused</span>（附 B · B.9）。'],
+  'runs-releases':['hub 已提供全局发布端点与完整 CRUD（<span class="mono">GET /releases</span> 等，附 A · N-3，2026-09-15 核对）——发布视图可直接走后端全局端点；服务树索引 + 扫描运行（取 <span class="mono">kind=release</span>）的前端聚合仅作过渡兜底。',
+             '「已暂停」<b>已是本原型的一等状态</b>（<span class="mono">PH.paused</span> ⏸ 徽章 + <span class="mono">RUN_FILTERS.releases</span> 筛选 + 数据行可筛出结果），已按 2026-09-19 回写文档 §7.6。<b>后端支持仍是缺口</b>：<span class="mono">Paused</span> 是 Rollout（runner <span class="mono">Rollout</span> CRD）的<b>任务级</b>状态，不在 <span class="mono">PipelineRunPhase</span> 六个枚举里，逐 run 拉 tasks 才能判定（N+1）——等 <span class="mono">GET /releases?scope=global&amp;state=paused</span>（附 A · N-3；附 B · B.9）。真实实现版在该端点落地前<b>不渲染该死筛选</b>（不渲染无 handler 的装饰控件）。'],
   catalog:['<b>本页不常驻左栏的理由</b>：组件数会持续增长，树放左栏会导致条目无界增长 + 首屏变慢。左栏条目数恒为 5，与资源数无关。',
            '懒加载依赖 <span class="mono">GET /orgs</span> → <span class="mono">/orgs/:id/services</span> → <span class="mono">/services/:id/components</span>（附 A · N-9）；若后端只有"整树"单端点，降级为<b>一次拉取 + 前端虚拟滚动</b>。',
            '搜索依赖 <span class="mono">GET /search?q=</span>（附 A · N-8）。',
            '节点数 ≥200 启用虚拟滚动窗口。'],
-  component:['组件详情 Tab 由 9 项平铺收敛为 6 主 Tab + 2 组子 Tab；旧子路由保留 redirect 兼容 deep link。',
-             '「配置」= 参数 + 环境；「交付」= 流水线 + 运行 + 发布（流水线列表的唯一归属地；跨组件巡视不再单列流水线视图）。',
+  component:['组件详情 Tab 由 9 项平铺收敛为 <b>7 主 Tab</b>（概览 / 交付 / 配置 / 环境 / 制品 / 权限 / 日志）——「环境」由「配置」的子 Tab 升为顶级；仅「交付」带子 Tab（流水线 / 运行 / 发布）；旧子路由保留 redirect 兼容 deep link。',
+             '「配置」= 参数（环境已升为顶级 Tab）；「交付」= 流水线 + 运行 + 发布（流水线列表的唯一归属地；跨组件巡视不再单列流水线视图）。',
              '详情页所有信息查询（概览 / 流水线 / 运行 / 发布 / 环境 / 参数 / 制品 / 权限 / 日志）统一以<b>组件 uuid</b> 为作用域主键——对齐 old 后端 <span class="mono">/api/component/:uuid/...</span>（<span class="mono">:uuid</span> 即组件主键，<span class="mono">CreateComponent</span> 生成 <span class="mono">uuid.New().String()</span>）：<span class="mono">GET /api/component/:uuid</span>、<span class="mono">/pipelines</span>、<span class="mono">/environments</span>、<span class="mono">/parameters/:environment_id</span>、<span class="mono">/products</span>、<span class="mono">/changes</span>。本原型以 <span class="mono">ComponentAPI</span> 内存模拟：入参统一为 uuid，内部按 uuid→label 解析后过滤，与后端"查询按 component_id(uuid) 过滤"一致。',
              '<span class="mono">/pipelines</span> 的 CRUD 端点已核对存在（<span class="mono">POST /pipelines</span>、<span class="mono">GET/PUT/DELETE /pipelines/:id</span>、<span class="mono">GET /api/component/:uuid/pipelines</span>，附 A · N-4）；删除语义（硬删/软删/保留历史）仍待拍板（附 A · N-5）。',
              '「新建流水线」在组件详情内触发：组件上下文已锁定为当前组件，对话框不再提供跨组件选择，POST /pipelines 的 componentId 直接取当前组件 uuid（数据库归属同一组件，不出现其它组件）。'],
@@ -583,7 +598,8 @@ const NOTE = {
           '编排完成「保存」→ 生成请求体（JSON / YAML 可切换预览），映射到 hub 流水线接口：已在 hub 的流水线 = <span class="mono">PUT /api/v1/pipelines/:id</span>（更新），本次新建 = <span class="mono">POST /api/v1/pipelines</span>（创建）；请求体含 componentId / name / kind / description / stages[]（name / sequence / executionMode / tasks[]：type / name / displayOrder / image / command / args / timeoutSeconds）。',
           '注意：hub 现 <span class="mono">POST /pipelines</span> 为扁平创建（仅 componentId / name / kind / description），阶段/任务经 <span class="mono">POST /pipelines/:id/stages</span> → <span class="mono">/stages/:id/tasks</span> 级联落库；console 侧发出完整 DAG，由 console 展开为多次调用（待拍：是否新增「整 DAG 一次提交」端点）。',
           '保存 = 阶段/任务的 <span class="mono">POST/PUT/DELETE</span>；流水线级删除见附 A · N-4 / N-5。',
-          '现编辑器仅 <span class="mono">kind=build</span> 可编排，是否放开 release/custom 待定（附 A · N-7）。'],
+          '现编辑器仅 <span class="mono">kind=build</span> 可编排，是否放开 release/custom 待定（附 A · N-7）。',
+          '子任务 <b>产品语言</b>：填了「发布目标」→ 发布任务（阶段任务在做什么），填了「审批人」→ 人工审核阶段，否则 → 构建/运行任务。<b>Build/Release/Approval 不是用户可选的「类型」分类</b>，只是上述描述在请求体里的内部派发码（<span class="mono">deriveType()</span> 对齐 hub <span class="mono">pipeline_task_templates.type</span>）。编辑器只显产品语言描述，不露 Build/Release/Approval 原词；<b>不引入模版目录</b>（用户拍板 2026-09-17）；type 仅作请求体序列化产物进入 hub 供 runner 派发。'],
   'admin-cluster':['集群健康来自 Runner 心跳；离线 Runner 重连后自动重放 Pending 任务。'],
   'admin-perm':['平台角色来自 Keycloak 组映射，仅平台管理员可见。'],
 };
@@ -1067,7 +1083,7 @@ function pageEditor(){
         </div>
       </div>
       ${st.tasks.map((t,ti)=>`<div class="task ${S.editorSel&&S.editorSel.si===si&&S.editorSel.ti===ti?'sel':''}" data-act="sel-task" data-si="${si}" data-ti="${ti}">
-        <span class="ti">${t.type==='Build'?'⌘':t.type==='Release'?'⬇':'✓'}</span>
+        <span class="ti">${deriveType(t)==='Build'?'⌘':deriveType(t)==='Release'?'⬇':'✓'}</span>
         <span class="tn">${esc(t.label)}</span>
         <span class="tacts">
           <button class="link" data-act="mv-task" data-si="${si}" data-ti="${ti}" data-dir="up" ${ti===0?'disabled':''} title="上移">▲</button>
@@ -1081,11 +1097,14 @@ function pageEditor(){
   if(S.editorSel){
     const t = stages[S.editorSel.si] && stages[S.editorSel.si].tasks[S.editorSel.ti];
     if(t){
-      cfg = `<div class="row" style="gap:8px"><span class="chip">类型</span>
-        ${['Build','Release','Approval'].map(tp=>`<button class="pill ${t.type===tp?'on':''}" data-act="set-type" data-si="${S.editorSel.si}" data-ti="${S.editorSel.ti}" data-type="${tp}">${tp}</button>`).join('')}</div>
+      cfg = `<div class="row" style="gap:8px">
+          <span class="chip" title="由下方填写内容自动识别，非类别选择">${taskNature(t)}</span>
+          <span class="muted" style="font-size:12px;align-self:center">（由填写内容自动识别，非类别选择）</span></div>
         <div class="field" style="margin-top:14px"><label>名称</label><input class="input mono" data-task-field="label" data-si="${S.editorSel.si}" data-ti="${S.editorSel.ti}" value="${esc(t.label)}" /></div>
         <div class="field"><label>image</label><input class="input mono" data-task-field="image" data-si="${S.editorSel.si}" data-ti="${S.editorSel.ti}" value="${esc(t.image||'')}" /></div>
         <div class="field"><label>command / args</label><input class="input mono" data-task-field="cmd" data-si="${S.editorSel.si}" data-ti="${S.editorSel.ti}" value="${esc(t.cmd||'')}" /></div>
+        <div class="field"><label>发布目标 (release target) · 填了即识别为「发布任务」</label><input class="input mono" data-task-field="target" data-si="${S.editorSel.si}" data-ti="${S.editorSel.ti}" value="${esc(t.target||'')}" /></div>
+        <div class="field"><label>审批人 (approvers) · 填了即识别为「人工审核阶段」</label><input class="input mono" data-task-field="approvers" data-si="${S.editorSel.si}" data-ti="${S.editorSel.ti}" value="${esc(t.approvers||'')}" /></div>
         <div class="field"><label>timeoutSeconds / retryPolicy</label><input class="input mono" data-task-field="timeout" data-si="${S.editorSel.si}" data-ti="${S.editorSel.ti}" value="${esc(t.timeout||'')}" /></div>`;
     }
   }
@@ -1460,7 +1479,6 @@ document.getElementById('content').addEventListener('click', (e)=>{
   else if(a==='add-task'){ const si=+act.dataset.si; S.editorStages[si].tasks.push({type:'Build', label:'新子任务', image:'', cmd:'', args:'', timeout:''}); S.editorSel={si, ti:S.editorStages[si].tasks.length-1}; S.editorDirty=true; render(); }
   else if(a==='edit-task'){ S.editorSel={si:+act.dataset.si, ti:+act.dataset.ti}; render(); }
   else if(a==='sel-task'){ S.editorSel={si:+act.dataset.si, ti:+act.dataset.ti}; render(); }
-  else if(a==='set-type'){ const si=+act.dataset.si, ti=+act.dataset.ti; S.editorStages[si].tasks[ti].type=act.dataset.type; S.editorDirty=true; render(); }
   else if(a==='del-task'){ const si=+act.dataset.si, ti=+act.dataset.ti; S.editorStages[si].tasks.splice(ti,1); if(S.editorSel&&S.editorSel.si===si&&S.editorSel.ti===ti) S.editorSel=null; S.editorDirty=true; render(); }
   else if(a==='new-comp') toast('新建组件（示意）');
   else if(a==='new-svc') toast('新建 Service（示意）');

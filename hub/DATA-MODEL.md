@@ -3,7 +3,7 @@
 > 本文档钉死软件分发平台 hub 的核心关系链，作为后续建模与代码审查的权威参考。
 > 来源：`internal/org`、`internal/catalog`、`internal/component`、`internal/pipeline`、`internal/run` 各 `models` 包（已读源码核实，非推测）。
 >
-> **项目目标（对齐 console / runner）**：hub 是 SDP 的控制平面，为"通过界面交互把软件构建、测试、发布到多套环境"提供数据模型与 REST API 支撑。核心能力 = 组织 / 服务树 / 组件 / 环境 / 配置 / 流水线 / 运行 的 CRUD 与编排下发，以及运行态状态回收。标准流水线模式（日常 / 版本归档 / 转测 / 生产，见 console `CONSOLE-UI设计文档.md` §1.1）由 Pipeline（锚定单 Component）+ 阶段 + 三态任务（Build/Release/Approval）表达。落地顺序：先贯通基本功能（G1–G6 已完成），**权限管控（G7）已落实（P1 建表 / P2 审批子系统 / P3 Enforcement，见 §7）**。
+> **项目目标（对齐 console / runner）**：hub 是 SDP 的控制平面，为"通过界面交互把软件构建、测试、发布到多套环境"提供数据模型与 REST API 支撑。核心能力 = 组织 / 服务树 / 组件 / 环境 / 配置 / 流水线 / 运行 的 CRUD 与编排下发，以及运行态状态回收。标准流水线模式（日常 / 版本归档 / 转测 / 生产，见 console `CONSOLE-UI-DESIGN.md` §1.1）由 Pipeline（锚定单 Component）+ 阶段 + 三态任务（Build/Release/Approval）表达。落地顺序：先贯通基本功能（G1–G6 已完成），**权限管控（G7）已落实（P1 建表 / P2 审批子系统 / P3 Enforcement，见 §7）**。
 
 ## 0. 四条不动式（先记住这四句话）
 
@@ -109,7 +109,7 @@ Pipeline  ──1:N──▶  PipelineRun    (pipeline_runs.pipeline_id + cluste
 
 ## 6. 流水线下发与进展回收（含双向钢人论证）
 
-> 本章是 console `CONSOLE-UI设计文档.md` §6.0、runner `STORY-runner-implementation.md` §4.3 的落地依据。聚焦三个你点名的开放问题：① runner 怎么取任务；② 进展记在哪；③ 命令怎么跑。每个都做双向钢人论证后给推荐。
+> 本章是 console `CONSOLE-UI-DESIGN.md` §6.0、runner `STORY-runner-implementation.md` §4.3 的落地依据。聚焦三个你点名的开放问题：① runner 怎么取任务；② 进展记在哪；③ 命令怎么跑。每个都做双向钢人论证后给推荐。
 
 ### 6.1 任务落地与下发机制（现状，推送模型）
 
@@ -207,7 +207,7 @@ CREATE TABLE stage_runs (
 
 > ⚠️ **状态勘误（2026-09-15）**：本节 §7 表 + Enforcement 中间件已落地，但 `platform_roles` / `platform_role_bindings` **尚无 HTTP 端点**（`internal/permission/handler/` 下仅有 `role` / `component_role` / `binding` 组件级 handler，`main.go` 未注册 platform 级路由）。平台管理员绑定须经 API 配置的能力未暴露（backlog P1-1）。详细对账见 `DOC-CODE-CALIBRATION-2026-09-15.html`。
 
-> 双向钢人论证结论（见 [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI设计文档.md) / 对话记录）：Keycloak 与 k8s RBAC 均**退到边界**——KC 只做身份+组，k8s RBAC 只管 runner 集群操作；承载"用户对组件能做什么 + 谁能审批"的是 **hub 内的两层 RBAC + 审批表**。这同时满足：① 组件级权限以"管理员/组映射为主"（无运行时自助需求 → 不引入 Keycloak UMA）；② 默认审批人 = 组件 owner/管理员（所有权在 app，见 §7.4）。
+> 双向钢人论证结论（见 [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) / 对话记录）：Keycloak 与 k8s RBAC 均**退到边界**——KC 只做身份+组，k8s RBAC 只管 runner 集群操作；承载"用户对组件能做什么 + 谁能审批"的是 **hub 内的两层 RBAC + 审批表**。这同时满足：① 组件级权限以"管理员/组映射为主"（无运行时自助需求 → 不引入 Keycloak UMA）；② 默认审批人 = 组件 owner/管理员（所有权在 app，见 §7.4）。
 
 > ⚠️ **实现现状（V1，已在代码）≠ 本章设计（目标态，迁移中）**——V1 与 §7 表并存是**有意为之的增量迁移**，不是两套对立设计：
 >
@@ -263,7 +263,7 @@ CREATE TABLE stage_runs (
   - 预置四种角色（built-in，`org_id IS NULL`，见 `cmd/hub/conf/09_rbac_multiorg.sql`）：`component-viewer`(read 类)、`component-editor`(read+update+trigger+create/delete pipeline+config)、`component-approver`(+`approval:approve`)、`component-admin`(+ **全部组件动作**，含 `approval:approve` 与 `component:manage`；创建组件的 owner 自动绑定此角色，见 §7.4)。
 - **`component_role_bindings`**：`(id, component_id, subject_type[user|group], subject_id, component_role_id)`。同一组件可多绑定；`subject_type=group` 复用 KC 组。
 - **默认绑定（满足"默认审批人=组件 owner/admin"）**：创建组件时（P3b）**自动把组件 owner（user 或 group）绑 `component-admin`**——owner 即拥有全部组件动作（含 `approval:approve` 与 `component:manage`），无需再显式授予。该自动绑定非致命（失败不影响组件创建，仅记日志告警）。owner 来源见 §7.4 所有权。
-- **增删改查颗粒度**：逐 action 授权，支持"能看不能改""能触发不能删"等组合；前端权限页见 [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI设计文档.md)。
+- **增删改查颗粒度**：逐 action 授权，支持"能看不能改""能触发不能删"等组合；前端权限页见 [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md)。
 
 ### 7.4 审批子系统（pipeline approvals）
 

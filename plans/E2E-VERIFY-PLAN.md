@@ -1,6 +1,6 @@
 # E2E-VERIFY-PLAN — 端到端联调验证计划
 
-> 状态：计划（未执行） · 创建：2026-09-06 · 前置：各组件 Backlog（见 [console 设计文档 附 B](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI设计文档.md)）G1–G6 已关闭
+> 状态：计划（未执行） · 创建：2026-09-06 · 前置：各组件 Backlog（见 [console 设计文档 附 E（历史未完成项快照）](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md)）G1–G6 已关闭
 >
 > 成功定义（已锚定）：**通过界面流水线（构建、发布、测试）把软件在真实环境中成功运行**。
 > 门禁全绿只是工程完成度；本计划负责补上从未验证过的"运行侧"。
