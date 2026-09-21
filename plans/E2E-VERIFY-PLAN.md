@@ -57,7 +57,7 @@
 
 | 镜像 | 定值 | 说明 |
 |---|---|---|
-| Build 任务基础镜像 | `golang:1.22-alpine`（或按需 `node:20-alpine`） | 公共源可拉，单机无需私有 registry |
+| Build 任务基础镜像 | `golang:1.27-alpine`（或按需 `node:20-alpine`） | 公共源可拉，单机无需私有 registry |
 | releaseContainer | `alpine/helm:3.14.4`（现状保持） | 内含 helm，能执行 upgrade --install / kubectl |
 | 业务镜像 | `localhost:5000/demo-app:<ver>` | Build 产物镜像 push 本地 registry |
 
@@ -119,11 +119,11 @@
 > 临时脚本**完成，**不随任何仓库分发**。其它开发者按**各仓自带脚本**起步：
 > `make package` / `pnpm image` 产出「镜像 + charts」交付包（`output/software-distribution-platform-<comp>-<version>.tar.gz`）；
 > `make start-dev` / `pnpm start:dev` 起本地开发服务（`hack/svc.sh` / `scripts/svc.sh`）。
-> 依据见 `software-distribution-platform-docs/BUILD-ARTIFACTS.md` 附 C 与 §10.7。
+> 构建与清理约定（生成物收敛 `output/`、clean 前先停服务、hub `docs/` 编译输入须入库）落地于各仓 Makefile 与根 `clean-local.sh`、三仓 `scripts/svc.sh`，属已生效实践。
 
 ### P1 Build 链路（L2-2 + L2-6）
 
-1. 界面建组件 → 配参数 → 编排流水线：Stage1 `Build`（command=`go build ./...`，image=`golang:1.22-alpine`）+ Stage2 `Build`（command=`go test ./...`）
+1. 界面建组件 → 配参数 → 编排流水线：Stage1 `Build`（command=`go build ./...`，image=`golang:1.27-alpine`）+ Stage2 `Build`（command=`go test ./...`）
 2. 界面触发 → runner 收 `apply_pipeline_run` → Job 起跑
 3. **通过标准**：Job 退出码 0 → TaskRun Succeeded；console 运行监控 DAG 变绿；日志面板看到**真实编译/测试输出**（G2 落库链路真验证）
 4. **失败演练**：故意改坏命令（`go buil`）→ 触发 → Job Failed → 只靠日志面板定位到 typo（L2-6 达成）
@@ -195,7 +195,7 @@
 
 | 缺口 | 处置 | 落点 |
 |---|---|---|
-| R3 镜像固化 | §1.3 定案：Build=golang:1.22-alpine、Release=alpine/helm:3.14.4、业务镜像=localhost:5000 | P0 |
+| R3 镜像固化 | §1.3 定案：Build=golang:1.27-alpine、Release=alpine/helm:3.14.4、业务镜像=localhost:5000 | P0 |
 | R1 chart 鉴权 | 本地无 chart 仓库 → ChartURL 指向 G5 制品 URL 绕过；鉴权推迟到真实仓库出现时 | P3 |
 | R2 values 注入 | `--set` e2e：界面 params → 集群副本数变化 | P3 |
 

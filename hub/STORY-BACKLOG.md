@@ -57,3 +57,25 @@
   - **数据模型/一致性（本轮新增，建议紧随 B-13）**：B-14（config_history 快照列，消除"删环境随机 500"）、B-15（**仅剩** stages/templates 补 `deleted_at`，待"是否支持恢复已删流水线结构"拍板）、B-16（artifacts 源头治理）。
   - 功能完整性：B-01/B-02/B-04/B-05/B-06/B-11/B-12/B-13。
   - 协作流程：B-10（QA 待补）。
+
+---
+
+## 4. 补充缺口（合并自 FEATURE-GAP-BACKLOG.html，2026-09-19 快照）
+
+> 该 HTML 已删除，其未覆盖于 B-01~B-16 的缺口并入此处。P0-1（Releases 端点）、P0-2（全局 `/pipelines`）**已实现**（2026-09-15 后代码新增，见 `hub/API-REFERENCE.md`），不重复列；P1-4/1-5、P2-1~5/12 已分别含于 B-01/B-02/B-05/B-11/B-16。
+
+| # | 功能域 | 待办项 | 状态 | 原编号 |
+| --- | --- | --- | --- | --- |
+| C-01 | Console | ⌘K 全局搜索（Cmd/Ctrl+K 浮层，资源直达） | ⬜ 未做 | P1-2 |
+| C-02 | Console | 暗色主题（dark token 集 + 切换开关 + WCAG AA 对比度） | ⬜ 未做 | P1-3 |
+| C-03 | Hub | Pipeline 触发时 stages/tasks 快照序列化固化 | ⬜ 未做 | P1-7 |
+| C-04 | Hub | 清理未调用的 `PipelineRunHandler.RegisterRoutes`（冗余/遗留代码） | ⬜ 待清 | P1-8 |
+| C-05 | Runner | connector 重连后 resync（在途 PipelineRun 重新对账，TODO） | ⬜ 未做 | P1-6 |
+| C-06 | Runner | ExecutionMode=Serial（阶段内串行，当前仅 Parallel） | ⬜ 未做 | P2-10 |
+| C-07 | Runner | 失败节点单任务重跑（当前仅整 run redispatch） | ⬜ 未做 | P2-9 |
+| C-08 | Console | DAG 自由画布编辑器（当前 stage/task 列表式编排） | ⬜ 未做 | P2-6 |
+| C-09 | Hub/Console | 流水线版本历史 / 对比 / 回滚 | ⬜ 未做 | P2-7/P2-8 |
+| C-10 | Hub | 平台级 RBAC HTTP 端点（`/platform-roles`、`/platform-role-bindings` 未注册；models+repo+内部 `RequirePermission` 已有） | ⬜ 未做 | P1-1 / DATA-MODEL §7 |
+| C-11 | Hub/Runner | 集群离线告警 + Helm 一键接入 + runner 重连对账 | ⬜ 未做 | P2-11 |
+| C-12 | Console | 流水线全生命周期 UI（新建/删除入口、编辑器支持 build/release/approval 编排） | 🟡 部分（编辑器已支持 build 编排，新建/删除待补） | P0-3 |
+| C-13 | Runner | Test 类型 / 环境模型（daily/版本归档/转测/生产环境语义） | ⬜ 未做 | P2-1 |

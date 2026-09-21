@@ -188,6 +188,10 @@ a{color:var(--accent);text-decoration:none;cursor:pointer}
   display:inline-block;animation:spin .7s linear infinite;margin-bottom:8px}
 @keyframes spin{to{transform:rotate(360deg)}}
 .errbox{background:var(--fail-bg);color:var(--fail-fg);border-radius:10px;padding:11px 15px;font-size:13px;display:flex;gap:9px;align-items:center}
+.infobar{border:1px solid var(--hairline);border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:8px;padding:11px 14px;font-size:12.5px;line-height:1.75}
+.infobar-h{font-weight:650;margin-bottom:5px}
+.infobar-b b{color:var(--text)}
+.infobar-b .mono{font-size:11.5px}
 .warnbox{background:var(--warn-bg);color:var(--warn-fg);border-radius:10px;padding:10px 15px;font-size:13px;display:flex;gap:9px;align-items:center;margin-bottom:16px}
 
 /* console-state switcher */
@@ -894,12 +898,12 @@ const ComponentAPI = {
   environments(uuid){ return allEnvs(envModel(compLabel(uuid))); },
   /* GET /api/component/:uuid/parameters/:environment_id */
   parameter(uuid, envId){ return { componentId:uuid, environmentId:envId, yaml: yamlOf(compLabel(uuid), envId) }; },
-  /* GET /api/component/:uuid/artifacts —— 原型占位（old 后端无独立 artifacts 端点） */
-  artifacts(uuid){ return []; },
-  /* GET /api/component/:uuid/permissions —— 原型占位（组件级权限，沿用平台角色） */
-  permissions(uuid){ return []; },
-  /* GET /api/component/:uuid/logs —— 原型占位 */
-  logs(uuid){ return []; },
+  /* GET /components/:componentId/artifacts —— 制品库（按组件 uuid 作用域；下载走签名 URL 直连，删除需 artifact:delete） */
+  artifacts(uuid){ return (ARTIFACTS[compLabel(uuid)]||[]).slice(); },
+  /* GET /components/:componentId/role-bindings —— 组件级权限（component_role_bindings，四种角色见 §7.9） */
+  permissions(uuid){ return (PERMISSION_BINDINGS[compLabel(uuid)]||[]).slice(); },
+  /* GET /runs/:id/tasks/:name/log —— 组件级「日志」Tab = 运行日志聚合视图（每运行合并展示） */
+  logs(uuid){ return (RUN_LOGS[compLabel(uuid)]||[]).slice(); },
   /* GET /api/component/:uuid/changes —— old 后端有此端点，原型未单列 Tab，保留查询以备扩展 */
   changes(uuid){ return []; },
 };
@@ -929,6 +933,12 @@ function pageComponent(){
     body = pageConfigure();
   } else if(S.compTab==='env'){
     body = pageEnv();
+  } else if(S.compTab==='artifacts'){
+    body = pageArtifacts();
+  } else if(S.compTab==='permissions'){
+    body = pagePermissions();
+  } else if(S.compTab==='logs'){
+    body = pageLogs();
   } else {
     body = `<div class="card"><div class="empty"><span class="big">◍</span>「${mainTabs.find(t=>t[0]===S.compTab)[1]}」Tab 占位——结构同旧版，本原型聚焦重设计项。</div></div>`;
   }
@@ -1425,6 +1435,8 @@ document.getElementById('content').addEventListener('input', (e)=>{
   if(sn){ S.editorStages[+sn.dataset.stageName].name=e.target.value; S.editorDirty=true; }
   const tf=e.target.closest('[data-task-field]');
   if(tf){ const si=+tf.dataset.si, ti=+tf.dataset.ti; const t=S.editorStages[si]&&S.editorStages[si].tasks[ti]; if(t) t[tf.dataset.taskField]=e.target.value; S.editorDirty=true; }
+  const sel=e.target.closest('[data-sel]'); if(sel){ UI[sel.dataset.sel]=sel.value; render(); }
+  const pr=e.target.closest('[data-perm-role]'); if(pr){ const arr=PERMISSION_BINDINGS[compLabel(curUuid())]; const i=+pr.dataset.permRole; if(arr&&arr[i]){ arr[i].role=pr.value; toast('已更新角色：'+arr[i].subject+' → '+pr.value); } }
 });
 document.getElementById('content').addEventListener('click', (e)=>{
   const nav=e.target.closest('[data-nav]'); if(nav){ go(nav.dataset.nav, nav.dataset.runTab, nav.dataset.runFilter); return; }
@@ -1445,6 +1457,8 @@ document.getElementById('content').addEventListener('click', (e)=>{
   const ct=e.target.closest('[data-ctab]'); if(ct){ S.compTab=ct.dataset.ctab; render(); return; }
   const sb=e.target.closest('[data-sub]'); if(sb){ const[g,k]=sb.dataset.sub.split(':'); S.sub[g]=k; render(); return; }
   const ps=e.target.closest('[data-pl-state]'); if(ps){ S.plState=ps.dataset.plState; render(); return; }
+  const aps=e.target.closest('[data-art-state]'); if(aps){ S.artState=aps.dataset.artState; render(); return; }
+  const lps=e.target.closest('[data-log-state]'); if(lps){ S.logState=lps.dataset.logState; render(); return; }
   const act=e.target.closest('[data-act]'); if(!act) return;
   const a=act.dataset.act, name=act.dataset.name;
   if(a==='hide-notes'){ S.notes=false; render(); }
@@ -1485,6 +1499,12 @@ document.getElementById('content').addEventListener('click', (e)=>{
   else if(a==='edit-node') toast('编辑'+(act.dataset.type==='component'?'组件':act.dataset.type==='service'?'Service':'Org')+'（示意）');
   else if(a==='del-detail') delDetail(act.dataset.target, act.dataset.label);
   else if(a==='del-comp') toast('删除组件需强确认（示意）');
+  else if(a==='art-retry'){ S.artState='success'; render(); }
+  else if(a==='perm-add') permAdd();
+  else if(a==='perm-remove') permRemove(+act.dataset.i);
+  else if(a==='log-search'){ UI.logQ=(document.getElementById('logQ')||{}).value||''; render(); }
+  else if(a==='log-refresh') logRefresh();
+  else if(a==='log-retry'){ S.logState='success'; render(); }
 });
 
 /* 配置导入 / 导出 / 新建分组 / 新建环境 的弹窗与工具 */
@@ -1611,6 +1631,175 @@ document.addEventListener('click', ()=>{ const d=document.getElementById('userDr
   document.documentElement.dataset.theme = S.theme;
   render();
 })();
+
+/* ============ 组件详情：制品 / 权限 / 日志 三 Tab（原型同步设计，2026-09-21） ============
+/* 作用域主键 = 组件 uuid；本原型以 compLabel(uuid) 解析为组件名后按名取数据，与后端"按 component_id(uuid) 过滤"一致。
+   制品库 / 组件权限 / 运行日志的接口契约见 CONSOLE-UI-DESIGN.md §7.3 / §7.9 / §7.6 与 §7.10 / §7.11。 */
+const UI = { logRun:'', logLevel:'all', logQ:'' };
+
+const ARTIFACTS = {
+  'comp-web':[
+    {id:'a1', name:'comp-web-1.4.2.tar.gz', builtAt:'2026-09-14 19:02', size:'48.2 MB', url:'https://artifacts.sdp.local/platform-eng/sounds-great/comp-web/run-8f21/comp-web-1.4.2.tar.gz?sig=9f2c…e71a'},
+    {id:'a2', name:'comp-web-1.4.1.tar.gz', builtAt:'2026-09-10 11:20', size:'47.8 MB', url:'https://artifacts.sdp.local/platform-eng/sounds-great/comp-web/run-6b90/comp-web-1.4.1.tar.gz?sig=3b81…0c4d'},
+    {id:'a3', name:'comp-web-staging-1.4.2.tgz', builtAt:'2026-09-14 19:30', size:'12.6 MB', url:'https://artifacts.sdp.local/platform-eng/sounds-great/comp-web/run-8f22/comp-web-staging-1.4.2.tgz?sig=7e0a…b229'},
+    {id:'a4', name:'comp-web-prod-1.3.9.tgz', builtAt:'2026-08-29 15:11', size:'11.9 MB', url:'https://artifacts.sdp.local/platform-eng/sounds-great/comp-web/run-5a11/comp-web-prod-1.3.9.tgz?sig=c4d2…91ff'},
+  ],
+  'comp-api':[
+    {id:'a5', name:'comp-api-2.0.0.tar.gz', builtAt:'2026-09-14 18:47', size:'63.1 MB', url:'https://artifacts.sdp.local/platform-eng/sounds-great/comp-api/run-7c03/comp-api-2.0.0.tar.gz?sig=aa10…42bd'},
+  ],
+};
+/* 归档说明：本页只读，仅展示流水线构建 / 发布产物；删除 / 清理由 GC 与过期策略处理，人工不开放。 */
+const ARCHIVE_INFO = `<div class="infobar">
+  <div class="infobar-h">🗄 归档与备份（本页只读：仅展示流水线构建 / 发布产物，非上传入口）</div>
+  <div class="infobar-b">
+    <b>存储</b> 对象存储 MinIO（3 副本 · 跨 AZ 同步），bucket <span class="mono">sdp-artifacts</span>，域名 <span class="mono">artifacts.sdp.local</span>；并镜像至 NFS 归档盘 <span class="mono">/data/artifacts/{org}/{component}/{version}/</span>。<br>
+    <b>目录</b> <span class="mono">sdp-artifacts/{org}/{service_tree_path}/{component}/{run_id}/{artifact_name}</span><br>
+    <b>备份</b> 每日 02:00 增量快照 · 每周日 03:00 全量；热层（可下载）保留 <b>90 天</b> → 转冷归档 <b>1 年</b>（合规留痕）→ GC 报告 + 人工确认后清理。<br>
+    <b>过期</b> <span class="mono">expires_at</span> 仅标记、不自动删；回收走对账 + 人工确认（见 hub DELETE-CONTRACT §6.5）。
+  </div>
+</div>`;
+const PERMISSION_BINDINGS = {
+  'comp-web':[
+    {subject:'张三', subjectType:'user', role:'component-admin', boundBy:'系统', boundAt:'创建时', owner:true},
+    {subject:'svc-a-dev', subjectType:'group', role:'component-editor', boundBy:'张三', boundAt:'09-02'},
+    {subject:'release-managers', subjectType:'group', role:'component-approver', boundBy:'张三', boundAt:'09-05'},
+    {subject:'李四', subjectType:'user', role:'component-viewer', boundBy:'张三', boundAt:'09-08'},
+  ],
+  'comp-api':[
+    {subject:'王五', subjectType:'user', role:'component-admin', boundBy:'系统', boundAt:'创建时', owner:true},
+    {subject:'svc-a-dev', subjectType:'group', role:'component-editor', boundBy:'王五', boundAt:'09-03'},
+  ],
+};
+const COMP_ROLES = [
+  {key:'component-viewer', label:'查看者', perms:'只读：概览 / 配置 / 环境 / 制品 / 日志 / 运行'},
+  {key:'component-editor', label:'编辑者', perms:'读写 + 触发运行 + 编辑配置 / 环境 / 流水线'},
+  {key:'component-approver', label:'审批者', perms:'编辑者 + approval:approve（生产卡点审批）'},
+  {key:'component-admin', label:'管理员', perms:'全部组件动作 + component:manage（含改 / 删绑定）'},
+];
+const RUN_LOGS = {
+  'comp-web':[
+    {id:'run-8f21', pipeline:'日常流水线', phase:'succeeded', at:'09-14 19:02', tasks:[
+      {name:'compile & test', lines:[
+        {ts:'19:02:01', level:'info', msg:'$ go build ./... && go test ./...'},
+        {ts:'19:02:14', level:'info', msg:'ok  \tcomp-web/internal  0.42s'},
+        {ts:'19:02:15', level:'info', msg:'PASS'},
+        {ts:'19:03:55', level:'info', msg:'build image localhost:5000/comp-web:1.4.2'},
+        {ts:'19:04:05', level:'info', msg:'pushed, digest sha256:9f2c…e71a'},
+      ]},
+      {name:'pytest -q', lines:[
+        {ts:'19:04:10', level:'info', msg:'12 passed in 3.11s'},
+      ]},
+    ]},
+    {id:'run-6b90', pipeline:'版本归档', phase:'failed', at:'09-14 18:47', tasks:[
+      {name:'helm upgrade comp-web', lines:[
+        {ts:'18:47:02', level:'info', msg:'fetching chart sdp/comp-web'},
+        {ts:'18:47:31', level:'warn', msg:'release "comp-web" is in "failed" state'},
+        {ts:'18:47:33', level:'error', msg:'UPGRADE FAILED: pre-upgrade hook failed'},
+      ]},
+    ]},
+  ],
+};
+
+/* ---------- 制品（artifacts） ---------- */
+function pageArtifacts(){
+  const uuid=curUuid();
+  const all=(ARTIFACTS[compLabel(uuid)]||[]);
+  const seg=`<span class="seg">${['success:有效','empty:空态','loading:加载中','error:错误'].map(x=>{const[k,l]=x.split(':');return `<button class="${S.artState===k?'on':''}" data-art-state="${k}">${l}</button>`;}).join('')}</span>`;
+  let inner;
+  if(S.artState==='loading') inner=`<div class="loading"><span class="spinner"></span><div>加载中…</div></div>`;
+  else if(S.artState==='error') inner=`<div style="padding:22px"><div class="errbox">✕ 拉取制品失败：网络 / 5xx。<button class="btn btn-ghost btn-sm" style="margin-left:auto" data-act="art-retry">重试</button></div></div>`;
+  else if(S.artState==='empty' || !all.length) inner=`<div class="empty"><span class="big">📦</span>${S.comp} 还没有制品<div style="margin-top:8px" class="hint">运行构建 / 发布后，产物自动归档进制品库</div></div>`;
+  else inner=`<table class="table">
+    <thead><tr><th>版本包</th><th>构建时间</th><th>文件大小</th></tr></thead>
+    <tbody>${all.map(a=>`<tr>
+      <td><a class="link" style="font-weight:600" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.name)}</a></td>
+      <td class="mono">${a.builtAt}</td>
+      <td class="mono">${a.size}</td>
+    </tr>`).join('')}</tbody></table>`;
+  return `${ARCHIVE_INFO}
+    <div class="toolbar2"><span class="hint">组件级制品（uuid 作用域，只读）</span><div class="spacer"></div>${seg}</div>
+    <div class="card flush">${inner}</div>`;
+}
+/* 制品库为只读展示：版本包 = 签名 URL 超链接；无上传 / 删除 / 下载弹窗逻辑（删除与清理由 GC + 过期策略处理）。 */
+
+/* ---------- 权限（permissions / component_role_bindings） ---------- */
+function pagePermissions(){
+  const uuid=curUuid(), comp=compLabel(uuid);
+  const binds=(PERMISSION_BINDINGS[comp]||[]).slice();
+  const legend=`<div class="row" style="gap:10px;margin-bottom:16px">${COMP_ROLES.map(r=>`
+    <div class="card" style="flex:1;padding:13px">
+      <div class="row" style="gap:7px;margin-bottom:4px"><span class="chip">${r.key}</span><b style="font-size:13.5px">${r.label}</b></div>
+      <div class="hint">${r.perms}</div>
+    </div>`).join('')}</div>`;
+  const inner=binds.length?`<table class="table">
+    <thead><tr><th>主体</th><th>类型</th><th>角色</th><th>绑定人</th><th>绑定时间</th><th>操作</th></tr></thead>
+    <tbody>${binds.map((b,i)=>`<tr>
+      <td><b>${esc(b.subject)}</b>${b.owner?' <span class="chip">owner</span>':''}</td>
+      <td>${b.subjectType==='group'?'组':'用户'}</td>
+      <td><select class="input" style="width:auto" data-perm-role="${i}" ${b.owner?'disabled':''}>${COMP_ROLES.map(r=>`<option value="${r.key}" ${b.role===r.key?'selected':''}>${r.label}</option>`).join('')}</select></td>
+      <td>${b.boundBy}</td><td class="mono">${b.boundAt}</td>
+      <td>${b.owner?'<span class="hint">不可移除</span>':`<button class="link" style="color:var(--fail-fg)" data-act="perm-remove" data-i="${i}">移除</button>`}</td>
+    </tr>`).join('')}</tbody></table>`
+    :`<div class="empty"><span class="big">🔒</span>暂无成员绑定<div style="margin-top:12px"><button class="btn btn-primary" data-act="perm-add">＋ 添加成员 / 组</button></div></div>`;
+  return `${legend}
+    <div class="toolbar2"><span class="hint">组件级 RBAC（component_role_bindings）</span><div class="spacer"></div><button class="btn btn-primary btn-sm" data-act="perm-add">＋ 添加成员 / 组</button></div>
+    <div class="card flush">${inner}</div>`;
+}
+function permAdd(){
+  const comp=compLabel(curUuid());
+  openModal(`<h3>添加成员 / 组</h3>
+    <div class="mb">当前组件：<b class="mono">${comp}</b>。绑定写入 <span class="mono">component_role_bindings</span>。</div>
+    <div class="field"><label>主体类型</label><select id="pa-type" class="input"><option value="user">用户</option><option value="group">组</option></select></div>
+    <div class="field"><label>主体名</label><input id="pa-name" class="input" placeholder="例如：李四 / svc-a-dev" /></div>
+    <div class="field"><label>角色</label><select id="pa-role" class="input">${COMP_ROLES.map(r=>`<option value="${r.key}">${r.label}（${r.key}）</option>`).join('')}</select></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>绑定</button></div>`,
+    ()=>{ const name=document.getElementById('pa-name').value.trim(); if(!name){ toast('请填写主体名', true); return; }
+      const type=document.getElementById('pa-type').value, role=document.getElementById('pa-role').value;
+      const now=new Date(), pad=n=>String(n).padStart(2,'0'); const at=`${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+      (PERMISSION_BINDINGS[comp]=PERMISSION_BINDINGS[comp]||[]).push({subject:name, subjectType:type, role, boundBy:'张三', boundAt:at, owner:false});
+      toast('已绑定 '+name+' → '+role); });
+}
+function permRemove(i){
+  const comp=compLabel(curUuid()); const b=(PERMISSION_BINDINGS[comp]||[])[i]; if(!b) return;
+  openModal(`<h3>移除绑定「${esc(b.subject)}」？</h3>
+    <div class="mb">取消该主体在 <b class="mono">${comp}</b> 的 <span class="mono">${b.role}</span> 角色。需 <span class="mono">component:manage</span>（组件管理员）权限。</div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-danger" data-ok>确认移除</button></div>`,
+    ()=>{ PERMISSION_BINDINGS[comp].splice(i,1); toast('已移除绑定「'+b.subject+'」（示意）'); });
+}
+
+/* ---------- 日志（logs / 运行日志聚合） ---------- */
+function pageLogs(){
+  const uuid=curUuid(), comp=compLabel(uuid);
+  const runs=(RUN_LOGS[comp]||[]);
+  if(!UI.logRun && runs[0]) UI.logRun=runs[0].id;
+  const run=runs.find(r=>r.id===UI.logRun)||runs[0]||null;
+  const seg=`<span class="seg">${['success:有效','empty:空态','loading:加载中','error:错误'].map(x=>{const[k,l]=x.split(':');return `<button class="${S.logState===k?'on':''}" data-log-state="${k}">${l}</button>`;}).join('')}</span>`;
+  let panel;
+  if(S.logState==='loading') panel=`<div class="loading"><span class="spinner"></span><div>连接日志流…</div></div>`;
+  else if(S.logState==='error') panel=`<div style="padding:22px"><div class="errbox">✕ 日志拉取失败（GET /runs/:id/tasks/:name/log）。<button class="btn btn-ghost btn-sm" style="margin-left:auto" data-act="log-retry">重试</button></div></div>`;
+  else if(S.logState==='empty' || !run) panel=`<div class="empty"><span class="big">⌛</span>等待输出<div class="hint">运行开始后日志将在此实时追加</div></div>`;
+  else {
+    const lines=[]; run.tasks.forEach(t=>t.lines.forEach(l=>lines.push(Object.assign({task:t.name}, l))));
+    const filtered=lines.filter(l=>
+      (UI.logLevel==='all'||l.level===UI.logLevel) &&
+      (!UI.logQ || (l.msg+' '+l.task).toLowerCase().includes(UI.logQ.toLowerCase()))
+    );
+    panel=`<div class="code-block mono" style="max-height:540px">${
+      filtered.length?filtered.map(l=>`<div style="color:${logColor(l.level)}"><span style="color:var(--text-sub)">${l.ts}</span> <b>[${l.level.toUpperCase()}]</b> <span style="color:var(--text-sub)">${esc(l.task)}</span> ${esc(l.msg)}</div>`).join('')
+      :'<div style="color:var(--text-sub)">无匹配日志</div>'}</div>`;
+  }
+  return `<div class="toolbar2">
+      <span class="hint">运行：</span>
+      <select class="input" style="width:auto" data-sel="logRun">${runs.map(r=>`<option value="${r.id}" ${UI.logRun===r.id?'selected':''}>${r.pipeline} · ${r.id} · ${r.phase}</option>`).join('')}</select>
+      <select class="input" style="width:auto" data-sel="logLevel"><option value="all">全部级别</option><option value="info">info</option><option value="warn">warn</option><option value="error">error</option></select>
+      <input id="logQ" class="input" style="width:200px" placeholder="搜索日志…" value="${esc(UI.logQ)}" />
+      <button class="btn btn-ghost btn-sm" data-act="log-search">搜索</button>
+      <div class="spacer"></div>${seg}<button class="btn btn-ghost btn-sm" data-act="log-refresh">刷新</button>
+    </div>
+    <div class="card flush" style="padding:0">${panel}</div>`;
+}
+function logColor(l){ return l==='error'?'var(--fail-fg)':l==='warn'?'var(--warn-fg)':'var(--text)'; }
+function logRefresh(){ toast('已刷新日志（示意）'); }
 </script>
 </body>
 </html>

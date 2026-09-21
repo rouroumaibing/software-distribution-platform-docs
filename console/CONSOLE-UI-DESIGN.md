@@ -189,7 +189,7 @@
 ### 4.3 历史模块清单（MOD-0~MOD-10，v2 时期编号，保留供对账）
 
 > 状态：⬜ 未开始 · 🟨 桩已存在待对齐 · 🟩 已可对接后端 · 🟥 页面已建但无数据通道。
-> **本轮进度以 [`../FEATURE-GAP-BACKLOG.html`](../FEATURE-GAP-BACKLOG.html) 与 [`hub/STORY-BACKLOG.md`](../hub/STORY-BACKLOG.md) 为准**，本表只作模块边界索引。
+> **当前进度以 [`hub/STORY-BACKLOG.md`](../hub/STORY-BACKLOG.md) 为准**（功能缺口已并入其 B-/C- 清单），本表只作模块边界索引。
 
 | ID | 模块 | 对应页面 |
 | --- | --- | --- |
@@ -301,9 +301,9 @@
 | **交付** ▾ | 流水线 / 运行 / 发布 | pipelines + runs + releases | 已展开（三子 Tab 均有内容） |
 | **配置** | — | config | 已展开（左环境树 + 右 `values.yaml` 查看/编辑/导入/导出） |
 | **环境** | — | environments | 已展开（分组 + 环境的增删改） |
-| **制品** | — | artifacts | 【原型未展开】占位 |
-| **权限** | — | permissions | 【原型未展开】占位（UX 见 §7.9） |
-| **日志** | — | logs | 【原型未展开】占位 |
+| **制品** | — | artifacts | 已展开（§7.10：只读版本包清单，3 列——版本包(签名 URL 超链接)/构建时间/文件大小；顶部含归档与备份说明；无上传/删除入口） |
+| **权限** | — | permissions | 已展开（§7.9：组件级 `component_role_bindings`，四种角色，owner 自动 `component-admin`） |
+| **日志** | — | logs | 已展开（§7.11：运行日志聚合视图，`GET /runs/:id/tasks/:name/log`，级别筛选 + 搜索） |
 
 - 默认落在**概览**；主 Tab 一行 7 个。
 - 「交付」内的子 Tab 用横向 pill 切换；「配置」**不再**含子 Tab（`环境` 已独立成主 Tab）。
@@ -466,7 +466,7 @@ Dashboard「待办」区三段，每段一个 CTA（深链形态与 §7.6 的视
 - **配置** = 左环境树（分组 → 环境）+ 右 `values.yaml`（查看 / 编辑 / 导入 / 导出）。
 - **环境** = 环境与分组管理：分组可折叠、hover `＋` 新建环境；**分组的删除入口只在"分组为空"时出现**（非空分组不给删除入口，避免误删）；环境删除走右侧详情面板。
 - 面包屑只有顶栏一条；内容区不再重复（§8.4）。
-- 【原型未展开】制品 / 权限 / 日志 三个 Tab 为占位（"结构同旧版"）；权限的 UX 规格见 §7.9。
+- **制品 / 权限 / 日志** 三个 Tab 均已展开（2026-09-21 原型同步设计）：制品库（筛选 + 表格 + 行内操作，§7.10）、组件级权限（`component_role_bindings`，§7.9）、运行日志聚合（§7.11）。权限的 UX 规格见 §7.9。
 
 ### 7.4 流水线 CRUD 页面
 
@@ -537,7 +537,7 @@ Dashboard「待办」区三段，每段一个 CTA（深链形态与 §7.6 的视
 
 ### 7.8 其余列表页
 
-制品库 / 环境 / 权限 = 「筛选栏 + 表格 + 分页 + 行内操作」标准布局。
+环境 / 权限 = 「筛选栏 + 表格 + 分页 + 行内操作」标准布局；制品库为**只读版本包清单**（仅 3 列 + 顶部归档说明，无筛选栏 / 行内操作，见 §7.10）。
 
 ### 7.9 权限与审批 UX（对应 [hub 数据模型 §7](../hub/DATA-MODEL.md)）
 
@@ -572,7 +572,7 @@ Dashboard「待办」区三段，每段一个 CTA（深链形态与 §7.6 的视
 
 **组件级「权限 (permissions)」Tab**
 
-组件详情的「权限」Tab 管理 `component_role_bindings`（【原型未展开】）：
+组件详情的「权限」Tab 管理 `component_role_bindings`（已展开，§5.4 / §7.3）：
 
 | 操作 | UI | 权限要求 |
 | --- | --- | --- |
@@ -605,6 +605,35 @@ Dashboard「待办」区三段，每段一个 CTA（深链形态与 §7.6 的视
 - **API 403**：偶发越权 → §8.2 错误态「操作被拒绝（403），请申请组件 X 的 Y 角色」。
 
 **开源参考**：平台/组件两层 RBAC ← ArgoCD；默认审批人=owner ← Backstage ownership；选谁审/通过拒绝/防自审 ← GitHub Environments / GitLab Protected Environments / Spinnaker Manual Judgment。
+
+### 7.10 制品库（Artifacts，组件级）
+
+组件详情「制品」Tab = **只读的版本包清单**，作用域主键 = 组件 uuid（`GET /components/:componentId/artifacts`）。本页只展示**流水线构建 / 发布产物**，不是上传入口；人工不可删除 / 上传。
+
+- **列（仅 3 列）**：
+  - **版本包**：制品名，`<a>` 超链接，点击经**签名 URL 直连**下载（hub 生成有时效预签名 URL，前端不持有对象存储凭据，不经 console 中转）。
+  - **构建时间**：产物落库的本地时间（`builtAt`）。
+  - **文件大小**：人类可读体积（`size`）。
+- **四态**：有效（默认）/ 空态（组件尚无制品 → "运行构建 / 发布后，产物自动归档进制品库"）/ 加载中 / 错误（拉取失败 → 重试，§8.3）。
+- **归档与备份（本页顶部信息条，参考实现）**：
+  - **存储**：对象存储 MinIO（3 副本 · 跨 AZ 同步），bucket `sdp-artifacts`，对外域名 `artifacts.sdp.local`；并镜像至 NFS 归档盘 `/data/artifacts/{org}/{component}/{version}/`（断网可取用）。
+  - **目录布局**：`sdp-artifacts/{org}/{service_tree_path}/{component}/{run_id}/{artifact_name}`（以 run 为单位归集，便于复现某次构建）。
+  - **备份周期**：每日 02:00 增量快照 + 每周日 03:00 全量快照；保留策略为**热层（可下载）90 天 → 转冷归档 1 年（合规留痕）→ GC 报告 + 人工确认后清理**。
+  - **过期**：`expires_at` 仅作标记、不自动删除；真正回收走**对账 + 人工确认**（见 hub `DELETE-CONTRACT.md` §6.5）。
+- **删除不可开放给人工**：本页不提供删除 / 上传操作；产物清理由 GC 与过期策略统一处理（与 §7.9 组件级权限一致——`artifact:delete` 在后端保留，但前端不暴露入口）。
+- 端点（附 A · N-x / 旧文 `artifact.ts`）：`GET /components/:componentId/artifacts`、`GET /download`（签名 URL）。（原型已移除 `POST/DELETE` 前端入口；后端契约保留。）
+
+### 7.11 日志（Logs，组件级运行日志聚合）
+
+组件级「日志」Tab = **运行日志聚合视图**，不是独立日志服务。作用域主键 = 组件 uuid；每运行经 `GET /runs/:id/tasks/:name/log` 拉取（§7.6），本视图按运行合并、按任务标注、按级别着色。
+
+- **顶部**：运行选择（组件最近运行，默认取首条）+ 级别筛选（`info` · `warn` · `error` · 全部）+ 关键字搜索 + 刷新。
+- **日志面板**：等宽、按 `时间戳 [级别] 任务 消息` 渲染；`error` 红、`warn` 黄、`info` 默认色。
+- **下钻**：选某运行即切换该运行的 task 日志；可深链到运行监控的日志面板（§7.6）。
+- **空态**：运行刚起 / 无输出 → "等待输出"（§8.3 日志面板空态）。
+- **加载态**：首次连接日志流用骨架 / spinner；轮询刷新不进加载态（§8.3）。
+- **错误态**：日志拉取 / 流失败 → 重试。
+- 端点（§7.6）：`GET /runs/:id/tasks/:name/log`。
 
 ---
 
@@ -1268,7 +1297,7 @@ Dashboard「待办」区三段，每段一个 CTA（深链形态与 §7.6 的视
 
 ## 附 E：历史未完成项快照（2026-09-09，仅供追溯）
 
-> ⚠️ **本表是历史快照，不是当前状态**。G1–G6 已于 2026-09-06 全部落地。**当前进度请查** [`../FEATURE-GAP-BACKLOG.html`](../FEATURE-GAP-BACKLOG.html) 与 [`hub/STORY-BACKLOG.md`](../hub/STORY-BACKLOG.md)（另有 [`../plans/E2E-VERIFY-PLAN.md`](../plans/E2E-VERIFY-PLAN.md) 跟踪 E2E 门禁）。
+> ⚠️ **本表是历史快照，不是当前状态**。G1–G6 已于 2026-09-06 全部落地。**当前进度请查** [`hub/STORY-BACKLOG.md`](../hub/STORY-BACKLOG.md)（另有 [`../plans/E2E-VERIFY-PLAN.md`](../plans/E2E-VERIFY-PLAN.md) 跟踪 E2E 门禁）。
 
 | ID | 项 | 影响 | 快照时状态 | 后续 |
 | --- | --- | --- | --- | --- |

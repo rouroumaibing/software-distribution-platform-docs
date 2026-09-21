@@ -181,7 +181,7 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 
 - `GET /runs/:id/stage-progress`：`DATA-MODEL.md` §6.5 已确认新增、**待实现**（现仅 `GET /runs/:id/progress`）。
 - `platform_roles` / `platform_role_bindings` HTTP 端点：待补（P1-1）。
-- 全局 `/pipelines` 与 `/releases` 列表：**已实现**（2026-09-15 之后的代码新增）。旧文 `console/CONSOLE-UI-DESIGN.md` 附 A N-3、`DOC-CODE-CALIBRATION-2026-09-15.html` S2 称"无全局 /pipelines、无 /releases 端点"已过时，本文即其更正，console 文档 N-3 已同步更新。
+- 全局 `/pipelines` 与 `/releases` 列表：**已实现**（2026-09-15 之后的代码新增）。早期文档（如 `console/CONSOLE-UI-DESIGN.md` 附 A N-3）曾称"无全局 /pipelines、无 /releases 端点"，已过时；本文即其更正，console 文档 N-3 已同步更新。
 
 ---
 

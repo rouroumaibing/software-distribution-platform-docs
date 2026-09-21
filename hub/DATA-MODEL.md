@@ -205,7 +205,7 @@ CREATE TABLE stage_runs (
 
 ## 7. 授权模型（权限管控 G7；目标态 = 多 org；P1 建表 / P2 审批 / P3 Enforcement 均已落地；**平台级 HTTP 端点待补**）
 
-> ⚠️ **状态勘误（2026-09-15）**：本节 §7 表 + Enforcement 中间件已落地，但 `platform_roles` / `platform_role_bindings` **尚无 HTTP 端点**（`internal/permission/handler/` 下仅有 `role` / `component_role` / `binding` 组件级 handler，`main.go` 未注册 platform 级路由）。平台管理员绑定须经 API 配置的能力未暴露（backlog P1-1）。详细对账见 `DOC-CODE-CALIBRATION-2026-09-15.html`。
+> ⚠️ **当前状态**：本节 §7 表 + Enforcement 中间件已落地，但 `platform_roles` / `platform_role_bindings` **尚无 HTTP 端点**（`internal/permission/handler/` 下仅有 `role` / `component_role` / `binding` 组件级 handler，`main.go` 未注册 platform 级路由）。平台管理员绑定须经 API 配置的能力未暴露（backlog：本库 `STORY-BACKLOG.md` C-10）。
 
 > 双向钢人论证结论（见 [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) / 对话记录）：Keycloak 与 k8s RBAC 均**退到边界**——KC 只做身份+组，k8s RBAC 只管 runner 集群操作；承载"用户对组件能做什么 + 谁能审批"的是 **hub 内的两层 RBAC + 审批表**。这同时满足：① 组件级权限以"管理员/组映射为主"（无运行时自助需求 → 不引入 Keycloak UMA）；② 默认审批人 = 组件 owner/管理员（所有权在 app，见 §7.4）。
 
