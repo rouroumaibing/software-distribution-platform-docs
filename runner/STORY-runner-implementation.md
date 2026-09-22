@@ -31,7 +31,7 @@
 ## 2. 验收标准 (Acceptance Criteria - AC)
 > QA 依据以下内容编写测试用例。已实现项标 ✅，待 Hub 侧补齐路径的标 🚧。
 
-- [x] **AC-01 (正常路径 - 下发落地)**: Given Hub 通过长连接发来 `apply_pipeline_run` 帧（含 Name/Namespace/Spec），When Runner 的 `ApplyHandler` 收到，Then 在目标 namespace 幂等创建一条 `PipelineRun` CR（重连重发不重复调度），并打 `sdp.io/cluster` 标签/注解。
+- [x] **AC-01 (正常路径 - 下发落地)**: Given Hub 通过长连接发来 `apply_pipeline_run` 帧（含 Name/Namespace/Spec），When Runner 的 `ApplyHandler` 收到，Then 在目标 namespace 幂等创建一条 `PipelineRun` CR（重连重发不重复调度），并打 `sdp.io/target` 标签/注解。
 - [x] **AC-02 (DAG 调度)**: Given `PipelineRun` CR 已存在，When `PipelineRunReconciler`  reconcile，Then 仅对"依赖全部 Succeeded"的节点创建 `TaskRun`（名称 `{pipelineRunName}-{taskName}`），其余保持 Pending；终态后不再调度。
 - [x] **AC-03 (Build 任务执行)**: Given 一个 Build 类型 TaskRun 变为 runnable，When `TaskRunReconciler` 处理，Then 构建 Job（init 容器 git checkout + 主容器 `sh {ScriptPath} {ScriptArgs…}` 或内联 `command`/`args`）并 `ownerReference` 挂载；Job Succeeded→TaskRun Succeeded，Failed 按 `RetryPolicy` 退避重试，`RetryCount` 耗尽→Failed。成功/失败只看 Job 退出码，不解析输出内容。
 - [x] **AC-04 (审批门禁闭环)**: Given Approval 类型 TaskRun 初始化出 `Status.Approval`，When Hub 经 `approve_task` 帧回写决策，Then `ApproverHandler` 幂等累加 `ApprovedBy`，达到 `RequiredCount` 置 Succeeded（DAG 继续）；任一 `Rejected`→TaskRun Failed（PipelineRun 跟随 Failed）。
@@ -47,7 +47,7 @@
 
 - **[x] 资损与网络安全 (Security)**
   - 敏感数据脱敏: 不涉及（Runner 不持有用户手机号/身份证）。
-  - **集群凭证安全**: `CLUSTER_AUTH_TOKEN`、`HUB_GATEWAY_URL`、`CLUSTER_NAME` 仅来自环境变量，不落盘、不进 CRD、`keycloak_id` 类比 Hub 不序列化。git 凭据通过 `RepoSource.SecretRef` 引用目标 namespace 内既有 Secret，**Hub 不在线上明文下发凭证**（见 `RepoSource.SecretRef` 注释）。
+  - **目标凭证安全**: `TARGET_AUTH_TOKEN`、`HUB_GATEWAY_URL`、`TARGET_NAME` 仅来自环境变量，不落盘、不进 CRD、`keycloak_id` 类比 Hub 不序列化。git 凭据通过 `RepoSource.SecretRef` 引用目标 namespace 内既有 Secret，**Hub 不在线上明文下发凭证**（见 `RepoSource.SecretRef` 注释）。
   - 幂等创建：重复下发不重复调度，防重提交即"下发多次=创建一次"。
 - **[x] 高并发与限流降级 (High Availability)**
   - 核心链路 Peak QPS: 默认普通（事件驱动 reconcile，非高 QPS 服务）。
@@ -55,7 +55,7 @@
   - **多副本 HA**: `cmd/runner/main.go` 支持 `LEADER_ELECTION=true`，基于 K8s Lease 自动选主，无需 etcd/Redis 额外组件。
   - 动态开关: 不涉及（M1）。
 - **[x] 可服务性与监控 (Serviceability)**
-  - 核心日志: 全链路带 `cluster`/`pipelineRunName`/`taskName` 上下文（如 `dispatch: created PipelineRun ... on cluster %s`、`rollout: scale %s failed`），可经 TraceID 关联。
+  - 核心日志: 全链路带 `target`/`pipelineRunName`/`taskName` 上下文（如 `dispatch: created PipelineRun ... on target %s`、`rollout: scale %s failed`），可经 TraceID 关联。
   - 监控告警: M1 尚未接入 Prometheus；可观测性依赖 `kubectl get pipelinerun/taskrun/rollout`（status 已含 phase/weight/step 摘要）。⚠️ 指标埋点为后续待办。
 
 ---
@@ -73,11 +73,11 @@
 | Hub→Runner | `approve_task` | `ApproveTaskPayload` | 回写审批决策（批准/拒绝） |
 | Runner→Hub | `status_update` | `StatusUpdatePayload` | 每次状态变更上报；`PipelineRunName`==CRName |
 | Runner→Hub | `log_chunk` | `LogChunkPayload` | 实时日志分片（M1 已定义类型，发送侧见后续待办） |
-| Runner→Hub | `heartbeat` | （空） | 保活，Hub 标记集群在线 |
+| Runner→Hub | `heartbeat` | （空） | 保活，Hub 标记目标在线 |
 
 **ApplyPipelineRunPayload**: `{ name, namespace, spec: PipelineRunSpec }`
 **ApproveTaskPayload**: `{ pipelineRunName, taskName, approver, rejected? }`
-**StatusUpdatePayload**: `{ clusterID, pipelineRunName, pipelineRunNamespace, phase, message?, startTime?, completionTime?, tasks: TaskRunStatusSummary[] }`
+**StatusUpdatePayload**: `{ targetID, pipelineRunName, pipelineRunNamespace, phase, message?, startTime?, completionTime?, tasks: TaskRunStatusSummary[] }`
 
 ### 4.2 数据库/缓存变动 —— Runner 的"表"即 K8s CRD（etcd 持久化）
 > ⚠️ **重要说明**: Runner 是 K8s Operator，**不连接任何关系型数据库**。其全部持久化状态由 3 个自定义资源（CRD）承担，物理存于 K8s 集群的 etcd。这与 Hub 的 Postgres（26 张表，含 §7 多 org RBAC 扩展）是**两套独立的存储**：Hub 存"历史/审计/权限"（SQL），Runner 存"实时执行状态"（CRD/etcd）。二者通过 `CRName`/`CRNamespace` 关联。
@@ -89,7 +89,7 @@
 |------|------|----------|------|
 | `metadata.name` | string | 唯一（namespace 内） | == Hub `pipeline_runs.CRName`；格式由 Hub 生成 |
 | `metadata.namespace` | string | — | == Hub `pipeline_runs.CRNamespace`；约定 `{tenant}-{project}-{env}` 或 `sdp-run` |
-| `metadata.labels[sdp.io/cluster]` | string | 索引 | 标记归属集群 |
+| `metadata.labels[sdp.io/target]` | string | 索引 | 标记归属目标 |
 | **Spec** | | | |
 | `spec.pipelineRef` | string | 可选 | 可复用流水线定义名（仅展示/审计，Runner 不拉取） |
 | `spec.tasks[]` | PipelineTaskSpec | MinItems=1 | 已完全解析的 DAG 定义（含跨阶段 + 阶段内 Serial 的 `DependsOn`，由 hub `buildSpec` 推导；见 §4.3 / [hub 数据模型 §6.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)） |
@@ -230,6 +230,10 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 - **审批决策不在 Runner**：Approval 子任务的通过/拒绝由 Hub 经 `approve_task` 帧（§4.1）下发；Runner 仅据此解除挂起或终止，不判断"谁有权审批"（防自审等规则在 [hub 数据模型 §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) 落实）。
 - **集群侧权限由 k8s RBAC 约束（已用）**：Hub 为每个"组件 × 环境"签发 `RoleBinding`，Runner 所用 SA 只可触碰该组件命名空间；这是 runner↔集群的部署边界闸，与"用户对组件"的业务授权（[hub 数据模型 §7.2/§7.3](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）解耦。
 - **结论**：Runner 信任 hub 下发的 spec，自身无授权逻辑、不连接 Keycloak/业务 RBAC 表；业务鉴权与审批审计全部落在 hub + console。
+- **Runner 只是三条接入通道之一（2026-09-21 补充）**：`kubeconfig` / `ssh` 两条通道**由 hub 侧发起连接**，**不经过 Runner**——Runner 不持有、也不使用目标凭据，本节"Runner 只消费 hub 已鉴权下发的 spec"的边界**不变**。但须知道两点：
+  1. **执行底座是隐式的**：`pkg/executor/job_builder.go` 把 `TaskRunSpec` 翻译成**目标集群里的 K8s Job**（`mainContainer` = `sh {ScriptPath}`；`releaseContainer` = `helm upgrade --install` / `kubectl apply`；工作区 = EmptyDir 卷）。Job / 命名空间 / SA / RoleBinding / 卷在物理机与虚拟机上**都不存在** → **非容器目标无法走本路径**，只能走 hub 直连的 `ssh`。
+  2. **`TaskRunSpec` 目前只有一种执行实现**（K8s Job），尚无 `executor backend` 抽象；若将来 hub 直连复用同一任务模型，需新增后端判别维度。
+  - 通道能力矩阵与凭据归属见 [README.md §5.6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)；数据侧见 `hub/DATA-MODEL.md` §9.5/§9.7。
 
 ---
 

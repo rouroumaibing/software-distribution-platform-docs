@@ -40,10 +40,10 @@ COMP=$(echo "$R" | jqf "d['data']['id']")
 R=$(req GET  "/components/$COMP")
 
 echo "===== 3) 环境 ====="
-R=$(req GET  "/clusters?page=1&pageSize=100")
-CLUS=$(echo "$R" | jqf "(d['data']['items'] or [{}])[0].get('id','')")
+R=$(req GET  "/targets?page=1&pageSize=100")
+TGT=$(echo "$R" | jqf "(d['data']['items'] or [{}])[0].get('id','')")
 R=$(req GET  "/components/$COMP/environments?page=1&pageSize=100")
-R=$(req POST "/environments" "{\"componentId\":\"$COMP\",\"key\":\"e2e-env\",\"name\":\"E2E环境\",\"envType\":\"dev\",\"clusterId\":\"$CLUS\",\"namespace\":\"e2e\"}")
+R=$(req POST "/environments" "{\"componentId\":\"$COMP\",\"key\":\"e2e-env\",\"name\":\"E2E环境\",\"envType\":\"dev\",\"targetId\":\"$TGT\",\"namespace\":\"e2e\"}")
 
 echo "===== 4) 流水线 / 阶段 / 任务 ====="
 R=$(req GET  "/components/$COMP/pipelines?page=1&pageSize=100")

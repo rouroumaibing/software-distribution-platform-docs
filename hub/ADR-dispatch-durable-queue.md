@@ -36,8 +36,8 @@ owner 重新审视了"hub 与 runner 的交接机制 + 状态真相源"，经过
 ### 决策 B：下发缓冲用**独立队列表 `dispatch_jobs`**，不用 `pipeline_runs` 上的列
 
 - `dispatch_jobs` 为 1:多表：一条 `PipelineRun` 可对应多条下发记录。
-- 字段：`id` / `pipeline_run_id`(FK) / `cluster_id`(即环境 id，环境↔runner 1:1) / `payload`(JSON `ApplyPipelineRunPayload`) / `state`(`pending|dispatching|dispatched|failed|dead`) / `attempts` / `last_error` / `next_retry_at` / `created_at` / `updated_at`。
-- 索引：`(cluster_id, state, created_at)`、`(pipeline_run_id)`。
+- 字段：`id` / `pipeline_run_id`(FK) / `target_id`(即环境 id，环境↔runner 1:1) / `payload`(JSON `ApplyPipelineRunPayload`) / `state`(`pending|dispatching|dispatched|failed|dead`) / `attempts` / `last_error` / `next_retry_at` / `created_at` / `updated_at`。
+- 索引：`(target_id, state, created_at)`、`(pipeline_run_id)`。
 
 > 否决的方案：在 `pipeline_runs` 上加 `dispatch_state/attempts/next_retry_at` 列。理由：见决策变量。
 
@@ -61,7 +61,7 @@ owner 明确：
 
 本 ADR 建立在已确认的上游决策之上（详见 [DATA-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）：
 
-1. **流水线锁死单个 component**：pipeline 永远锚定一个 Component，阶段/子任务协同只在单组件内。故"多环境扇出"是同一 pipeline 对不同 cluster 的多次下发，不涉跨组件编排。
+1. **流水线锁死单个 component**：pipeline 永远锚定一个 Component，阶段/子任务协同只在单组件内。故"多环境扇出"是同一 pipeline 对不同 target 的多次下发，不涉跨组件编排。
 2. **三表规范化拆分正确**：`Pipeline / PipelineStage / PipelineTaskTemplate` + `pipeline_versions` 快照。执行期进度按 `(pipeline_run_id, stage_name, status)` 细粒度、索引化、部分读取；故前端轮询走轻量进度端点，不返回整份定义。
 3. **前端有独立视图模型**：DAG 编辑器 → `toPipelineDefinition()` 映射器 → 一次性发送聚合 `PipelineDefinition`；对应发生在"聚合 DTO + 映射函数 + 契约测试"边界，非逐字段镜像实体。
 
@@ -85,7 +85,7 @@ owner 明确：
 ## 6. 待办 / 扩展（out of scope 本 ADR，但已登记）
 
 - **D. 产物/结果落库（跨模块）**：`TaskRun` 加 `ResultRef`/`ArtifactRefs`；`runnerapi.TaskRunStatusSummary` 加 `ExitCode`/`ArtifactRefs`/`ResultRef`；`ApplyStatus` 写回；runner 侧需补发这些字段。**（仍单列待排期）**
-- **二期·多环境扇出**：✅ 已实现（2026-08-26）。`TriggerRequest.TargetClusters []uuid.UUID`；`triggerFanout` 每环境建一条独立 `PipelineRun` + 一条 `dispatch_jobs` 并 `tryDeliver`；目标集群只需存在（不要求在线），离线即排队。
+- **二期·多环境扇出**：✅ 已实现（2026-08-26）。`TriggerRequest.TargetIDs []uuid.UUID`；`triggerFanout` 每环境建一条独立 `PipelineRun` + 一条 `dispatch_jobs` 并 `tryDeliver`；目标只需存在（不要求在线），离线即排队。
 - **二期·页面重试**：✅ 已实现（2026-08-26）。`Redispatch(ctx, runID)`：取该 run 最近一条 `dispatch_jobs`（`LatestByRun`），拷贝其 payload 建新 `pending` 记录并 `tryDeliver`；`dead`/`failed` 才重投，`dispatched`/`dispatching` 幂等跳过；run 卡 `Failed` 则重置 `Pending`。新端点 `POST /runs/:id/redispatch`。
 
 ---
@@ -112,10 +112,10 @@ owner 明确：
 ## 9. 实现状态（2026-08-26，二期已落地）
 
 **新增 / 改动文件**
-- `internal/run/models/trigger_request.go`：`TriggerRequest` 增 `TargetClusters []uuid.UUID`。
+- `internal/run/models/trigger_request.go`：`TriggerRequest` 增 `TargetIDs []uuid.UUID`。
 - `internal/run/service/pipeline_run.go`：
-  - 抽出仓库接口 `PipelineRunStore / TaskRunStore / PipelineDefStore / StageStore / TaskTemplateStore / ClusterStore`（测试可注入内存 fake，无需 Postgres）。
-  - `Trigger` 改返回 `[]*PipelineRun`；新增 `triggerFanout`（每环境一条独立 run，保持 run↔cluster 1:1 不变式）+ `createRun`（建 run/seed task_runs/入队）。
+  - 抽出仓库接口 `PipelineRunStore / TaskRunStore / PipelineDefStore / StageStore / TaskTemplateStore / TargetStore`（测试可注入内存 fake，无需 Postgres）。
+  - `Trigger` 改返回 `[]*PipelineRun`；新增 `triggerFanout`（每环境一条独立 run，保持 run↔target 1:1 不变式）+ `createRun`（建 run/seed task_runs/入队）。
   - 新增 `Redispatch(ctx, runID)`：`LatestByRun` 取最近 job → 拷贝 payload 建新 `pending` job → `tryDeliver`；返回重取后的 job 状态。
   - `DispatchJobStore` 接口加 `LatestByRun`。
 - `internal/run/repository/dispatch_job.go`：新增 `LatestByRun(pipelineRunID)`。

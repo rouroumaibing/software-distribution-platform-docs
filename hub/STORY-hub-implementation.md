@@ -30,8 +30,8 @@ Hub 此前已写好各 domain 的 handler / service / repository / middleware，
 | `internal/gateway/gateway.go` | Hub 侧 WebSocket：鉴权、按集群跟踪连接、下发 spec、回写状态 |
 | `internal/run/service/pipeline_run.go` | `Trigger` 组装 DAG spec 并下发；`ApplyStatus` 回写运行状态 |
 | `internal/run/models/trigger_request.go` | `POST /pipelines/:id/runs` 请求 DTO |
-| `internal/cluster/{repository,service}` | 新增 `GetByName` / `Heartbeat` |
-| `internal/run/repository/*` | 新增 `GetByCRNameCluster` / `SaveStatus` / `Upsert` |
+| `internal/target/{repository,service}` | 新增 `GetByName` / `Heartbeat` |
+| `internal/run/repository/*` | 新增 `GetByCRNameTarget` / `SaveStatus` / `Upsert` |
 | `middleware/user_context.go` | 认证关闭时自动置备 dev 用户 |
 | `runner/api/v1alpha1/{protocol,gateway_payloads}.go` | Hub↔Runner 共享线协议（`Message`/`MessageType`/`StatusUpdatePayload`/`LogChunkPayload`） |
 
@@ -40,11 +40,11 @@ Hub 此前已写好各 domain 的 handler / service / repository / middleware，
 ## 2. 验收标准 (Acceptance Criteria - AC)
 
 - [x] **AC-01 (正常路径 · 启动)**: Given 配置了 `DB_DSN` 的 Postgres, When 执行 `go run ./cmd/hub`, Then 进程启动、Gin 监听 `HUB_ADDR`、`AutoMigrate` 建立全部 26 张表（含 §7 多 org RBAC 扩展）、gateway 路由挂载于 `GATEWAY_PATH`，日志输出 `db: auto-migrate complete`。
-- [x] **AC-02 (正常路径 · 集群接入)**: Given 一个已在 `clusters` 表注册的集群且 `GATEWAY_TOKEN` 匹配, When Runner 携带 `X-Cluster-Name` + `Authorization: Bearer <token>` 拨入 WS, Then 连接建立、`clusters.status` 置 `online`、断开后置 `offline`。
+- [x] **AC-02 (正常路径 · 目标接入)**: Given 一个已在 `targets` 表注册的目标且 `GATEWAY_TOKEN` 匹配, When Runner 携带 `X-Target-Name` + `Authorization: Bearer <token>` 拨入 WS, Then 连接建立、`targets.status` 置 `online`、断开后置 `offline`。
 - [x] **AC-03 (正常路径 · 触发运行)**: Given 至少一个在线集群且目标 pipeline 有 task 模板, When `POST /pipelines/:id/runs`, Then Hub 按当前版本组装 `PipelineRunSpec`（跨 stage 推导 `DependsOn`），落 `pipeline_runs`(Pending)+`task_runs`(Pending)×N，并经 gateway `apply_pipeline_run` 单播到目标集群 Runner。
 - [x] **AC-04 (正常路径 · 状态回写)**: Given 某运行已由 Runner 执行, When Runner 经 WS 回传 `status_update`, Then `pipeline_runs.phase`/`start_time`/`completion_time` 与每个 `task_runs.*` 被同步更新；未知运行（如 Runner 重启后的孤儿消息）被安全忽略。
-- [x] **AC-05 (异常与边界 · 无在线集群)**: Given 没有任何在线 Runner, When 触发运行, Then `selectCluster` 返回 `ErrNoOnlineCluster`，HTTP **503**，不产生脏的 run 记录（除非 `Dispatch` 失败时才标记 Failed 并回写 message）。
-- [x] **AC-06 (异常与边界 · 鉴权失败)**: Given Runner 携带错误 `GATEWAY_TOKEN` 或缺失 `X-Cluster-Name`, When 拨入 WS, Then 分别返回 **401** / **400**，不建立连接。
+- [x] **AC-05 (异常与边界 · 无在线目标)**: Given 没有任何在线 Runner, When 触发运行, Then `selectTarget` 返回 `ErrNoOnlineTarget`，HTTP **503**，不产生脏的 run 记录（除非 `Dispatch` 失败时才标记 Failed 并回写 message）。
+- [x] **AC-06 (异常与边界 · 鉴权失败)**: Given Runner 携带错误 `GATEWAY_TOKEN` 或缺失 `X-Target-Name`, When 拨入 WS, Then 分别返回 **401** / **400**，不建立连接。
 - [x] **AC-07 (异常与边界 · 非法输入)**: Given `pipelineId` 非 UUID 或无 task 模板, When 触发, Then 返回 **400** / 友好错误"pipeline xxx has no task templates to run"，不落库。
 - [x] **AC-08 (权限与安全 · 控制台 API)**: Given 未登录或 `KEYCLOAK_ISSUER` 未配置, When 访问受保护 API, Then dev 模式下自动建/取 dev 用户并放行；生产模式（配置了 issuer）须经 OIDC 校验，无 token 返回 **401**。
 
@@ -56,14 +56,14 @@ Hub 此前已写好各 domain 的 handler / service / repository / middleware，
 
 - **[x] 资损与网络安全 (Security)**
   - 敏感数据脱敏: **涉及**。`component_configs.is_secret=true` 的密钥仅存 `secret_ref`、不存明文 `value`；`users.keycloak_id` 标 `json:"-"` 不出 JSON。
-  - 核心接口幂等/防重: **部分涉及**。Runner 重连后 `status_update` 按 `cr_name+cluster_id` 幂等 upsert（重复消息覆盖而非新建）；`Dispatch` 失败仅标记 Failed 不产生重复 run。
+  - 核心接口幂等/防重: **部分涉及**。Runner 重连后 `status_update` 按 `cr_name+target_id` 幂等 upsert（重复消息覆盖而非新建）；`Dispatch` 失败仅标记 Failed 不产生重复 run。
 - **[x] 高并发与限流降级 (High Availability)**
-  - 核心接口预估 Peak QPS: 普通（内部控制面，非 C 端高并发）；gateway 连接按 `cluster_id` 单播，连接表 `map[uuid]*websocket.Conn` 加 `sync.RWMutex` 保护。
+  - 核心接口预估 Peak QPS: 普通（内部控制面，非 C 端高并发）；gateway 连接按 `target_id` 单播，连接表 `map[uuid]*websocket.Conn` 加 `sync.RWMutex` 保护。
   - 降级/兜底策略: 目标集群不可达时 `Dispatch` 返回 `ErrNoRunner` → 运行标记 Failed 并回写原因，**不阻塞** Hub 主进程；`GATEWAY_TOKEN` 为空时开发模式接受任意连接（仅本地）。
   - 动态开关: 不涉及（基础设施 Story，无业务开关债务）。
 - **[x] 可服务性与监控 (Serviceability)**
-  - 核心日志与错误码: gateway 全链路 `log.Printf("gateway: cluster %s ...")` 带 cluster 维度；Hub 侧错误以 `err.Error()` 回写 `pipeline_runs.message` 便于排查。
-  - 监控告警: 建议对 `clusters.status=offline` 持续时长、以及 `pipeline_runs.phase=Failed` 配置告警（实现待后续 Epic 5 离线告警）。
+  - 核心日志与错误码: gateway 全链路 `log.Printf("gateway: target %s ...")` 带 target 维度；Hub 侧错误以 `err.Error()` 回写 `pipeline_runs.message` 便于排查。
+  - 监控告警: 建议对 `targets.status=offline` 持续时长、以及 `pipeline_runs.phase=Failed` 配置告警（实现待后续 Epic 5 离线告警）。
 
 ---
 
@@ -75,7 +75,7 @@ Hub 此前已写好各 domain 的 handler / service / repository / middleware，
 ```
 POST /pipelines/:id/runs
 {
-  "clusterId": "uuid|null",        // 空 → 首个在线集群
+  "targetId": "uuid|null",         // 空 → 首个在线目标
   "targetNamespace": "sdp-run",    // 缺省 sdp-run
   "repoUrl": "...", "repoRef": "...", "repoPath": "...",
   "params": [ {"name":"X","value":"Y"} ],
@@ -86,10 +86,10 @@ POST /pipelines/:id/runs
 → 503 无在线集群 / 400 非法输入
 ```
 
-**集群接入（gateway WebSocket）**
+**目标接入（gateway WebSocket）**
 ```
 GET {GATEWAY_PATH}   (默认 /gateway/ws)
-Headers: Authorization: Bearer <token>   X-Cluster-Name: <cluster-name>
+Headers: Authorization: Bearer <token>   X-Target-Name: <target-name>
 → 101 Switching Protocols；连接建立置 online，断开置 offline
 ```
 
@@ -98,7 +98,7 @@ Headers: Authorization: Bearer <token>   X-Cluster-Name: <cluster-name>
 |---|---|---|
 | Hub → Runner | `apply_pipeline_run` | `runnerapi.PipelineRunSpec` |
 | Hub → Runner | `approve_task` | （预留） |
-| Runner → Hub | `status_update` | `StatusUpdatePayload{ clusterID, pipelineRunName, phase, tasks[] }` |
+| Runner → Hub | `status_update` | `StatusUpdatePayload{ targetID, pipelineRunName, phase, tasks[] }` |
 | Runner → Hub | `log_chunk` | `LogChunkPayload{ pipelineRunName, taskName, stream, chunk }` |
 | Runner → Hub | `heartbeat` | （空） |
 
@@ -110,7 +110,7 @@ Headers: Authorization: Bearer <token>   X-Cluster-Name: <cluster-name>
 
 **公共基类**
 - `Base`（软删除，用于 orgs/services/components/pipelines/users）：`id uuid PK default gen_random_uuid()`、`created_at`、`updated_at`、`deleted_at timestamptz`（软删索引）。
-- `BaseNoSoftDelete`（硬删除，用于 clusters/environments/pipeline_stages/pipeline_task_templates/全部运行历史）：`id uuid PK`、`created_at`、`updated_at`。
+- `BaseNoSoftDelete`（硬删除，用于 targets/environments/pipeline_stages/pipeline_task_templates/全部运行历史）：`id uuid PK`、`created_at`、`updated_at`。
 - 设计取舍：运行历史故意**不用软删除**（审计事实，删即硬删；删组件不级联清运行记录）。
 
 **表清单**
@@ -122,7 +122,7 @@ Headers: Authorization: Bearer <token>   X-Cluster-Name: <cluster-name>
 | 4 | `components` | component.Component | Base | 组件 |
 | 5 | `component_configs` | component.ComponentConfig | — | 配置 |
 | 6 | `component_config_history` | component.ComponentConfigHistory | — | 配置审计 |
-| 7 | `clusters` | cluster.Cluster | NoSoftDelete | 多集群 |
+| 7 | `targets` | target.Target | NoSoftDelete | 多目标 |
 | 8 | `environments` | environment.Environment | NoSoftDelete | 环境 |
 | 9 | `pipelines` | pipeline.Pipeline | Base | 流水线 |
 | 10 | `pipeline_stages` | pipeline.PipelineStage | NoSoftDelete | 流水线 |
@@ -200,8 +200,8 @@ CREATE TABLE component_config_history (
   changed_at timestamptz NOT NULL DEFAULT now()
 );
 
--- 7. clusters
-CREATE TABLE clusters (
+-- 7. targets
+CREATE TABLE targets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name varchar(128) NOT NULL UNIQUE,
   vendor varchar(64) NOT NULL, region varchar(64) NOT NULL,
@@ -215,7 +215,7 @@ CREATE TABLE environments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   component_id uuid NOT NULL REFERENCES components(id),
   key varchar(64) NOT NULL, name varchar(128) NOT NULL,
-  cluster_id uuid NOT NULL REFERENCES clusters(id),
+  target_id uuid NOT NULL REFERENCES targets(id),
   env_type varchar(16) NOT NULL DEFAULT 'test',      -- test|production
   namespace varchar(128) NOT NULL,
   created_at timestamptz, updated_at timestamptz
@@ -280,7 +280,7 @@ CREATE TABLE artifacts (
 CREATE TABLE pipeline_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   pipeline_id uuid NOT NULL REFERENCES pipelines(id),
-  cluster_id uuid NOT NULL REFERENCES clusters(id),
+  target_id uuid NOT NULL REFERENCES targets(id),
   cr_name varchar(256) NOT NULL, cr_namespace varchar(128) NOT NULL,
   commit_sha varchar(64), params jsonb NOT NULL DEFAULT '{}',
   pipeline_version int,
@@ -340,7 +340,7 @@ CREATE TABLE approvals (
 CREATE TABLE dispatch_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   pipeline_run_id uuid NOT NULL REFERENCES pipeline_runs(id),
-  cluster_id uuid NOT NULL,
+  target_id uuid NOT NULL,
   payload jsonb NOT NULL,                       -- 完整 ApplyPipelineRunPayload 快照
   state varchar(32) NOT NULL DEFAULT 'pending', -- pending|dispatching|dispatched|failed|dead
   attempts int NOT NULL DEFAULT 0,
@@ -349,7 +349,7 @@ CREATE TABLE dispatch_jobs (
   created_at timestamptz, updated_at timestamptz
 );
 CREATE INDEX ON dispatch_jobs (pipeline_run_id);
-CREATE INDEX ON dispatch_jobs (cluster_id);
+CREATE INDEX ON dispatch_jobs (target_id);
 CREATE INDEX ON dispatch_jobs (state);
 
 -- 20. roles
@@ -423,22 +423,22 @@ orgs ─1:1─ service_trees
 orgs ─1:N─ users / roles(org_id NULL=内置)
 service_trees ─1:N─ services ─1:N─ components
 components ─1:N─ component_configs ─(审计)→ component_config_history
-components ─1:N─ environments ─N:1─ clusters
+components ─1:N─ environments ─N:1─ targets
 components ─1:N─ pipelines ─1:N─ pipeline_stages ─1:N─ pipeline_task_templates
 pipelines ─1:N─ pipeline_versions
 components ─1:N─ artifacts
 pipelines ─1:N─ pipeline_runs ─1:N─ task_runs ─1:N─ approvals / rollout_runs
-clusters ─1:N─ pipeline_runs / environments
+targets ─1:N─ pipeline_runs / environments
 components ─1:N─ component_role_bindings ─N:1─ component_roles（§7.3）；platform_roles / platform_role_bindings 为平台级（§7.2）；pipeline_approvals 关联 run/task（§7.4）
 ```
-关键外键：`pipeline_runs.cluster_id` 与 `environments.cluster_id` 指向 `clusters`（gateway 据此把 spec 发到正确 Runner）；`pipeline_runs.cr_name`+`cr_namespace` 桥接集群内短期 PipelineRun CR；`task_runs.pipeline_run_id` 表示运行历史只经父运行管理。
+关键外键：`pipeline_runs.target_id` 与 `environments.target_id` 指向 `targets`（gateway 据此把 spec 发到正确 Runner）；`pipeline_runs.cr_name`+`cr_namespace` 桥接集群内短期 PipelineRun CR；`task_runs.pipeline_run_id` 表示运行历史只经父运行管理。
 
 ---
 
 ## 5. Story 级 Definition of Done (DoD Checklist)
 
 - [x] 3-Corner 澄清通过：AC 由 Dev 与历史主规格（Epic 5/7）对齐，QA 待补。
-- [x] 单元测试覆盖率基线：核心逻辑（`buildSpec`/`selectCluster`/`ApplyStatus`）已实现，单测待补（当前以 `go build`+`go vet` 作为门禁）。
+- [x] 单元测试覆盖率基线：核心逻辑（`buildSpec`/`selectTarget`/`ApplyStatus`）已实现，单测待补（当前以 `go build`+`go vet` 作为门禁）。
 - [x] 静态代码扫描无 P0/P1：hub 与 runner 两模块 `go vet ./...` 通过；`go mod tidy` 清理完成。
 - [x] 自动化测试/手动验收：两模块 `go build ./...` 均 EXIT=0；本地启动会执行 `AutoMigrate` 建 26 张表（含 §7 多 org RBAC 扩展，手动验收待联调）。
 - [ ] 监控告警与降级开关在预发/灰度环境验证：依赖后续 Epic 5 离线告警与 console 灰度监控（**未做**）。

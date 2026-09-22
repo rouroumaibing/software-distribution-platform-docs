@@ -6,16 +6,16 @@
 <title>SDP Console · UI 原型</title>
 <!--
   结构契约核对（本原型须体现的硬性设计决策）：
-  1) 左栏"精简 + 有界"：**恒 5 项** —— 总览 / 服务树 / 运行中心 / 用户与权限 / 集群。
+  1) 左栏"精简 + 有界"：**恒 5 项** —— 总览 / 服务树 / 运行中心 / 用户与权限 / 接入管理（K8s 集群 + 主机 + 凭据的统一注册表）。
      不放 Org→Service→Component 全量树，也不放任何随资源增长的列表（如"最近访问"）；
      跨组件浏览统一收在"运行中心"的两个视图(运行/发布)内；运行实例以「流水线名称」为主标识、附「流水线ID(uuid)」，点名称看该流水线运行详情  ✔
   2) 全局搜索：顶栏搜索 = 任意资源直达主路径(服务端 GET /search?q=)，替代"树里找"  ✔
   3) 服务树独立页(/catalog)：懒加载(展开才请求子层) + 服务端搜索 + 虚拟滚动(≥200 节点) + master-detail；
      新建/删除为"功能型"(非示意)：根级「＋ 新建 Org」+ 节点 hover「＋」真落库(org→service→component)；
      删除不走树内联图标，统一在右侧详情面板(输入名称二次确认 + 后端 verdict 真校验，通过才移除)；编辑文案按节点类型(Org/Service/组件)  ✔
-  4) 组件详情 Tab：概览/交付/配置/环境/制品/权限/日志（环境独立为顶级 Tab）；交付含子 Tab(流水线/运行/发布)；配置=左侧环境选择+右侧 YAML(导入/导出/编辑/保存)；环境=左侧环境树+右侧对接配置+测试对接；
+  4) 组件详情 Tab：概览/交付/配置/环境/制品/权限/日志（环境独立为顶级 Tab）；交付含子 Tab(流水线/运行/发布)；配置=左侧环境选择+右侧 YAML(导入/导出/编辑/保存)；环境=左侧环境树(叶子带「目标类型·通道」角标)+右侧对接面板(目标类型 targetKind × 接入通道 access)+连接测试；
      删除入口：分组**仅当为空**时在树内「＋」右侧露出「－」删除分组（非空分组无删除入口）；环境删除在右侧详情面板**右上角「删除」**；两者均走强确认 + 后端 verdict；
-     环境展示与服务树**同一套树行(.tnode/.tree)**：分组=父节点(chev 折叠 + hover「＋」新建环境)，环境=叶子子节点(状态 dot)；配置页左侧环境选择复用同一棵树(SSOT)  ✔
+     环境展示与服务树**同一套树行(.tnode/.tree)**：分组=父节点(chev 折叠 + hover「＋」新建环境)，环境=叶子子节点(状态 dot + 「目标类型·通道」角标)；配置页左侧环境选择复用同一棵树(SSOT)  ✔
   5) 流水线 CRUD：新建入口 + 列表(运行/编辑/删除，列表仅存在于组件详情·交付·流水线) + 编辑器工具条(保存/触发/删除) + 删除强确认(后端 verdict)  ✔
   6) 总览指挥中心：待办(可点) + KPI + 最近运行(全局) + 异常集群条  ✔
   7) 双主题：明/暗切换 + 灰阶开关；状态=图标+文字+色  ✔
@@ -293,11 +293,40 @@ a{color:var(--accent);text-decoration:none;cursor:pointer}
 .yaml-editor{width:100%;min-height:440px;border:none;outline:none;resize:vertical;padding:14px;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--text);background:var(--surface-2);box-sizing:border-box}
 /* 环境树 = 与服务树同一套树行（.tnode / .tree），分组是父节点、环境是叶子子节点 */
 .env-tree .tnode,.env-list .tnode{padding:5px 8px;font-size:13px}
-.env-tree .tnode .tlabel,.env-list .tnode .tlabel{overflow:hidden;text-overflow:ellipsis}
+.env-tree .tnode .tlabel,.env-list .tnode .tlabel{overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0}
+/* 环境树叶子上的「目标类型·通道」角标（k8s·Agent / K8s·直连 / 主机·SSH） */
+.chtag{margin-left:auto;font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--text-sub);background:var(--surface-3);border-radius:5px;padding:1px 6px;white-space:nowrap;flex:0 0 auto}
 .env-tree .tree,.env-list .tree{margin-top:2px}
 .env-tree .tnode-fake,.env-list .tnode-fake{color:var(--text-sub);cursor:default}
 .block{width:100%;text-align:left}
 .env-detail{flex:1;min-width:0}
+/* ===== 环境对接配置（新建向导 + 对接面板，2026-09-21） ===== */
+.sec{display:flex;align-items:center;gap:9px;margin:20px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--hairline)}
+.card .sec:first-child{margin-top:2px}
+.sec .spacer{flex:1}
+.sec .st{font-size:13.5px;font-weight:650}
+.sec .sd{font-size:12px;color:var(--text-sub)}
+.env-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+.env-grid .col2{grid-column:1 / -1}
+.mask{font-family:"SF Mono",ui-monospace,Menlo,monospace;color:var(--text-sub);letter-spacing:.14em}
+.tbl-sm{width:100%;border-collapse:collapse;font-size:12.5px;border:1px solid var(--hairline);border-radius:10px;overflow:hidden}
+.tbl-sm th{text-align:left;font-size:11.5px;color:var(--text-sub);font-weight:600;padding:8px 12px;background:var(--surface-2);border-bottom:1px solid var(--hairline)}
+.tbl-sm td{padding:8px 12px;border-bottom:1px solid var(--hairline-2)}
+.tbl-sm tbody tr:last-child td{border-bottom:none}
+.chk{list-style:none;border:1px solid var(--hairline);border-radius:10px;overflow:hidden;margin-top:4px}
+.chk li{display:flex;align-items:center;gap:10px;padding:9px 13px;font-size:13px;border-bottom:1px solid var(--hairline-2)}
+.chk li:last-child{border-bottom:none}
+.chk .ic{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;flex:0 0 18px;font-weight:700}
+.chk .ic.ok{background:var(--succ-bg);color:var(--succ-fg)}
+.chk .ic.no{background:var(--fail-bg);color:var(--fail-fg)}
+.chk .dt{color:var(--text-sub);font-size:12px;margin-left:auto;text-align:right}
+.steps{display:flex;align-items:center;gap:8px;margin-bottom:18px}
+.steps .s{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text-sub);white-space:nowrap}
+.steps .s .n{width:20px;height:20px;border-radius:50%;background:var(--surface-3);display:grid;place-items:center;font-size:11px;font-weight:700}
+.steps .s.on{color:var(--accent)}
+.steps .s.on .n{background:var(--accent);color:#fff}
+.steps .ln{flex:1;height:1px;background:var(--hairline)}
+textarea.input{min-height:92px;resize:vertical;font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.55}
 </style>
 </head>
 <body>
@@ -393,6 +422,8 @@ const S = {
   plState:'success', editorName:'日常流水线', editorKind:'build', editorDesc:'', editorStages:[], editorSel:null, catq:'', notes:false,
   /* 运行中心的三个视图（跨组件巡视统一入口，不再是左栏三个独立菜单） */
   runTab:'runs', runFilter:'all',
+  /* 「接入管理」页内的视图：K8s 集群 / 主机 / 凭据 */
+  adminTab:'k8s',
 };
 
 /* ============ 流水线编排：编辑器状态（阶段可前后移动、子任务上下移动、并行↔串行切换） ============ */
@@ -561,7 +592,7 @@ const MAIN_NAV = [
   ['catalog','服务树','layers'],
   ['runs','运行中心','play'],
 ];
-const ADMIN_NAV = [['admin-perm','用户与权限','shield'],['admin-cluster','集群','cloud']];
+const ADMIN_NAV = [['admin-perm','用户与权限','shield'],['admin-target','接入管理','cloud']];
 
 function renderRail(){
   const rail = document.getElementById('rail');
@@ -578,7 +609,7 @@ function renderRail(){
       ${ADMIN_NAV.map(([k,l,ic])=>`<div class="nav-item ${navActive(k)}" data-nav="${k}"><span class="ni">${svg(ic)}</span><span class="nlabel">${l}</span></div>`).join('')}
     </div>`;
 }
-/* 左栏规模不变量：条目数 = 3(主区:总览/服务树/运行中心) + 2(平台管理:用户与权限/集群) = 恒 5，与组件数量无关 */
+/* 左栏规模不变量：条目数 = 3(主区:总览/服务树/运行中心) + 2(平台管理:用户与权限/接入管理) = 恒 5，与组件数量无关 */
 
 
 /* ============ 设计备注（评审用；与文档附 A 同源，默认不显示） ============ */
@@ -604,7 +635,11 @@ const NOTE = {
           '保存 = 阶段/任务的 <span class="mono">POST/PUT/DELETE</span>；流水线级删除见附 A · N-4 / N-5。',
           '现编辑器仅 <span class="mono">kind=build</span> 可编排，是否放开 release/custom 待定（附 A · N-7）。',
           '子任务 <b>产品语言</b>：填了「发布目标」→ 发布任务（阶段任务在做什么），填了「审批人」→ 人工审核阶段，否则 → 构建/运行任务。<b>Build/Release/Approval 不是用户可选的「类型」分类</b>，只是上述描述在请求体里的内部派发码（<span class="mono">deriveType()</span> 对齐 hub <span class="mono">pipeline_task_templates.type</span>）。编辑器只显产品语言描述，不露 Build/Release/Approval 原词；<b>不引入模版目录</b>（用户拍板 2026-09-17）；type 仅作请求体序列化产物进入 hub 供 runner 派发。'],
-  'admin-cluster':['集群健康来自 Runner 心跳；离线 Runner 重连后自动重放 Pending 任务。'],
+  'admin-target':['本页 = <b>对接目标的统一注册表</b>（K8s 集群 + 主机 + 凭据）。目标类型 targetKind 与接入通道 access 两个正交维度的落点；<b>环境不是目标本身</b>，只是"引用其中一行 + 一个命名空间 / 主机列表"。',
+                   'K8s 集群健康来自 Runner 心跳（离线 Runner 重连后自动重放 Pending 任务）；<b>主机目标没有心跳</b>——无常驻 Agent，状态只能是"上次连接测试的结果"，需要主动测试才刷新。',
+                   '<b>「平台底座」角标</b>：单机版下平台底座（hub / console）与目标同集群——注意 <b>runner 是接入侧代理，其组件身份与部署形态无关</b>（docs/hub/DATA-MODEL.md §9.3）。',
+                   '<b>凭据页只出现引用名</b>：明文在 hub 侧 Secret，平台 DB 不落明文；被引用计数为 0 的凭据可安全轮转 / 删除。',
+                   '缺口（待后端）：统一注册表 <span class="mono">GET /targets</span>（含 <span class="mono">targetKind=host</span>）、<span class="mono">/credentials</span> CRUD、<span class="mono">POST /targets/:id/enroll-token</span>（现网关为全局共享 token + runner 自报目标名，见 API-REFERENCE「接入管理」⚠️）、<span class="mono">POST /environments/:id/test</span>。'],
   'admin-perm':['平台角色来自 Keycloak 组映射，仅平台管理员可见。'],
 };
 /* 运行中心承载两个视图（运行/发布），备注按当前视图出（评审信息与附 A 同源，一处不落） */
@@ -638,12 +673,12 @@ function pageDashboard(){
       ${todoCard('⏸','var(--run-bg)','var(--run-fg)','1','暂停的灰度','发布停在 50%','runs','releases')}
     </div>
 
-    <div class="h2">运行态势 <span class="spacer"></span><a class="link" data-nav="admin-cluster" style="font-size:12.5px;font-weight:500">集群健康 →</a></div>
+    <div class="h2">运行态势 <span class="spacer"></span><a class="link" data-nav="admin-target" style="font-size:12.5px;font-weight:500">目标健康 →</a></div>
     <div class="kpis">
       <div class="card kpi"><div class="label">今日运行</div><div class="num">42</div></div>
       <div class="card kpi"><div class="label">成功率</div><div class="num good">93%</div></div>
       <div class="card kpi"><div class="label">运行中</div><div class="num">4</div></div>
-      <div class="card kpi" data-nav="admin-cluster" style="cursor:pointer"><div class="label">在线集群</div><div class="num bad">3 / 4</div></div>
+      <div class="card kpi" data-nav="admin-target" style="cursor:pointer"><div class="label">在线目标</div><div class="num bad">3 / 6</div></div>
     </div>
 
     <div class="h2">最近运行 <span class="spacer"></span><a class="link" data-nav="runs" style="font-size:12.5px;font-weight:500">查看全部 42 条 →</a></div>
@@ -954,17 +989,100 @@ function pageComponent(){
 }
 
 /* ============ 配置（左侧环境选择 + 右侧 YAML 查看/编辑/导入/导出）与环境管理 ============ */
-/* 环境数据按组件隔离：ENV[S.comp] 下含 groups（分组）→ envs（环境），及每环境 yaml；组件上下文锁定为当前组件。 */
+/* 环境数据按组件隔离：ENV[S.comp] 下含 groups（分组）→ envs（环境），及每环境 yaml；组件上下文锁定为当前组件。
+
+   一个环境 = 「部署到哪儿」+「怎么连上去」——两个维度**正交**（2026-09-21 裁定，跨组件口径见 docs/README.md §5.6）：
+
+     ① 目标类型 targetKind
+        · k8s  —— K8s 集群：有 namespace / ServiceAccount，任务以 K8s Job 形式执行
+        · host —— 主机（物理机 / VM / 裸金属 / 归档机）：**没有** Job / namespace / SA / RBAC，
+                  执行底座从"目标里起一个容器"退化成"目标主机上跑一条命令"
+     ② 接入通道 access（由目标类型**收窄**，host 只有 ssh 一条）
+        · agent      仅 k8s · 平台**零凭据**：集群内 Runner Agent 出站回连 hub，环境只需 targetId + namespace
+        · kubeconfig 仅 k8s · **hub 持凭据**：hub 出站直连 kube-apiserver（集群装不了 Agent 时）
+        · ssh        仅 host · **hub 持凭据**：hub 出站连 sshd，做制品分发 + 启停 + 远程命令
+
+   **凭据方向是这两类通道的本质差别**：`agent` 通道 hub 零凭据（Runner 从目标侧回连）；`kubeconfig` / `ssh`
+   两条直连通道由 **hub 侧出站发起、凭据由 hub 持有**，不经 runner、不下发到目标侧。
+   后端契约：docs/hub/DATA-MODEL.md §9.5 / §9.7（非容器目标承载，含破坏性 schema 变更）。
+   环境记录只存**引用名**（沿用 `repo_secret_ref` / `secret_ref` 惯例），明文在 hub 侧 Secret；
+   敏感字段**单向**：接口只回显 `xxxSet:true` 布尔，永不返回明文，改凭据走「重新设置」。 */
+/* 目标注册表（mock）= 「平台管理 → 接入管理」页的数据源：**K8s 集群 + 主机一张表**。
+   · mode  = 该目标默认的接入通道（agent 靠心跳，kubeconfig / ssh 靠凭据；凭据只留引用名）
+   · refs  = 被多少个环境引用（0 = 可安全下线）
+   · role='platform' → 平台底座集群：单机版下平台底座与目标同集群（runner 是接入侧代理，身份与部署形态无关；
+                       见 docs/hub/DATA-MODEL.md §9.3） */
+const TARGETS = [
+  { id:'c1', kind:'k8s',  name:'kind-e2e-01',      vendor:'self-hosted', region:'local',    mode:'agent',      status:'online',  agent:'v0.4.2', hb:'12s 前', refs:3, role:'platform' },
+  { id:'c2', kind:'k8s',  name:'kind-e2e-02',      vendor:'self-hosted', region:'local',    mode:'agent',      status:'online',  agent:'v0.4.2', hb:'40s 前', refs:1 },
+  { id:'c3', kind:'k8s',  name:'tx-prod-gz',       vendor:'tencent',     region:'gz',       mode:'agent',      status:'offline', agent:'v0.4.1', hb:'6h 前',  refs:0 },
+  { id:'c4', kind:'k8s',  name:'ali-test-sh',      vendor:'aliyun',      region:'sh',       mode:'kubeconfig', status:'unknown', agent:'—',      hb:'—',      refs:1 },
+  { id:'h1', kind:'host', name:'edge-01.internal', vendor:'—',           region:'shanghai', mode:'ssh',        status:'online',  agent:'—',      hb:'—',      refs:1, addr:'10.20.3.11', user:'deploy' },
+  { id:'h2', kind:'host', name:'edge-02.internal', vendor:'—',           region:'shanghai', mode:'ssh',        status:'offline', agent:'—',      hb:'—',      refs:0, addr:'10.20.3.12', user:'deploy' },
+];
+/* 兼容既有引用（Agent 集群下拉 / kubeconfig 面板块只关心 K8s 目标） */
+const K8S_TARGETS = TARGETS.filter(t=>t.kind==='k8s');
+const HOSTS    = TARGETS.filter(t=>t.kind==='host');
+/* 目标类型（正交维度一）—— 决定"目标能不能跑 K8s 任务" */
+const TARGET_KINDS = [
+  ['k8s',  'K8s 集群',      '集群形态目标：有 namespace / ServiceAccount，任务以 K8s Job 执行'],
+  ['host', '主机（非容器）', '物理机 / VM / 裸金属 / 归档机：无 K8s，执行底座是"目标主机上的一条命令"'],
+];
+/* 接入通道（正交维度二）—— 按目标类型收窄；host 只有 ssh 一条 */
+const CHANNELS = { k8s:['agent','kubeconfig'], host:['ssh'] };
+/* 每条通道的"事实卡"：谁发起 / 凭据归谁 / 执行载体 / 工作区 / 隔离边界。
+   这张表就是「通道差异如何展示」的正面回答——三者本质差别只有两处：**连接方向**与**凭据归属**。 */
+const CHANNEL_INFO = {
+  agent:      { label:'平台集群（Agent）', by:'Runner 回连（目标 → 平台）',   cred:'平台不持有（凭据在目标侧）',
+                carrier:'目标集群里的 K8s Job',   work:'EmptyDir 卷',        guard:'namespace + SA + RoleBinding' },
+  kubeconfig: { label:'外部集群直连',      by:'hub 出站直连 kube-apiserver', cred:'hub 持有（引用名 → hub 侧 Secret）',
+                carrier:'目标集群里的 K8s Job',   work:'EmptyDir 卷',        guard:'namespace + SA + RoleBinding' },
+  ssh:        { label:'主机（SSH）',       by:'hub 出站直连 sshd',           cred:'hub 持有（引用名 → hub 侧 Secret）',
+                carrier:'目标主机上的进程 / 脚本', work:'目标主机临时目录',   guard:'SSH 账号即边界（无 RBAC）' },
+};
+/* ACC_MODES = [通道, 显示名, 一句话说明]，供既有渲染循环复用 */
+const ACC_MODES = ['agent','kubeconfig','ssh'].map(k=>{
+  const c = CHANNEL_INFO[k];
+  return [k, c.label, c.by + ' · 凭据：' + c.cred];
+});
+function channelsFor(kind){ return (CHANNELS[kind]||CHANNELS.k8s).map(k=>ACC_MODES.find(x=>x[0]===k)); }
+function kindDescOf(kind){ return (TARGET_KINDS.find(x=>x[0]===kind)||TARGET_KINDS[0])[2]; }
+/* 凭据库（mock；真实由 hub 侧 Secret 持有，平台 DB 只存引用名）。
+   host 字段 = 明文实际存放位置（hub 侧 Secret 名）——凭据页要显式写出这一点，
+   否则"只存引用名"会被读成"凭据不在平台"，而直连通道下平台**确实持有**凭据。 */
+const KUBE_CREDS = [
+  { ref:'cred-k8s-ali-sh',  label:'ali-test-sh 集群 kubeconfig', kind:'kubeconfig', used:1, host:'hub Secret · sdp-cred-k8s-ali-sh',  rotated:'2026-08-12' },
+  { ref:'cred-k8s-extra',   label:'备用外部集群 kubeconfig',      kind:'kubeconfig', used:0, host:'hub Secret · sdp-cred-k8s-extra',   rotated:'2026-06-02' },
+];
+const SSH_CREDS = [
+  { ref:'cred-ssh-edge',    label:'边缘节点部署账号（免密密钥）', kind:'ssh-key',      used:1, host:'hub Secret · sdp-cred-ssh-edge',   rotated:'2026-09-01' },
+  { ref:'cred-ssh-legacy',  label:'老机房部署账号（密码）',       kind:'ssh-password', used:0, host:'hub Secret · sdp-cred-ssh-legacy', rotated:'2025-12-20' },
+];
+/* 凭据库统一视图（「目标 → 凭据」页数据源） */
+const CREDS = KUBE_CREDS.concat(SSH_CREDS);
+const blankKube = ()=>({ source:'ref', credRef:'', server:'', caSet:false, insecure:false, auth:'token', credSet:false, ctx:'', parsed:null, parseErr:'' });
+const blankSsh  = ()=>({ sudo:false, targets:[] });
 const ENV = {};
 function envModel(comp){
   if(!ENV[comp]){
     ENV[comp] = { groups:[
       { name:'类生产', envs:[
-        { name:'staging',   cluster:'kind-e2e-01', namespace:'staging', status:'succeeded', lastTest:'12s 前' },
-        { name:'alpha',     cluster:'kind-e2e-02', namespace:'alpha',   status:'succeeded', lastTest:'3m 前' },
+        { name:'staging', envType:'test', targetKind:'k8s', access:'agent', targetId:'c1', ns:'platform-eng-web-staging',
+          status:'succeeded', lastTest:'12s 前', check:null, kube:blankKube(), ssh:blankSsh() },
+        { name:'alpha', envType:'test', targetKind:'k8s', access:'agent', targetId:'c2', ns:'platform-eng-web-alpha',
+          status:'succeeded', lastTest:'3m 前', check:null, kube:blankKube(), ssh:blankSsh() },
       ]},
       { name:'生产', envs:[
-        { name:'production', cluster:'kind-e2e-03', namespace:'prod', status:'paused', lastTest:'8m 前' },
+        { name:'production', envType:'production', targetKind:'k8s', access:'kubeconfig', targetId:'', ns:'platform-eng-web-prod',
+          status:'paused', lastTest:'8m 前', check:null, ssh:blankSsh(),
+          kube:Object.assign(blankKube(), { credRef:'cred-k8s-ali-sh', server:'https://kube-prod-gz.internal:6443',
+            caSet:true, auth:'client-cert', credSet:true, ctx:'prod-gz',
+            parsed:{ server:'https://kube-prod-gz.internal:6443', ca:true, insecure:false, auth:'client-cert', ctx:'prod-gz', ns:'platform-eng-web-prod' } }) },
+        { name:'edge-shanghai', envType:'test', targetKind:'host', access:'ssh', targetId:'', ns:'',
+          status:'unknown', lastTest:'—', check:null, kube:blankKube(),
+          ssh:{ sudo:true, targets:[
+            { host:'10.20.3.11', port:'22', user:'deploy', authType:'key', secretRef:'cred-ssh-edge', secretSet:true, bastion:'jump.sdp.local:22' },
+            { host:'10.20.3.12', port:'22', user:'deploy', authType:'key', secretRef:'cred-ssh-edge', secretSet:true, bastion:'' } ] } },
       ]},
     ], yaml:{} };
   }
@@ -998,7 +1116,7 @@ function envTreeRows(m, opts){
     const kids = empty
       ? `<div class="tnode tnode-fake"><span class="chev"></span><span class="tlabel">（暂无环境，点上方 ＋ 新建）</span></div>`
       : g.envs.map(e=>`<div class="tnode ${S.envName===e.name?'active':''}" data-act="sel-env" data-name="${e.name}">
-          <span class="chev"></span><span class="dot ${e.status||'unknown'}"></span><span class="tlabel">${e.name}</span></div>`).join('');
+          <span class="chev"></span><span class="dot ${e.status||'unknown'}"></span><span class="tlabel">${e.name}</span><span class="chtag" title="目标类型 · 接入通道">${chanTag(e)}</span></div>`).join('');
     const chev = empty
       ? `<span class="chev"></span>`
       : `<span class="chev${collapsed?'':' open'}" data-act="toggle-group" data-name="${g.name}" title="折叠/展开">▶</span>`;
@@ -1045,19 +1163,61 @@ function pageEnv(){
     <button class="btn btn-ghost btn-sm block" data-act="add-group">＋ 新建分组</button>
     <div style="margin-top:8px">${envTreeRows(m, {manage:true})}</div>
   </div>`;
-  const env = findEnv(m, S.envName) || {};
-  const right = `<div class="env-detail card">
-    <div class="row" style="justify-content:space-between">
-      <div class="title">${S.envName||'—'} · 对接配置</div>
-      ${env.name?`<button class="btn btn-ghost btn-danger btn-sm" data-act="del-env" data-name="${env.name}">删除</button>`:''}
-    </div>
-    <div class="field"><label>集群</label><input class="input mono" data-env-field="cluster" value="${esc(env.cluster)}" /></div>
-    <div class="field"><label>命名空间</label><input class="input mono" data-env-field="namespace" value="${esc(env.namespace)}" /></div>
-    <div class="field"><label>状态</label>${badge(env.status||'unknown')}</div>
-    <div class="field"><label>最近测试对接</label><span class="mono">${env.lastTest||'—'}</span></div>
-    <div class="modal-foot"><button class="btn btn-primary" data-act="test-env">测试对接</button></div>
-  </div>`;
+  const env = findEnv(m, S.envName);
+  const right = env
+    ? `<div class="env-detail card">${envDetailHtml(env, m)}</div>`
+    : `<div class="env-detail card"><div class="empty"><span class="big">◍</span>左侧选择或新建一个环境
+        <div style="margin-top:12px"><button class="btn btn-primary" data-act="add-env" data-group="${m.groups[0]?m.groups[0].name:''}">＋ 新建环境</button></div></div></div>`;
   return `<div class="config-split">${left}${right}</div>`;
+}
+
+/* 环境详情面板：基本信息 / 目标与通道（目标类型 targetKind × 接入通道 access，两个正交维度）/ 通道说明卡 / 按通道分流的凭据区 / 连接测试 / 状态。
+   字段绑定统一走 data-env-field="路径"（如 kube.credRef、ssh.sudo），由 content 的 input 监听写入；
+   需要按选择重渲染的（认证方式）额外带 data-env-rerender。 */
+function envDetailHtml(env, m){
+  const kind = env.targetKind || 'k8s';
+  const mode = ACC_MODES.find(x=>x[0]===(env.access||'agent')) || ACC_MODES[0];
+  const grp  = (m.groups.find(g=>g.envs.some(e=>e.name===env.name))||{}).name || '';
+  const kindSeg = `<span class="seg">${TARGET_KINDS.map(([k,l])=>`<button class="${kind===k?'on':''}" data-act="env-kind" data-kind="${k}" title="${esc(l)}">${l}</button>`).join('')}</span>`;
+  const chanSeg = `<span class="seg">${channelsFor(kind).map(([k,l])=>`<button class="${env.access===k?'on':''}" data-act="env-access" data-mode="${k}" title="${esc(l)}">${l}</button>`).join('')}</span>`;
+  return `
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <div>
+        <div class="title">${esc(env.name)} · 对接配置</div>
+        <div class="hint" style="margin-top:4px">作用域主键 = 组件 uuid；一个环境 = 一个<b>目标</b>（K8s 集群 / 主机）+ 一条<b>接入通道</b> + 命名空间或主机列表</div>
+      </div>
+      <div class="row" style="gap:8px">${envStatusBadge(env)}
+        <button class="btn btn-ghost btn-danger btn-sm" data-act="del-env" data-name="${esc(env.name)}">删除环境</button></div>
+    </div>
+
+    <div class="sec"><span class="st">基本信息</span><span class="spacer"></span>
+      <span class="sd">环境类型影响平台级审批策略（production 强制审批）</span></div>
+    <div class="env-grid">
+      <div class="field"><label>环境名称</label><input class="input mono" data-env-field="name" value="${esc(env.name||'')}" /></div>
+      <div class="field"><label>所属分组</label><input class="input" value="${esc(grp)}" readonly title="分组在左侧环境树维护" /></div>
+      <div class="field"><label>环境类型</label>
+        <select class="input" data-env-field="envType">
+          <option value="test" ${env.envType!=='production'?'selected':''}>test（非生产）</option>
+          <option value="production" ${env.envType==='production'?'selected':''}>production（生产 · 强制审批）</option>
+        </select></div>
+      <div class="field"><label>最近测试对接</label><input class="input mono" value="${esc(env.lastTest||'—')}" readonly /></div>
+    </div>
+
+    <div class="sec"><span class="st">目标与通道</span><span class="spacer"></span>
+      <span class="sd">两个正交维度：部署<b>到哪儿</b>（目标类型）× 靠<b>什么连上去</b>（接入通道）</span></div>
+    <div class="env-grid">
+      <div class="field"><label>目标类型 <span class="mono">targetKind</span></label>${kindSeg}
+        <div class="hint" style="margin-top:7px">${esc(kindDescOf(kind))}</div></div>
+      <div class="field"><label>接入通道 <span class="mono">access</span></label>${chanSeg}
+        <div class="hint" style="margin-top:7px">${mode[2]}</div></div>
+    </div>
+    ${channelCard(env)}
+    ${envAccessBody(env)}
+
+    <div class="sec"><span class="st">连接测试</span><span class="spacer"></span>
+      <span class="sd">逐项连通性校验，各项独立超时</span>
+      <button class="btn btn-primary btn-sm" data-act="test-env">测试连接</button></div>
+    ${envTestHtml(env)}`;
 }
 
 function pipelinesListView(){
@@ -1143,18 +1303,95 @@ function pageAdminPerm(){
       <tr><td><span class="chip">sdp-devs</span></td><td>platform-user</td><td>18</td><td style="text-align:right"><button class="link">编辑</button></td></tr>
       </tbody></table></div></div>`;
 }
-function pageAdminCluster(){
-  return `<div class="wrap"><div class="title">集群</div><div class="sub">Runner 接入的 K8s 集群健康</div>
-    <div class="card flush" style="margin-top:18px"><table class="table">
-      <thead><tr><th>名称</th><th>状态</th><th>Runner 版本</th><th>最近心跳</th></tr></thead><tbody>
-      <tr><td>kind-e2e-01</td><td>${badge('succeeded')}</td><td class="mono">v0.4.1</td><td class="mono">12s 前</td></tr>
-      <tr><td>kind-e2e-02</td><td>${badge('failed')}</td><td class="mono">v0.4.0</td><td class="mono">8m 前</td></tr>
-      <tr><td>kind-e2e-03</td><td>${badge('succeeded')}</td><td class="mono">v0.4.1</td><td class="mono">6s 前</td></tr>
-      </tbody></table></div></div>`;
+/* 「平台管理 → 接入管理」= 接入目标的统一注册表（K8s 集群 + 主机 + 凭据）。
+   层级关系：目标（注册表里的一行）→ 环境（引用一行 + ns / 主机列表）。
+   两者是**引用关系**而非从属：同一集群可被多个组件的多个环境引用，所以注册表在平台管理下、环境在组件详情下。 */
+function pageAdminTarget(){
+  const tab = S.adminTab || 'k8s';
+  const tabs = [['k8s','K8s 集群',K8S_TARGETS.length],['hosts','主机（SSH）',HOSTS.length],['creds','凭据',CREDS.length]];
+  const seg = `<span class="seg">${tabs.map(([k,l,n])=>`<button class="${tab===k?'on':''}" data-act="admin-tab" data-tab="${k}">${l} <span class="mono">${n}</span></button>`).join('')}</span>`;
+  const TSTAT = { online:'<span class="badge b-succ">在线</span>', offline:'<span class="badge b-fail">离线</span>', unknown:'<span class="badge b-pend">未验证</span>' };
+  const tstat = s => TSTAT[s] || TSTAT.unknown;
+  const chanOf = m => `<span class="chip">${esc((CHANNEL_INFO[m]||{}).label||m)}</span>`;
+  const platTag = t => t.role==='platform' ? ' <span class="chip" title="平台底座所在集群：单机版下平台底座与目标同集群（runner 是接入侧代理，身份与部署形态无关）">平台底座</span>' : '';
+  let head='', rows='', info='';
+  if(tab==='hosts'){
+    head = '<tr><th>主机</th><th>地址</th><th>登录用户</th><th>接入通道</th><th>状态</th><th>被引用</th><th>健康依据</th><th></th></tr>';
+    rows = HOSTS.map(h=>`<tr>
+        <td><span class="mono">${esc(h.name)}</span></td>
+        <td class="mono">${esc(h.addr)}<span class="hint"> · ${esc(h.region)}</span></td>
+        <td class="mono">${esc(h.user||'')}</td>
+        <td>${chanOf(h.mode)}</td>
+        <td>${tstat(h.status)}</td>
+        <td class="mono">${h.refs} 个环境${h.refs?' <span class="chip">cred-ssh-edge</span>':' <span class="hint">未引用</span>'}</td>
+        <td><span class="hint">连接测试</span></td>
+        <td style="text-align:right"><button class="link" data-act="target-note">详情</button></td></tr>`).join('');
+    info = `<div class="infobar"><div class="infobar-h">主机目标没有常驻 Agent</div>
+      <div class="infobar-b">K8s 集群靠 Runner 心跳维护在线状态；<b>主机不能</b>——平台只在「连接测试」或「发布 / 执行」时才出站连它一次，
+      所以状态是<b>上次测试的结果</b>，需要主动测试才刷新。发布形态目前按<b>搬运工模型</b>设计（平台把制品包放到主机 + 执行目标上已有的启停脚本），
+      平台不解释主机上的编排（systemd / docker-compose / Ansible）——该假定待确认，见 docs/README.md §5.6(6)。</div></div>`;
+  } else if(tab==='creds'){
+    head = '<tr><th>引用名</th><th>名称</th><th>适用目标</th><th>明文归属</th><th>被引用</th><th>最近轮转</th><th></th></tr>';
+    rows = CREDS.map(c=>`<tr>
+        <td><span class="mono">${esc(c.ref)}</span></td>
+        <td>${esc(c.label)}</td>
+        <td>${c.kind==='kubeconfig'?'<span class="chip">K8s 集群</span>':'<span class="chip">主机</span>'} <span class="hint mono">${esc(c.kind)}</span></td>
+        <td><span class="mono">${esc(c.host)}</span></td>
+        <td class="mono">${c.used} 个环境</td>
+        <td class="mono">${esc(c.rotated)}</td>
+        <td style="text-align:right"><button class="link" data-act="target-note">轮转</button></td></tr>`).join('');
+    info = `<div class="infobar"><div class="infobar-h">凭据只出现引用名，明文永不返回</div>
+      <div class="infobar-b">沿用 <span class="mono">components.repo_secret_ref</span> / <span class="mono">component_configs.secret_ref</span> 的同一套规则：
+      平台 DB 只存<b>引用名</b>，明文在 hub 侧 Secret；接口回显 <span class="mono">xxxSet:true</span> 布尔而永不返回明文。
+      轮转 = 在凭据库换值，所有引用它的环境<b>无需改动</b>——这正是"只存引用名"的收益，也是这里唯一该展示凭据的地方。</div></div>`;
+  } else {
+    head = '<tr><th>目标</th><th>厂商 / 地域</th><th>接入通道</th><th>状态</th><th>Runner</th><th>最近心跳</th><th>被引用</th><th>健康依据</th><th></th></tr>';
+    rows = K8S_TARGETS.map(c=>`<tr>
+        <td><span class="mono">${esc(c.name)}</span>${platTag(c)}</td>
+        <td class="hint">${esc(c.vendor)} / ${esc(c.region)}</td>
+        <td>${chanOf(c.mode)}</td>
+        <td>${tstat(c.status)}</td>
+        <td class="mono">${esc(c.agent)}</td>
+        <td class="mono">${esc(c.hb)}</td>
+        <td class="mono">${c.refs} 个环境</td>
+        <td>${c.mode==='agent'?'<span class="hint">Runner 心跳</span>':'<span class="hint">连接测试</span>'}</td>
+        <td style="text-align:right"><button class="link" data-act="target-note">详情</button></td></tr>`).join('');
+    info = `<div class="infobar"><div class="infobar-h">单机版：平台底座所在集群也在本表</div>
+      <div class="infobar-b">平台底座所在集群也在这张表里——它既是<b>平台底座</b>（hub / console 跑在里面），
+      也是<b>被发布目标</b>（本地 Runner 回连、流水线在本地集群执行）。这只是<b>部署位置</b>的巧合；Gen0 安装是<b>一体化</b>的（console / hub / runner 同批装齐），故本行<b>天然已装 runner</b>（表内 <span class="mono">agent=v0.4.2</span> 即此义），动作为<b>升级</b>；
+      <b>runner 是独立接入代理，其身份与部署形态无关</b>（docs/hub/DATA-MODEL.md §9.3）。另：<span class="mono">ali-test-sh</span> 与 <span class="mono">主机</span>都<b>不在</b>
+      「平台管理 → 接入管理」的 Runner 心跳口径内——它们的健康靠连接测试，走的是直连通道（凭据由 hub 持有）。</div></div>`;
+  }
+  const addBtn = tab==='creds' ? '＋ 新建凭据' : (tab==='hosts' ? '＋ 登记主机' : '＋ 注册目标');
+  return `<div class="wrap">
+    <div class="title">接入管理</div>
+    <div class="sub">接入目标的统一注册表 —— <b>环境只是"引用其中一行"</b>。K8s 集群靠 Runner Agent 回连或 hub 直连 apiserver；
+      <b>主机</b>（物理机 / VM / 裸金属 / 归档机）只有 SSH 一条通道，且凭据由 hub 侧持有。</div>
+    <div class="toolbar2" style="margin-top:18px">${seg}<div class="spacer"></div>
+      <button class="btn btn-primary btn-sm" data-act="target-note">${addBtn}</button></div>
+    <div class="card flush"><table class="table"><thead>${head}</thead><tbody>${rows}</tbody></table></div>
+    <div style="margin-top:14px">${info}</div>
+  </div>`;
+}
+/* 目标 / 凭据的增改都还是"设计占位"：后端尚无统一注册表与凭据管理端点，先把需要的契约摊开 */
+function openTargetNote(){
+  openModal('<h3>接入目标的注册与凭据（设计占位）</h3>' +
+    '<div class="mb">本页的三张表都是设计先行：后端目前只有 <span class="mono">/targets</span> 一族端点，统一注册表与凭据管理尚未落地。</div>' +
+    '<div class="infobar-b" style="display:grid;grid-template-columns:180px 1fr;gap:5px 10px">' +
+      '<span class="hint">K8s 集群注册</span><span class="mono">POST /targets（现有）· per-target enroll token 待补</span>' +
+      '<span class="hint">主机登记</span><span class="mono">POST /targets（待补，含 targetKind=host）</span>' +
+      '<span class="hint">凭据 CRUD</span><span class="mono">/credentials（待补，只存引用名）</span>' +
+      '<span class="hint">连通性测试</span><span class="mono">POST /environments/:id/test（待补，逐项各自超时）</span>' +
+      '<span class="hint">手动执行</span><span class="mono">POST /environments/:id/exec（待补，需流式输出）</span>' +
+      '<span class="hint">版本矩阵</span><span class="mono">GET /package-versions（待补，读 package-versions CM）</span>' +
+      '<span class="hint">安装 runner</span><span class="mono">POST /targets/:id/install（待补，版本取 CM）</span>' +
+      '<span class="hint">升级 runner</span><span class="mono">POST /targets/:id/upgrade（待补，已装 → 升级）</span>' +
+    '</div>' +
+    '<div class="modal-foot"><button class="btn btn-primary" data-close>知道了</button></div>');
 }
 
 const PAGES = {dashboard:pageDashboard, runs:pageRuns,
-  catalog:pageCatalog, component:pageComponent, editor:pageEditor, 'admin-perm':pageAdminPerm, 'admin-cluster':pageAdminCluster};
+  catalog:pageCatalog, component:pageComponent, editor:pageEditor, 'admin-perm':pageAdminPerm, 'admin-target':pageAdminTarget};
 
 /* ============ crumb（唯一面包屑；中间层可点，不再在内容区重复一条） ============ */
 function renderCrumb(){
@@ -1165,7 +1402,7 @@ function renderCrumb(){
   else if(S.page==='runs')      segs = S.runTab==='runs' ? [['运行中心']]
                                       : [['运行中心','runs'],[(RUN_VIEWS.find(v=>v[0]===S.runTab)||[])[1]||'']];
   else if(S.page==='admin-perm')    segs = [['平台管理'],['用户与权限']];
-  else if(S.page==='admin-cluster') segs = [['平台管理'],['集群']];
+  else if(S.page==='admin-target') segs = [['平台管理'],['接入管理']];
   else segs = [[{dashboard:'总览',runs:'运行中心',catalog:'服务树'}[S.page]||'']];
   const html = segs.map(([label,to],i)=>{
     const last = i===segs.length-1;
@@ -1200,7 +1437,8 @@ function openModal(html, onOk){
   m.innerHTML = html; h.classList.add('on');
   h.onclick = (e)=>{ if(e.target===h) closeModal(); };
   m.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeModal);
-  const ok = m.querySelector('[data-ok]'); if(ok) ok.onclick = ()=>{ onOk&&onOk(); closeModal(); };
+  /* 回调返回 false ⇒ 校验未过，保持弹窗打开（返回 undefined = 照旧关闭） */
+  const ok = m.querySelector('[data-ok]'); if(ok) ok.onclick = ()=>{ if(onOk && onOk()===false) return; closeModal(); };
 }
 
 /* 通用确认弹窗（取消/确定）；确定回调里自行决定是否跳转 */
@@ -1421,6 +1659,9 @@ document.getElementById('topbar').addEventListener('click', (e)=>{
   const nav = e.target.closest('[data-nav]');
   if(nav){ go(nav.dataset.nav, nav.dataset.runTab, nav.dataset.runFilter); }
 });
+/* 当前选中的环境对象（组件作用域） */
+function curEnv(){ return findEnv(envModel(S.comp), S.envName); }
+
 document.getElementById('content').addEventListener('input', (e)=>{
   if(e.target.classList && e.target.classList.contains('catq')){
     S.catq = e.target.value;
@@ -1429,8 +1670,19 @@ document.getElementById('content').addEventListener('input', (e)=>{
     const el = document.querySelector('.catq');
     if(el){ el.focus(); try{ el.setSelectionRange(pos,pos); }catch(_){} }
   }
+  /* 环境对接面板字段：data-env-field="路径"（支持 kube.credRef / ssh.sudo 这类嵌套路径）。
+     认证材料一旦输入即标记「已配置」并**立刻丢弃明文**，后续渲染只显示掩码。 */
   const ef=e.target.closest('[data-env-field]');
-  if(ef){ const env=findEnv(envModel(S.comp), S.envName); if(env) env[ef.dataset.envField]=ef.value; }
+  if(ef){
+    const env=curEnv();
+    if(env){
+      const path=ef.dataset.envField;
+      setPath(env, path, ef.type==='checkbox' ? ef.checked : ef.value);
+      if(path==='kube.token' || path==='kube.cert' || path==='kube.password'){ env.kube.credSet=true; env.kube[path.split('.')[1]]=''; }
+      if(path==='targetId' || path==='ns' || path==='kube.credRef' || path==='kube.server'){ env.status='unknown'; env.check=null; env.lastTest='—'; }
+      if(ef.dataset.envRerender!=null) render();
+    }
+  }
   const sn=e.target.closest('[data-stage-name]');
   if(sn){ S.editorStages[+sn.dataset.stageName].name=e.target.value; S.editorDirty=true; }
   const tf=e.target.closest('[data-task-field]');
@@ -1482,7 +1734,51 @@ document.getElementById('content').addEventListener('click', (e)=>{
   else if(a==='del-group'){ delGroup(name); }
   else if(a==='del-env'){ delEnv(name); }
   else if(a==='add-env'){ openAddEnv(name); }
-  else if(a==='test-env'){ const e=findEnv(envModel(S.comp), S.envName); if(e){ e.status='succeeded'; e.lastTest='刚刚'; } toast('测试对接成功'); render(); }
+  /* —— 环境对接配置（2026-09-21）—— */
+  else if(a==='env-kind'){ const e=curEnv();
+    if(e){ const k=act.dataset.kind;
+      if(e.targetKind!==k){
+        e.targetKind=k;
+        /* 换目标类型即收窄通道：host 只有 ssh，原通道不适用时自动落到该类型的第一条可用通道 */
+        if(!channelsFor(k).some(x=>x[0]===e.access)) e.access=channelsFor(k)[0][0];
+        e.check=null; e.status='unknown'; e.lastTest='—';
+        toast('目标类型 → '+((TARGET_KINDS.find(x=>x[0]===k)||[])[1]||k)+'，接入通道已按类型收窄');
+        render(); } } }
+  else if(a==='env-access'){ const e=curEnv(); if(e){ e.access=act.dataset.mode; e.check=null; e.status='unknown'; e.lastTest='—'; render(); } }
+  else if(a==='admin-tab'){ S.adminTab=act.dataset.tab; render(); }
+  else if(a==='target-note') openTargetNote();
+  else if(a==='kube-src'){ const e=curEnv(); if(e){ e.kube.source=act.dataset.src; render(); } }
+  else if(a==='kube-parse'){
+    const ta=document.querySelector('[data-kubeconfig]'); const e=curEnv();
+    if(!e || !ta) return;
+    const r=parseKubeconfig(ta.value);
+    e.kube.raw='';                                   /* 明文不被保留 */
+    if(r.ok){
+      e.kube.parsed=r.info; e.kube.parseErr='';
+      e.kube.server=r.info.server; e.kube.ctx=r.info.ctx; e.kube.auth=r.info.auth;
+      e.kube.caSet=r.info.ca; e.kube.insecure=r.info.insecure;
+      toast('kubeconfig 解析成功：'+r.info.server);
+    } else { e.kube.parsed=null; e.kube.parseErr=r.err; toast('解析失败：'+r.err, true); }
+    e.status='unknown'; e.check=null; e.lastTest='—';
+    render();
+  }
+  else if(a==='kube-reset'){ const e=curEnv();
+    if(e){ const w=act.dataset.what, lab=({token:'Token',cert:'客户端证书',password:'密码'}[w]||'凭据');
+      /* token 有输入框 ⇒ 点击即清除回输入态；cert / password 无输入框 ⇒ 在「去配置 / 清除」间切换 */
+      const clearing = (w==='token') ? true : e.kube.credSet;
+      e.kube.credSet = !clearing; e.kube.token=''; e.kube.cert=''; e.kube.password='';
+      toast(clearing ? ('已清除'+lab+'，请重新填写') : ('已登记'+lab+'（示意，实际在凭据库维护）'));
+      render(); } }
+  else if(a==='ssh-host-add'){ const e=curEnv(); if(e) openSshHost(e, -1); }
+  else if(a==='ssh-host-edit'){ const e=curEnv(); if(e) openSshHost(e, +act.dataset.i); }
+  else if(a==='ssh-host-del'){ const e=curEnv(), i=+act.dataset.i;
+    if(e && e.ssh.targets[i]){ const h=e.ssh.targets[i].host; e.ssh.targets.splice(i,1);
+      e.status='unknown'; e.check=null; e.lastTest='—'; toast('已移除主机 '+h); render(); } }
+  else if(a==='test-env'){ const e=curEnv();
+    if(e){ const items=mockEnvTest(e); const bad=items.filter(x=>!x.ok).length;
+      e.check={items}; e.status = bad ? 'paused' : 'succeeded'; e.lastTest='刚刚';
+      toast(bad ? ('连接测试完成：'+bad+' 项未通过') : '连接测试全部通过', !!bad); render(); } }
+  else if(a==='remote-exec') openRemoteExec(act.dataset.kind);
   else if(a==='trigger') toast('已提交运行（触发对话框示意）');
   else if(a==='preview-req') openRequestModal();
   else if(a==='mv-stage'){ const si=+act.dataset.si, dir=act.dataset.dir, j=dir==='left'?si-1:si+1; if(j>=0&&j<S.editorStages.length){ const x=S.editorStages.splice(si,1)[0]; S.editorStages.splice(j,0,x); if(S.editorSel&&S.editorSel.si===si) S.editorSel.si=j; render(); } }
@@ -1544,17 +1840,478 @@ function openAddOrg(){
       S.open[id]=true; S.catSel=id;
       toast('已创建 Org「'+n+'」'); render(); });
 }
+/* 新建环境 = 三步向导（2026-09-21 设计）：
+     Step 1 基本信息（名称 / 分组 / 环境类型）→ Step 2 目标与通道（目标类型收窄可选通道）→ Step 3 该通道的最小必填项。
+     创建时**不落任何凭据明文**，凭据一律走引用名；细化凭据可创建后在环境详情页补。
+   向导自持状态 S.neWiz，直接改写 #modal —— openModal 只支持「点确定即关闭」，容不下多步。 */
 function openAddEnv(group){
-  openModal(`<h3>新建环境</h3><div class="mb">分组：<b>${group}</b></div>
-    <div class="field"><label>环境名称</label><input id="ne-name" class="input" placeholder="例如：alpha" /></div>
-    <div class="field"><label>集群</label><input id="ne-cluster" class="input mono" placeholder="kind-e2e-0x" /></div>
-    <div class="field"><label>命名空间</label><input id="ne-ns" class="input mono" placeholder="alpha" /></div>
-    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>创建</button></div>`,
-    ()=>{ const n=(document.getElementById('ne-name').value||'').trim(); if(!n){ toast('请填写环境名称', true); return; }
-      const m=envModel(S.comp); const g=m.groups.find(x=>x.name===group); if(!g) return;
-      if(g.envs.find(e=>e.name===n)){ toast('环境已存在', true); return; }
-      g.envs.push({name:n, cluster:document.getElementById('ne-cluster').value||'', namespace:document.getElementById('ne-ns').value||'', status:'unknown', lastTest:'—'});
-      S.envName=n; toast('已创建环境「'+n+'」'); });
+  S.neWiz = { step:1, group, name:'', envType:'test', targetKind:'k8s', access:'agent',
+              targetId:'', ns:'', kubeSource:'ref', credRef:'', kubeconfig:'',
+              ssh:{ host:'', port:'22', user:'', authType:'password', secretRef:'' } };
+  renderEnvWizard();
+}
+function renderEnvWizard(){
+  const w = S.neWiz; if(!w) return;
+  const h = document.getElementById('mhost'), m = document.getElementById('modal');
+  m.innerHTML = envWizardHtml(w);
+  h.classList.add('on');
+  h.onclick = (e)=>{ if(e.target===h){ S.neWiz=null; closeModal(); } };
+  m.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{ S.neWiz=null; closeModal(); });
+  m.querySelectorAll('[data-wizf]').forEach(inp=>{
+    inp.oninput = ()=>{ w[inp.dataset.wizf] = inp.type==='checkbox' ? inp.checked : inp.value; };
+  });
+  m.querySelectorAll('[data-wizs]').forEach(inp=>{
+    inp.oninput = ()=>{ w.ssh[inp.dataset.wizs] = inp.type==='checkbox' ? inp.checked : inp.value; };
+  });
+  m.querySelectorAll('[data-wiz]').forEach(b=> b.onclick = ()=> envWizardAct(b.dataset.wiz, b) );
+}
+function envWizardAct(a, el){
+  const w = S.neWiz; if(!w) return;
+  if(a==='cancel'){ S.neWiz=null; closeModal(); return; }
+  if(a==='kind'){
+    const k = el.dataset.kind;
+    if(w.targetKind!==k){
+      w.targetKind = k;
+      /* 目标类型收窄通道：host 只有 ssh */
+      if(!channelsFor(k).some(x=>x[0]===w.access)) w.access = channelsFor(k)[0][0];
+    }
+    renderEnvWizard(); return;
+  }
+  if(a==='access'){ w.access = el.dataset.mode; renderEnvWizard(); return; }
+  if(a==='kubesrc'){ w.kubeSource = el.dataset.src; renderEnvWizard(); return; }
+  if(a==='prev'){ w.step = Math.max(1, w.step-1); renderEnvWizard(); return; }
+  if(a==='next'){
+    if(w.step===1){
+      w.name = (w.name||'').trim();
+      if(!w.name){ toast('请填写环境名称', true); return; }
+      const g = envModel(S.comp).groups.find(x=>x.name===w.group);
+      if(g && g.envs.find(e=>e.name===w.name)){ toast('该分组下已有同名环境', true); return; }
+    }
+    if(w.step===2 && w.access==='agent' && !w.targetId){
+      toast('请选择平台注册目标；未装 Agent 的目标请改走「外部目标直连」', true); return;
+    }
+    w.step = Math.min(3, w.step+1); renderEnvWizard(); return;
+  }
+  if(a==='create'){
+    /* 最小必填校验（凭据细节允许创建后再补） */
+    if(w.access==='agent'){
+      if(!w.targetId){ toast('请选择目标', true); return; }
+    }
+    if(w.access==='kubeconfig'){
+      if(w.kubeSource==='ref' && !w.credRef){ toast('请选择 kubeconfig 凭据', true); return; }
+      if(w.kubeSource==='paste' && !(w.kubeconfig||'').trim()){ toast('请粘贴 kubeconfig 内容', true); return; }
+    }
+    if(w.access==='ssh'){
+      if(!(w.ssh.host||'').trim()){ toast('请填写主机地址', true); return; }
+      if(!(w.ssh.user||'').trim()){ toast('请填写登录用户', true); return; }
+    }
+    if(w.access!=='ssh' && !(w.ns||'').trim()){ toast('请填写命名空间', true); return; }
+    const g = envModel(S.comp).groups.find(x=>x.name===w.group);
+    if(!g){ toast('分组不存在', true); return; }
+    const e = { name:w.name, envType:w.envType, targetKind:w.targetKind, access:w.access, targetId:'', ns:'',
+                status:'unknown', lastTest:'—', check:null, kube:blankKube(), ssh:blankSsh() };
+    if(w.access==='agent'){ e.targetId = w.targetId; e.ns = w.ns.trim(); }
+    if(w.access==='kubeconfig'){
+      e.ns = w.ns.trim(); e.kube.source = w.kubeSource;
+      if(w.kubeSource==='ref') e.kube.credRef = w.credRef;
+      else { const p = parseKubeconfig(w.kubeconfig); e.kube.parsed = p.ok ? p.info : null; e.kube.parseErr = p.ok ? '' : p.err;
+             e.kube.server = p.ok ? p.info.server : ''; e.kube.ctx = p.ok ? p.info.ctx : ''; }
+    }
+    if(w.access==='ssh'){
+      const ref = (w.ssh.secretRef||'').trim();
+      e.ssh.targets = [{ host:w.ssh.host.trim(), port:(w.ssh.port||'22'), user:w.ssh.user.trim(),
+                         authType:w.ssh.authType, secretRef:ref, secretSet:!!ref, bastion:'' }];
+    }
+    g.envs.push(e); S.envName = e.name; S.envGroup = w.group; S.neWiz = null; closeModal();
+    toast('已创建环境「'+e.name+'」（'+chanTag(e)+'；凭据与连接测试可在详情页继续完善）'); render();
+  }
+}
+
+/* ================= 环境对接：渲染 / 解析 / 测试（2026-09-21） ================= */
+
+/* 通道角标（环境树叶子）：一眼看出这个环境「目标类型 · 走哪条通道」 */
+const KIND_SHORT = { k8s:'K8s', host:'主机' };
+const CHAN_SHORT = { agent:'Agent', kubeconfig:'直连', ssh:'SSH' };
+function chanTag(e){ return (KIND_SHORT[(e&&e.targetKind)||'k8s']||'K8s') + '·' + (CHAN_SHORT[e&&e.access]||'—'); }
+/* 通道说明卡：「谁发起连接 / 凭据归谁 / 执行载体 / 工作区 / 隔离边界」五问一次说清。
+   agent 与两条直连通道的本质差别只有"连接方向 + 凭据归属"两处，其余是同构的；
+   host 则连执行载体与隔离边界都换了（无 Job、无 RBAC）——这正是它必须单列一条通道的原因。 */
+function channelCard(env){
+  const c = CHANNEL_INFO[(env&&env.access)||'agent'] || CHANNEL_INFO.agent;
+  const rows = [['谁发起连接', c.by], ['凭据归属', c.cred], ['执行载体', c.carrier], ['工作区', c.work], ['隔离边界', c.guard]];
+  return `<div class="infobar" style="margin-bottom:14px">
+      <div class="infobar-h">通道说明 · <span class="mono">${esc((env||{}).access||'agent')}</span>${env&&env.access==='ssh'?'（主机目标的唯一通道）':''}</div>
+      <div class="infobar-b" style="display:grid;grid-template-columns:96px 1fr;gap:3px 12px;margin-top:5px">
+        ${rows.map(([a,b])=>`<span class="hint">${a}</span><span>${esc(b)}</span>`).join('')}
+      </div></div>`;
+}
+/* 配置完整度：none = 关键字段缺失；set = 已配置（是否验证通过另看 env.status） */
+function envConfigState(env){
+  if(!env) return 'none';
+  if(env.access==='agent') return (env.targetId && env.ns) ? 'set' : 'none';
+  if(env.access==='kubeconfig'){
+    const k = env.kube || {};
+    const has = k.source==='ref'   ? !!k.credRef
+              : k.source==='paste' ? !!k.parsed
+              : !!(k.server && k.credSet);
+    return (has && env.ns) ? 'set' : 'none';
+  }
+  const s = env.ssh || {};
+  return (s.targets && s.targets.length && s.targets.every(t=>t.secretSet)) ? 'set' : 'none';
+}
+/* 环境状态徽章 = 配置完整度 × 最近一次测试结果 */
+function envStatusBadge(env){
+  const st = env && env.status;
+  if(st==='succeeded') return '<span class="badge b-succ">验证通过</span>';
+  if(st==='paused')    return '<span class="badge b-warn">验证失败</span>';
+  return envConfigState(env)==='none'
+    ? '<span class="badge b-pend">未配置</span>'
+    : '<span class="badge b-pend">已配置 · 未验证</span>';
+}
+
+function envAccessBody(env){
+  if(env.access==='kubeconfig') return kubeAccessBody(env);
+  if(env.access==='ssh')        return sshAccessBody(env);
+  return agentAccessBody(env);
+}
+
+/* ① 平台集群（Agent 回连）：不需要任何凭据 */
+function agentAccessBody(env){
+  const list = K8S_TARGETS.filter(c=>c.mode==='agent');
+  const opts = list.map(c=>`<option value="${c.id}" ${env.targetId===c.id?'selected':''}>${esc(c.name)} · ${esc(c.vendor)}/${esc(c.region)} · ${c.status==='online'?'在线':'离线'}</option>`).join('');
+  const c = K8S_TARGETS.find(x=>x.id===env.targetId);
+  return `<div class="env-grid">
+      <div class="field"><label>接入目标（GET /api/v1/targets）</label>
+        <select class="input" data-env-field="targetId"><option value="">— 请选择 —</option>${opts}</select></div>
+      <div class="field"><label>命名空间 namespace</label>
+        <input class="input mono" data-env-field="ns" value="${esc(env.ns||'')}" placeholder="{org}-{component}-{env}" /></div>
+    </div>
+    <div class="infobar"><div class="infobar-h">Agent 回连模式：不需要 kubeconfig，也不需要 kube-apiserver 地址</div>
+      <div class="infobar-b">集群内 Runner Agent 主动<b>出站</b>回连 hub${c?`（${esc(c.name)} · 心跳 ${c.hb} · agent ${c.agent}）`:''}，
+      平台把 PipelineRunSpec 经已有长连接下发，<b>hub 不持有该集群的任何凭据</b>（仅 <span class="mono">agent</span> 通道如此） —— 这就是 hub <span class="mono">targets</span> 表
+      只有 <span class="mono">name/vendor/region/status/heartbeat</span>、没有 kubeconfig 字段的原因。
+      目标注册与 Agent 生命周期在「平台管理 → 接入管理」维护。</div></div>`;
+}
+
+/* ② 外部集群直连：凭据来源三选一，明文一律不落环境记录 */
+function kubeAccessBody(env){
+  const k = env.kube || blankKube();
+  const seg = `<span class="seg">${[['ref','引用凭据'],['paste','粘贴 kubeconfig'],['manual','手工填写']]
+    .map(([s,l])=>`<button class="${k.source===s?'on':''}" data-act="kube-src" data-src="${s}">${l}</button>`).join('')}</span>`;
+  const nsField = `<div class="field"><label>命名空间 namespace</label>
+        <input class="input mono" data-env-field="ns" value="${esc(env.ns||'')}" placeholder="{org}-{component}-{env}" /></div>`;
+  let body = '';
+  if(k.source==='ref'){
+    const opts = KUBE_CREDS.map(c=>`<option value="${c.ref}" ${k.credRef===c.ref?'selected':''}>${esc(c.label)}（被 ${c.used} 个环境引用）</option>`).join('');
+    body = `<div class="env-grid">
+        <div class="field"><label>kubeconfig 凭据（凭据库）</label>
+          <select class="input" data-env-field="kube.credRef"><option value="">— 请选择 —</option>${opts}</select></div>
+        ${nsField}
+      </div>`;
+  } else if(k.source==='paste'){
+    body = `<div class="field"><label>kubeconfig 内容（YAML）</label>
+        <textarea class="input" data-kubeconfig data-env-field="kube.raw" placeholder="apiVersion: v1&#10;clusters:&#10;- cluster:&#10;    server: https://kube-apiserver.example.com:6443&#10;    certificate-authority-data: LS0t…">${esc(k.raw||'')}</textarea></div>
+      <div class="toolbar2" style="margin-top:2px">
+        <button class="btn btn-ghost btn-sm" data-act="kube-parse">解析并回显</button>
+        <span class="hint">只做<b>结构预览</b>：解析后明文即被消费，环境记录只留摘要</span></div>
+      ${kubeParsedHtml(k)}
+      <div class="env-grid" style="margin-top:12px">${nsField}</div>`;
+  } else {
+    const authOpts = [['token','Bearer Token'],['client-cert','客户端证书'],['basic','用户名 / 密码']]
+      .map(([v,l])=>`<option value="${v}" ${k.auth===v?'selected':''}>${l}</option>`).join('');
+    let cred = '';
+    if(k.auth==='token'){
+      cred = k.credSet
+        ? `<div class="field"><label>Token</label><div class="row" style="gap:8px"><span class="mask">••••••••••••••••</span><span class="chip">已配置</span><span class="spacer" style="flex:1"></span><button class="link" data-act="kube-reset" data-what="token">重新设置</button></div></div>`
+        : `<div class="field"><label>Token</label><input class="input mono" data-env-field="kube.token" placeholder="ServiceAccount Token…" /></div>`;
+    } else if(k.auth==='client-cert'){
+      cred = `<div class="field"><label>客户端证书 / 私钥（client-certificate-data + client-key-data）</label>
+        <div class="row" style="gap:8px"><span class="mask">••••••••••••••••</span><span class="chip">${k.credSet?'已配置':'未配置'}</span><span class="spacer" style="flex:1"></span><button class="link" data-act="kube-reset" data-what="cert">${k.credSet?'重新设置':'去配置'}</button></div></div>`;
+    } else {
+      cred = `<div class="field"><label>用户名</label><input class="input mono" data-env-field="kube.username" value="${esc(k.username||'')}" /></div>
+              <div class="field"><label>密码</label><div class="row" style="gap:8px"><span class="mask">••••••••</span><span class="chip">${k.credSet?'已配置':'未配置'}</span><span class="spacer" style="flex:1"></span><button class="link" data-act="kube-reset" data-what="password">${k.credSet?'重新设置':'去配置'}</button></div></div>`;
+    }
+    body = `<div class="env-grid">
+        <div class="field col2"><label>kube-apiserver 地址（server）</label>
+          <input class="input mono" data-env-field="kube.server" value="${esc(k.server||'')}" placeholder="https://kube-apiserver.example.com:6443" /></div>
+        <div class="field"><label>认证方式</label>
+          <select class="input" data-env-field="kube.auth" data-env-rerender>${authOpts}</select></div>
+        <div class="field"><label>默认 context</label>
+          <input class="input mono" data-env-field="kube.ctx" value="${esc(k.ctx||'')}" placeholder="可选，如 prod-gz" /></div>
+        ${cred}
+        ${nsField}
+        <div class="field col2" style="margin-top:2px"><label>TLS</label>
+          <div class="checks">
+            <label><input type="checkbox" data-env-field="kube.caSet" ${k.caSet?'checked':''} /> 已内置 CA 证书（certificate-authority-data）</label>
+            <label><input type="checkbox" data-env-field="kube.insecure" ${k.insecure?'checked':''} /> 跳过 TLS 校验（insecure-skip-tls-verify · 仅限测试环境）</label>
+          </div></div>
+      </div>`;
+  }
+  return `<div class="toolbar2" style="margin-bottom:10px"><span class="hint">凭据来源：</span>${seg}<div class="spacer"></div><button class="btn btn-ghost btn-sm" data-act="remote-exec" data-kind="kubeconfig">▷ 远程执行（诊断）</button></div>
+    ${body}
+    <div class="infobar" style="margin-top:12px"><div class="infobar-h">凭据不落库明文（沿用既有 secret_ref 惯例）</div>
+      <div class="infobar-b">环境记录只保存<b>引用名</b>（<span class="mono">kubeconfigSecretRef</span>），明文由 hub 侧 Secret 持有；<b>hub 出站直连目标时在服务端使用</b>，不下发到目标侧 ——
+      与 <span class="mono">components.repo_secret_ref</span> / <span class="mono">component_configs.secret_ref</span> 同一套规则。
+      看环境只需 <span class="mono">config:read</span>（只能看到「已配置」），改凭据需 <span class="mono">config:update</span>。</div></div>`;
+}
+
+/* kubeconfig 解析结果回显卡 */
+function kubeParsedHtml(k){
+  if(k && k.parseErr) return `<div class="errbox" style="margin-top:10px">✕ 解析失败：${esc(k.parseErr)}</div>`;
+  if(!k || !k.parsed) return '';
+  const p = k.parsed;
+  const rows = [
+    ['kube-apiserver 地址（server）', p.server || '—'],
+    ['CA 证书', p.ca ? '已内置（certificate-authority-data）' : '无'],
+    ['跳过 TLS 校验', p.insecure ? '是（insecure-skip-tls-verify）' : '否'],
+    ['认证方式', ({'token':'Bearer Token','client-cert':'客户端证书','basic':'用户名 / 密码','exec':'exec 插件（平台不支持）'})[p.auth] || p.auth || '—'],
+    ['current-context', p.ctx || '—'],
+    ['默认命名空间', p.ns || '（kubeconfig 未声明，按环境填写）'],
+  ];
+  return `<div class="infobar" style="margin-top:10px">
+      <div class="infobar-h">已接收 kubeconfig —— 只保留以下结构摘要，明文不留在环境记录里</div>
+      <div class="infobar-b" style="display:grid;grid-template-columns:170px 1fr;gap:4px 10px;margin-top:6px">
+        ${rows.map(([a,b])=>`<span class="hint">${a}</span><span class="mono">${esc(b)}</span>`).join('')}
+      </div></div>`;
+}
+
+/* ③ 主机（SSH）：目标主机列表 + 凭据引用 */
+function sshAccessBody(env){
+  const s = env.ssh || blankSsh();
+  const rows = (s.targets||[]).map((t,i)=>`<tr>
+      <td class="mono">${esc(t.host)}</td><td class="mono">${esc(t.port||'22')}</td><td class="mono">${esc(t.user)}</td>
+      <td>${t.authType==='key'?'免密密钥':'用户名 / 密码'}</td>
+      <td>${t.secretSet?`<span class="chip">${esc(t.secretRef||'已配置')}</span>`:'<span class="hint">未配置</span>'}</td>
+      <td>${t.bastion?`<span class="mono">${esc(t.bastion)}</span>`:'<span class="hint">直连</span>'}</td>
+      <td><button class="link" data-act="ssh-host-edit" data-i="${i}">编辑</button>
+          <button class="link" style="color:var(--fail-fg)" data-act="ssh-host-del" data-i="${i}">移除</button></td>
+    </tr>`).join('');
+  return `<div class="sec" style="margin-top:2px;border-bottom:none;padding-bottom:0">
+      <span class="st" style="font-size:12.5px">目标主机</span><span class="spacer"></span>
+      <button class="btn btn-ghost btn-sm" data-act="remote-exec" data-kind="ssh">▷ 远程执行（诊断）</button>
+      <button class="btn btn-ghost btn-sm" data-act="ssh-host-add">＋ 添加主机</button></div>
+    ${ (s.targets||[]).length
+      ? `<table class="tbl-sm" style="margin-top:8px">
+          <thead><tr><th>主机</th><th>端口</th><th>用户</th><th>认证</th><th>凭据引用</th><th>跳板机</th><th>操作</th></tr></thead>
+          <tbody>${rows}</tbody></table>`
+      : `<div class="empty" style="padding:26px 0"><span class="big">🖧</span>还没有目标主机
+          <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" data-act="ssh-host-add">＋ 添加主机</button></div></div>` }
+    <div class="field" style="margin-top:14px"><label>提权</label>
+      <div class="checks"><label><input type="checkbox" data-env-field="ssh.sudo" ${s.sudo?'checked':''} /> 部署时用 sudo 提权（部署账号非 root 时）</label></div></div>
+    <div class="infobar"><div class="infobar-h">SSH 凭据同样不落库明文</div>
+      <div class="infobar-b">环境只存 <span class="mono">sshSecretRef</span>（hub 侧 Secret 名），密码 / 私钥 / passphrase 都不进 hub 数据库。
+      认证支持 <b>用户名 + 密码</b> 与 <b>免密密钥（PEM + 可选 passphrase）</b>；可经 <b>跳板机</b>（ProxyJump）中转。
+      建议使用专用的非 root 部署账号 + sudo 提权，便于最小权限与审计。</div></div>`;
+}
+
+/* 远程执行（诊断通道）：直连通道下由 hub 侧发起的一次性命令执行。
+   与流水线执行的区分：手动、一次一条、逐条审计、不进 DAG（见 docs/console §7.12.8）。 */
+function openRemoteExec(kind){
+  const e = curEnv(); if(!e) return;
+  const t0 = (e.ssh && e.ssh.targets && e.ssh.targets[0]) ? e.ssh.targets[0] : null;
+  const target = (kind==='ssh')
+    ? (t0 ? (t0.user+'@'+t0.host+':'+(t0.port||'22')) : '（未配置主机）')
+    : ((e.kube && e.kube.server) ? e.kube.server : '（未配置 kube-apiserver）');
+  const cmd = (kind==='ssh') ? 'systemctl status sdp-agent --no-pager' : 'kubectl -n prod rollout status deploy/web --timeout=30s';
+  const out = (kind==='ssh')
+    ? '$ systemctl status sdp-agent --no-pager\n● sdp-agent.service - SDP deploy agent\n     Active: active (running) since Mon 2026-09-21 09:12:04 CST\n   Main PID: 1832\n     Memory: 24.1M'
+    : '$ kubectl -n prod rollout status deploy/web --timeout=30s\ndeployment "web" successfully rolled out';
+  openModal('<h3>远程执行命令（诊断通道）</h3>'+
+    '<div class="mb">目标：<b class="mono">'+esc(target)+'</b> · 经 <span class="mono">'+esc(kind)+'</span> 由 <b>hub 侧</b>发起连接（<b>不经 Runner</b>）。</div>'+
+    '<div class="field"><label>命令</label><input class="input mono" value="'+esc(cmd)+'" /></div>'+
+    '<pre class="code-block">'+esc(out)+'</pre>'+
+    '<div class="infobar"><div class="infobar-b">手动诊断通道：一次一条、逐条审计、需 <span class="mono">target:exec</span> 权限；<b>自动化执行请走流水线任务</b>（§7.12.8）。输出仅为示意。</div></div>'+
+    '<div class="modal-foot"><button class="btn btn-ghost" data-close>关闭</button></div>');
+}
+
+/* kubeconfig 结构解析（原型用轻量行解析；真实实现由 hub 侧 yaml.Unmarshal + clientcmd 做权威校验） */
+function parseKubeconfig(text){
+  const src = String(text||'');
+  if(!src.trim()) return {ok:false, err:'内容为空'};
+  const lines = src.split(/\r?\n/);
+  const find = (re)=>{ for(const l of lines){ const m=l.match(re); if(m) return m[1].trim(); } return ''; };
+  const has  = (re)=> lines.some(l=>re.test(l));
+  const server   = find(/^\s*server:\s*(.+)$/);
+  const ctx      = find(/^\s*current-context:\s*(.+)$/);
+  const ns       = find(/^\s*namespace:\s*(.+)$/);
+  const ca       = has(/certificate-authority(-data)?:/);
+  const insecure = has(/insecure-skip-tls-verify:\s*true/);
+  const useExec  = has(/^\s*exec:/);
+  const cert     = has(/client-certificate(-data)?:/);
+  const token    = has(/^\s*token:\s*\S/);
+  const basic    = has(/^\s*(username|password):\s*\S/);
+  if(!has(/^\s*clusters:/)) return {ok:false, err:'不是合法 kubeconfig：缺少 clusters 段'};
+  if(!server) return {ok:false, err:'clusters[].cluster.server 缺失，无法定位 kube-apiserver 地址'};
+  if(useExec) return {ok:false, err:'认证方式为 exec 插件（本地命令签发证书），平台不支持；请改用静态 Token 或客户端证书'};
+  const auth = cert ? 'client-cert' : token ? 'token' : basic ? 'basic' : '';
+  if(!auth) return {ok:false, err:'未找到可用认证材料（token / client-certificate-data / username+password 至少其一）'};
+  return {ok:true, info:{ server, ca, insecure, auth, ctx, ns }};
+}
+
+/* 连接测试：逐项 checklist（原型按配置推导；真实由 hub `POST /environments/:id/test` 逐项探测、各自超时） */
+function mockEnvTest(env){
+  const items = [];
+  const push = (ok,name,detail)=>items.push({ok:!!ok, name, detail});
+  if(env.access==='agent'){
+    const c = K8S_TARGETS.find(x=>x.id===env.targetId);
+    const online = !!(c && c.status==='online');
+    push(!!c, '目标已注册', c ? `${c.name} · ${c.vendor}/${c.region}` : '未选择集群');
+    push(online, 'Runner Agent 在线', c ? (online ? `心跳 ${c.hb} · agent ${c.agent}` : `心跳 ${c.hb}，离线无法下发`) : '—');
+    push(!!env.ns, '命名空间已声明', env.ns || '未填写 namespace');
+    push(online && !!env.ns, '部署权限（dry-run create deployment）', online && env.ns ? 'ServiceAccount 具备 create deployments' : '前置项未通过，跳过');
+  } else if(env.access==='kubeconfig'){
+    const k = env.kube || {};
+    const server = k.source==='manual' ? k.server : ((k.parsed && k.parsed.server) || '');
+    const caOK   = k.insecure || k.caSet || !!(k.parsed && k.parsed.ca);
+    const authOK = k.source==='ref' ? !!k.credRef : k.source==='paste' ? !!k.parsed : !!k.credSet;
+    push(!!server, 'kube-apiserver 可达', server ? `TCP/TLS 握手成功 ${server}` : '未提供 server 地址');
+    push(!!server && caOK, 'TLS / CA 校验', !server ? '前置项未通过，跳过'
+      : k.insecure ? '已跳过校验（insecure-skip-tls-verify）' : caOK ? 'CA 校验通过' : '缺少 CA 且未跳过校验');
+    push(authOK, '认证通过', authOK
+      ? (k.source==='ref' ? `凭据 ${k.credRef}` : k.source==='paste' ? 'kubeconfig 内置认证材料有效' : 'Token / 证书有效')
+      : '未提供认证材料');
+    push(!!env.ns, '命名空间可访问', env.ns ? `namespace/${env.ns} 存在` : '未填写 namespace');
+    push(!!server && caOK && authOK && !!env.ns, '部署权限（dry-run create/update deployment）',
+      server && caOK && authOK && env.ns ? '具备 create/update deployments' : '前置项未通过，跳过');
+  } else {
+    const t = (env.ssh && env.ssh.targets && env.ssh.targets[0]) || {};
+    const up = !!(t.host && t.secretSet);
+    push(!!t.host, 'TCP 可达', t.host ? `${t.host}:${t.port||'22'} 握手成功` : '未添加目标主机');
+    push(!!t.host, '主机指纹校验（known_hosts）', t.host ? (t.authType==='key' ? '指纹匹配' : '密码模式跳过指纹校验') : '—');
+    push(!!t.secretSet, 'SSH 认证通过', t.secretSet
+      ? (t.authType==='key' ? '公钥认证成功（私钥来自 Secret）' : '密码认证成功（来自 Secret）') : '未引用凭据');
+    push(up, '部署目录可写', up ? `/opt/app 可写（user=${t.user||'—'}）` : '前置项未通过，跳过');
+    push(!env.ssh.sudo || up, 'sudo 提权可用', env.ssh.sudo ? (up ? 'sudo -n 免密可用' : '前置项未通过，跳过') : '未启用（无需提权）');
+  }
+  return items;
+}
+function envTestHtml(env){
+  const c = env.check;
+  if(!c) return `<div class="hint">尚未测试。点击「测试连接」逐项校验：网络可达 → TLS / 认证 → 命名空间与部署权限（SSH 则为指纹 / 认证 / 写权限 / sudo）。</div>`;
+  const okN = c.items.filter(i=>i.ok).length, total = c.items.length;
+  const all = okN===total;
+  return `<ul class="chk">${c.items.map(i=>`<li>
+      <span class="ic ${i.ok?'ok':'no'}">${i.ok?'✓':'✕'}</span>
+      <span>${esc(i.name)}</span>
+      <span class="dt">${esc(i.detail)}</span></li>`).join('')}</ul>
+    <div class="toolbar2" style="margin-top:10px">
+      <span class="badge ${all?'b-succ':'b-warn'}">${okN}/${total} 项通过</span>
+      <span class="hint">最近测试：${esc(env.lastTest||'—')}</span>
+      <span class="spacer"></span>
+      <span class="hint">测试失败不阻塞保存，但会挡住发布门禁</span></div>
+    ${ all ? '' : `<div class="errbox" style="margin-top:8px">✕ 存在未通过项 —— 请修正上方配置后重试。</div>` }`;
+}
+
+/* 目标主机（SSH）新增 / 编辑弹窗：只登记引用名，不收集明文 */
+function openSshHost(env, idx){
+  const has = idx>=0 && env.ssh.targets[idx];
+  const t = has ? env.ssh.targets[idx] : {host:'',port:'22',user:'',authType:'password',secretRef:'',bastion:''};
+  openModal(`<h3>${has?'编辑':'添加'}目标主机</h3>
+    <div class="mb">环境：<b>${esc(env.name)}</b> · 配置里的凭据以<b>引用名</b>登记</div>
+    <div class="field"><label>主机地址</label><input id="sh-host" class="input mono" value="${esc(t.host)}" placeholder="10.20.3.11 或 edge-01.internal" /></div>
+    <div class="field" style="display:grid;grid-template-columns:96px 1fr;gap:12px">
+      <div><label>端口</label><input id="sh-port" class="input mono" value="${esc(t.port||'22')}" /></div>
+      <div><label>登录用户</label><input id="sh-user" class="input mono" value="${esc(t.user)}" placeholder="deploy（建议非 root + sudo）" /></div></div>
+    <div class="field"><label>认证方式</label><select id="sh-auth" class="input">
+      <option value="password" ${t.authType!=='key'?'selected':''}>用户名 / 密码</option>
+      <option value="key" ${t.authType==='key'?'selected':''}>免密密钥（PEM + 可选 passphrase）</option></select></div>
+    <div class="field"><label>凭据引用（hub 侧 Secret 名）</label><input id="sh-ref" class="input mono" value="${esc(t.secretRef||'')}" placeholder="cred-ssh-edge" /></div>
+    <div class="field"><label>跳板机（可选 · ProxyJump）</label><input id="sh-bastion" class="input mono" value="${esc(t.bastion||'')}" placeholder="jump.sdp.local:22" /></div>
+    <div class="infobar"><div class="infobar-b">密码 / 私钥 / passphrase 在<b>凭据库</b>创建（落到 hub 侧 Secret），不进入环境记录。</div></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>${has?'保存':'添加'}</button></div>`,
+    ()=>{
+      const host=(document.getElementById('sh-host').value||'').trim();
+      const user=(document.getElementById('sh-user').value||'').trim();
+      if(!host){ toast('请填写主机地址', true); return false; }
+      if(!user){ toast('请填写登录用户', true); return false; }
+      const ref=(document.getElementById('sh-ref').value||'').trim();
+      const row={ host, user, port:((document.getElementById('sh-port').value||'22').trim()||'22'),
+                  authType:document.getElementById('sh-auth').value, secretRef:ref, secretSet:!!ref,
+                  bastion:(document.getElementById('sh-bastion').value||'').trim() };
+      if(has) env.ssh.targets[idx]=row; else env.ssh.targets.push(row);
+      env.status='unknown'; env.lastTest='—'; env.check=null;
+      toast((has?'已更新主机 ':'已添加主机 ')+host); render();
+    });
+}
+
+/* 三步向导：Step1 基本信息 / Step2 目标与通道 / Step3 凭据与连接。
+   为什么把「目标与通道」单列一步：目标类型会**收窄**可选通道（host 只有 ssh），
+   先定类型再列通道，比把三条通道挤成一排更少误选——这是两个正交维度在交互上的直接体现。 */
+function envWizardHtml(w){
+  const step1 = `
+    <div class="field"><label>环境名称</label><input class="input mono" data-wizf="name" value="${esc(w.name)}" placeholder="例如：alpha / staging / production" /></div>
+    <div class="field"><label>所属分组</label><input class="input" value="${esc(w.group)}" readonly title="分组在左侧环境树维护" /></div>
+    <div class="field"><label>环境类型</label><select class="input" data-wizf="envType">
+      <option value="test" ${w.envType!=='production'?'selected':''}>test（非生产）</option>
+      <option value="production" ${w.envType==='production'?'selected':''}>production（生产 · 强制审批）</option></select></div>
+    <div class="infobar"><div class="infobar-h">分组 ≠ 环境类型</div>
+      <div class="infobar-b">分组只是归类（可折叠、可为空），与环境类型<b>正交</b>：分到「生产」组不会自动变成 production 类型，
+      审批策略只看<b>环境类型</b>（production 强制审批，见 §7.9）。</div></div>`;
+  const kind = w.targetKind || 'k8s';
+  const step2 = `
+    <div class="field"><label>目标类型 <span class="mono">targetKind</span></label>
+      <span class="seg">${TARGET_KINDS.map(([k,l])=>`<button class="${kind===k?'on':''}" data-wiz="kind" data-kind="${k}">${l}</button>`).join('')}</span>
+      <div class="hint" style="margin-top:7px">${esc(kindDescOf(kind))}</div></div>
+    <div class="field"><label>接入通道 <span class="mono">access</span></label>
+      <span class="seg">${channelsFor(kind).map(([k,l])=>`<button class="${w.access===k?'on':''}" data-wiz="access" data-mode="${k}">${l}</button>`).join('')}</span>
+      <div class="hint" style="margin-top:7px">${(ACC_MODES.find(x=>x[0]===w.access)||ACC_MODES[0])[2]}</div></div>
+    ${channelCard({access:w.access})}
+    <div class="hint">目标与通道可在创建后于环境详情页修改（改目标类型会按类型收窄通道）。</div>`;
+  let s2 = '';
+  if(w.access==='agent'){
+    const opts = K8S_TARGETS.filter(c=>c.mode==='agent').map(c=>`<option value="${c.id}" ${w.targetId===c.id?'selected':''}>${esc(c.name)} · ${esc(c.vendor)}/${esc(c.region)} · ${c.status==='online'?'在线':'离线'}</option>`).join('');
+    s2 = `<div class="field"><label>平台注册目标</label><select class="input" data-wizf="targetId"><option value="">— 请选择 —</option>${opts}</select></div>
+      <div class="field"><label>命名空间 namespace</label><input class="input mono" data-wizf="ns" value="${esc(w.ns)}" placeholder="{org}-{component}-{env}" /></div>
+      <div class="infobar"><div class="infobar-b">Agent 出站回连 hub，<b>无需 kubeconfig / kube-apiserver 地址</b>。</div></div>`;
+  } else if(w.access==='kubeconfig'){
+    const seg2 = `<span class="seg">${[['ref','引用凭据'],['paste','粘贴 kubeconfig']]
+      .map(([s,l])=>`<button class="${w.kubeSource===s?'on':''}" data-wiz="kubesrc" data-src="${s}">${l}</button>`).join('')}</span>`;
+    const body = w.kubeSource==='ref'
+      ? `<div class="field"><label>kubeconfig 凭据</label><select class="input" data-wizf="credRef"><option value="">— 请选择 —</option>${KUBE_CREDS.map(c=>`<option value="${c.ref}" ${w.credRef===c.ref?'selected':''}>${esc(c.label)}</option>`).join('')}</select></div>`
+      : `<div class="field"><label>kubeconfig 内容（YAML）</label><textarea class="input" data-wizf="kubeconfig" placeholder="apiVersion: v1&#10;clusters:&#10;- cluster:&#10;    server: https://…">${esc(w.kubeconfig)}</textarea></div>`;
+    s2 = `<div class="field"><label>凭据来源</label>${seg2}</div>${body}
+      <div class="field"><label>命名空间 namespace</label><input class="input mono" data-wizf="ns" value="${esc(w.ns)}" placeholder="{org}-{component}-{env}" /></div>
+      <div class="infobar"><div class="infobar-b">外部集群直连（集群装不了 Agent 时）。凭据只存<b>引用名</b>，明文由 hub 侧 Secret 持有。</div></div>`;
+  } else {
+    s2 = `<div class="field"><label>主机地址</label><input class="input mono" data-wizs="host" value="${esc(w.ssh.host)}" placeholder="10.20.3.11 或 edge-01.internal" /></div>
+      <div class="field" style="display:grid;grid-template-columns:96px 1fr;gap:12px">
+        <div><label>端口</label><input class="input mono" data-wizs="port" value="${esc(w.ssh.port)}" /></div>
+        <div><label>登录用户</label><input class="input mono" data-wizs="user" value="${esc(w.ssh.user)}" placeholder="deploy（建议非 root）" /></div></div>
+      <div class="field"><label>认证方式</label><select class="input" data-wizs="authType">
+        <option value="password" ${w.ssh.authType!=='key'?'selected':''}>用户名 / 密码</option>
+        <option value="key" ${w.ssh.authType==='key'?'selected':''}>免密密钥（PEM + 可选 passphrase）</option></select></div>
+      <div class="field"><label>凭据引用（hub 侧 Secret 名）</label><input class="input mono" data-wizs="secretRef" value="${esc(w.ssh.secretRef)}" placeholder="cred-ssh-edge" /></div>
+      <div class="infobar"><div class="infobar-b">密码 / 私钥 <b>不落 hub 数据库</b>，只存引用名；更多主机与跳板机可在创建后于环境详情页添加。</div></div>`;
+  }
+  return `<h3>新建环境</h3>
+    <div class="steps">
+      <span class="s ${w.step===1?'on':''}"><span class="n">1</span>基本信息</span><span class="ln"></span>
+      <span class="s ${w.step===2?'on':''}"><span class="n">2</span>目标与通道</span><span class="ln"></span>
+      <span class="s ${w.step===3?'on':''}"><span class="n">3</span>凭据与连接</span>
+    </div>
+    ${ w.step===1 ? step1
+      : w.step===2 ? step2
+      : `<div class="mb">${esc(w.name)} · 分组 <b>${esc(w.group)}</b> · <span class="chip">${esc(chanTag({targetKind:kind, access:w.access}))}</span></div>
+        ${s2}` }
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close>取消</button>
+      ${ w.step>1 ? `<button class="btn btn-ghost" data-wiz="prev">上一步</button>` : '' }
+      ${ w.step<3
+        ? `<button class="btn btn-primary" data-wiz="next">下一步</button>`
+        : `<button class="btn btn-primary" data-wiz="create">创建环境</button>` }
+    </div>`;
+}
+
+/* data-env-field="a.b.c" 路径写入（环境面板的字段绑定统一走这里） */
+function setPath(obj, path, val){
+  const ks = String(path||'').split('.');
+  let cur = obj;
+  for(let i=0;i<ks.length-1;i++){
+    if(cur[ks[i]]==null || typeof cur[ks[i]]!=='object') cur[ks[i]] = {};
+    cur = cur[ks[i]];
+  }
+  cur[ks[ks.length-1]] = val;
+  return obj;
 }
 
 /* 点击流水线名称 → 查看该流水线的运行情况详情（按 pipeline 名称聚合 RUNS，示意） */

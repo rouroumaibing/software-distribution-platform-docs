@@ -37,7 +37,7 @@ Org  ──1:1──▶  ServiceTree        (service_trees.org_id, unique)
 
 ### 1.1 关键交互语义
 - **阶段间顺序执行**：`PipelineStage.Sequence` 决定先后。
-- **阶段内子任务按 `ExecutionMode` 执行**（`PipelineStage.ExecutionMode`，**⚠️ 待实现，见 §6.4**）：`Parallel`（**当前唯一已实现**值，同阶段子任务同时可运行、无相互依赖）/ `Serial`（**待实现**，同阶段子任务按序执行）。设计上 `Serial` 由 hub `buildSpec` 按序推导阶段内 `DependsOn` 链实现；runner 消费的是已解析 DAG，无需感知"串行/并行"——它只看 `DependsOn`。阶段间恒串行（跨阶段 `DependsOn`，**已实现**）。注：`ExecutionMode` 字段与阶段内 `DisplayOrder` 排序均**尚未落地**（`PipelineStage` 现仅 `pipeline_id/name/sequence`）。
+- **阶段内子任务按 `ExecutionMode` 执行**（`PipelineStage.ExecutionMode`，**字段已落地 2026-09-22，见 §6.4**）：`Parallel`（**默认值**，同阶段子任务同时可运行、无相互依赖）/ `Serial`（**字段与 UI 已就绪、调度待实现**，同阶段子任务按序执行）。设计上 `Serial` 由 hub `buildSpec` 按序推导阶段内 `DependsOn` 链实现；runner 消费的是已解析 DAG，无需感知"串行/并行"——它只看 `DependsOn`。阶段间恒串行（跨阶段 `DependsOn`，**已实现**）。注（2026-09-22 更新）：`ExecutionMode` **字段已落地**（`pipeline_stages.execution_mode`，迁移 `0010`），阶段内 `DisplayOrder` 排序一向可写；**仍缺的是 `Serial` 的调度行为** —— hub `buildSpec` 尚未按序推导阶段内 `DependsOn` 链（backlog C-06），故 serial 阶段里的子任务在 runner 侧**仍并发启动**。
 - **子任务交互**：`Produces`/`Consumes`（JSON 键）描述产物产出与消费；触发时 run service 直接 copy 进 `runnerapi.PipelineTaskSpec`，并跨 stage 推导 `DependsOn`。
 - **类型分工**：`Build`=内联命令执行（如 `pytest`/`go build`，跑在 `Image` 工具镜像里；也支持 `ScriptPath` 脚本逃生通道）；`Release`=施加一个软件单元（`ReleaseConfig` 里的 chart/manifest 源 + 从参数管理注入的 `values`），可选 `RolloutConfig` 做金丝雀；`Approval`=人工卡点（结果写 runner CR 的 `ApprovedBy/RejectedBy`）。
 
@@ -46,7 +46,7 @@ Org  ──1:1──▶  ServiceTree        (service_trees.org_id, unique)
 ## 2. 运行链（执行态，快照）
 
 ```
-Pipeline  ──1:N──▶  PipelineRun    (pipeline_runs.pipeline_id + cluster_id + CRName + CRNamespace + pipeline_version)
+Pipeline  ──1:N──▶  PipelineRun    (pipeline_runs.pipeline_id + target_id + CRName + CRNamespace + pipeline_version)
                        │               PipelineRun 是 runner PipelineRun CR 的长期真源（CR 仅短 TTL 保留）
                        │
                        └──1:N──▶  TaskRun   (task_runs.pipeline_run_id)
@@ -92,9 +92,12 @@ Pipeline  ──1:N──▶  PipelineRun    (pipeline_runs.pipeline_id + cluste
 | `pipelines` | `component_id` | `components` | 1:N（不变式：单组件） |
 | `pipeline_stages` | `pipeline_id` | `pipelines` | 1:N，按 `sequence` 顺序 |
 | `pipeline_task_templates` | `stage_id` | `pipeline_stages` | 1:N（子任务↔阶段权威关联） |
-| `pipeline_runs` | `pipeline_id` | `pipelines` | 1:N，加 `cluster_id` + `version` 快照 |
+| `pipeline_runs` | `pipeline_id` | `pipelines` | 1:N，加 `target_id` + `version` 快照 |
 | `task_runs` | `pipeline_run_id` | `pipeline_runs` | 1:N |
 | `task_runs` | `task_template_id` | `pipeline_task_templates` | 可空，反查权威 `stage_id`（**不是** stage FK） |
+| `environments` | `component_id` | `components` | 1:N（`ON DELETE CASCADE`，但组件是**软删** → cascade 不触发，见 §8.4） |
+| `environments` | `target_id` | `targets` | **NOT NULL**；**裸 FK 无 cascade** → 删被引用的目标会 **FK 报错（500）**（见 §9.2） |
+| `environments` | `group_id` | `environment_groups` | 可空（§8；**已落地** 2026-09-22，见 §8.9） |
 
 ---
 
@@ -116,7 +119,7 @@ Pipeline  ──1:N──▶  PipelineRun    (pipeline_runs.pipeline_id + cluste
 触发 `POST /pipelines/:id/runs` → `PipelineRunService.Trigger`：
 1. 落 `pipeline_runs` 一行（Pending）+ 按 spec 种子 `task_runs`（每 DAG 节点一行，Pending）—— **"任务先落实到数据库"在 hub 侧成立**；
 2. 入队 `dispatch_jobs`（Pending）携带完整 `ApplyPipelineRunPayload`；
-3. 立即尝试下发；Runner 离线则 job 保持 Pending，重连（`DrainCluster`）/ 周期扫（`SweepPending`）重投，运行不失败（状态机见 `dispatch_job.go`）；
+3. 立即尝试下发；Runner 离线则 job 保持 Pending，重连（`DrainTarget`）/ 周期扫（`SweepPending`）重投，运行不失败（状态机见 `dispatch_job.go`）；
 4. Runner 经出站长连接收 `apply_pipeline_run` → 建 `PipelineRun` CR → 调度执行 → 每状态变更经 `status_update` 流回 → hub `ApplyStatus` 写回 `task_runs` / `pipeline_runs`。
 
 > 结论前置：你设想的"任务先落 DB、runner 按 DB 任务执行"在 **hub 侧完全满足**；差异仅在"runner 怎么拿到任务"——是 DB 直连拉取，还是 hub 推送 spec 快照。见 §6.2。
@@ -124,12 +127,12 @@ Pipeline  ──1:N──▶  PipelineRun    (pipeline_runs.pipeline_id + cluste
 ### 6.2 双向钢人论证①：runner 拉 DB vs hub 推 spec
 
 **正方（runner 直接读 hub DB 拉任务）**
-- 极简心智：runner 是无状态 worker，定时 `SELECT * FROM task_runs WHERE cluster=? AND phase=Pending`，天然幂等，断线重连零成本；
+- 极简心智：runner 是无状态 worker，定时 `SELECT * FROM task_runs WHERE target_id=? AND phase=Pending`，天然幂等，断线重连零成本；
 - 单一真相源在 Postgres，排查只查一处；无需 WS 长连接与帧协议；
 - 与你最初设想"任务先落 DB、runner 按 DB 执行"一字不差。
 
 **反方（保留 hub 推送 spec + runner CRD 执行）** —— 现状采用
-- **安全边界**：runner 是部署在各业务集群的 agent，不应持有 hub Postgres 凭据；推送模型 runner 只持 `CLUSTER_AUTH_TOKEN` 连 hub 网关，凭证/权限留在 hub（G7 在 hub 侧统一落实）；
+- **安全边界**：runner 是部署在各业务集群的 agent，不应持有 hub Postgres 凭据；推送模型 runner 只持 `TARGET_AUTH_TOKEN` 连 hub 网关，凭证/权限留在 hub（G7 在 hub 侧统一落实）；
 - **离线容忍已内建**：`dispatch_jobs` 状态机让"集群暂时离线"不丢工作、不失败触发，重连即补投，比 DB 轮询更易保证"至少一次"投递；
 - **执行态本就在集群内**：runner 是 K8s Operator，任务实际跑成 Job/CRD/etcd；让 runner 回头查 hub DB 是绕回控制面，违背"执行平面自治"；
 - **实时回流**：WS 让状态秒级回写（进度轮询 2~3s 足够），DB 轮询要么高频打库、要么延迟大；
@@ -170,9 +173,9 @@ Pipeline  ──1:N──▶  PipelineRun    (pipeline_runs.pipeline_id + cluste
 
 ### 6.4 DB 表设计变更（本次新增/推荐）
 
-**① `pipeline_stages` 加 `execution_mode`**（实现阶段内串行/并行；**已确认方向为放 Stage 级；⚠️ 当前未实现**——`PipelineStage` 结构体现仅 `(pipeline_id, name, sequence)`，无该字段）
+**① `pipeline_stages` 加 `execution_mode`**（实现阶段内串行/并行；**已确认方向为放 Stage 级**）✅ **已落地（2026-09-22）**：`PipelineStage` 已含该字段，迁移见 `migrations/0010`。**⚠️ 仍未落地的是 `Serial` 的调度行为**（hub `buildSpec` 按序推导阶段内 `DependsOn` 链，backlog C-06）—— 该字段当前只做 API ↔ DB 往返。
 ```sql
-ALTER TABLE pipeline_stages ADD COLUMN execution_mode varchar(16) NOT NULL DEFAULT 'Parallel';
+ALTER TABLE pipeline_stages ADD COLUMN execution_mode varchar(16) NOT NULL DEFAULT 'parallel';  -- 取值统一**小写**（以面向客户端的 API 契约为准）；实际落地见 migrations/0010
 -- 枚举: 'Parallel' | 'Serial'
 ```
 - （**待实现**）`Serial` 时 hub `buildSpec` 应在同阶段任务间推导 `DependsOn` 链；**当前 `buildSpec` 无此分支**，同阶段任务一律并行。runner 无新字段，纯消费 DAG（CRD 类型无需改）。
@@ -205,7 +208,7 @@ CREATE TABLE stage_runs (
 
 ## 7. 授权模型（权限管控 G7；目标态 = 多 org；P1 建表 / P2 审批 / P3 Enforcement 均已落地；**平台级 HTTP 端点待补**）
 
-> ⚠️ **当前状态**：本节 §7 表 + Enforcement 中间件已落地，但 `platform_roles` / `platform_role_bindings` **尚无 HTTP 端点**（`internal/permission/handler/` 下仅有 `role` / `component_role` / `binding` 组件级 handler，`main.go` 未注册 platform 级路由）。平台管理员绑定须经 API 配置的能力未暴露（backlog：本库 `STORY-BACKLOG.md` C-10）。
+> ✅ **当前状态（2026-09-22 更新）**：本节 §7 表 + Enforcement 中间件已落地，**平台级 HTTP 端点也已注册**（`internal/permission/handler/platform_role.go` / `platform_binding.go`；`main.go` 已接线）—— C-10 关闭，平台管理员绑定现在可经 API 配置。两张绑定表同批补上 **`expires_at`**（`migrations/0011`），且 `ListMatching` **排除过期授权** —— §7.4 的「到期回收」不再只是文档承诺（过期行保留供审计，由回收作业另行清理）。仍未做：platform 级路由的**权限守卫**（随 `ACCOUNT-PERMISSION-MODEL.md` §11 步骤 4「中间件重排」收口）、console 侧权限管理 UI。
 
 > 双向钢人论证结论（见 [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) / 对话记录）：Keycloak 与 k8s RBAC 均**退到边界**——KC 只做身份+组，k8s RBAC 只管 runner 集群操作；承载"用户对组件能做什么 + 谁能审批"的是 **hub 内的两层 RBAC + 审批表**。这同时满足：① 组件级权限以"管理员/组映射为主"（无运行时自助需求 → 不引入 Keycloak UMA）；② 默认审批人 = 组件 owner/管理员（所有权在 app，见 §7.4）。
 
@@ -298,7 +301,7 @@ hub 在 API 网关/中间件层统一鉴权：
 | 组件级细粒度 + 组映射 | **Keycloak** group/role（仅作身份+组，不做 UMA 资源授权） | KC 组 → hub 角色映射 |
 | 默认审批人 = owner | **Backstage** ownership 驱动权限 | 所有权是 app 数据，驱动默认审批 |
 | 选谁审 / 通过拒绝 / 防自审 | **GitHub Environments / GitLab Protected Environments / Spinnaker Manual Judgment** | 审批=独立门禁节点；required reviewers + 防自审 + wait timer |
-| 动态策略（可选） | **OPA / Casbin** | 未来"仅工作时间可发布生产"等用策略引擎，不在本期 |
+| 动态策略（可选） | **OPA / Casbin** | 未来"仅工作时间可发布生产"等用策略引擎，**不在本期**（D4 判定 = 「延后 + 登记」；触发条件与引入时的硬约束见 [hub/STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md) **B-19**，边界见 [hub/ACCOUNT-PERMISSION-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/ACCOUNT-PERMISSION-MODEL.md) §5.2） |
 
 ### 7.7 表结构（DDL，与 AutoMigrate 同步已实现）
 
@@ -423,10 +426,10 @@ environment_groups ──1:N──▶ environments  (environments.group_id，可
 
 | 决策 | 结论 | 对本章的影响 |
 | --- | --- | --- |
-| 删环境 / 删组件时，**集群侧**已部署资源是否回收 | **不回收**（平台与目标环境隔离，避免平台误伤生产） | §8.4「删环境」行**不再涉及集群侧**；删环境只处理**平台侧**（DB 行 + 审计） |
+| 删环境 / 删组件时，**集群侧**已部署资源是否回收 | **不回收**（**平台侧与目标侧生命周期解耦**：无论走哪条接入通道，删除平台记录都**不回收目标侧资源**，避免误伤生产） | §8.4「删环境」行**不再涉及集群侧**；删环境只处理**平台侧**（DB 行 + 审计） |
 | 「残留」的定义 | **只指平台侧**遗留（DB 行 / 对象存储对象 / 配置与审计） | §8.4「删组件」行的"分组应随之消失"须**服务层显式级联**（组件软删，DB `ON DELETE CASCADE` 不触发）；集群侧不计入残留 |
 | `component_config_history.environment_id` | **去 FK + 加 `environment_key` 快照列**（优于单纯 `ON DELETE SET NULL`） | §8.4「删环境」的"删除前须告知配置覆盖行数"**仍然成立**；同时消除"删环境随机 500"（现状：`component_configs` 是 cascade、`config_history` 是 `NO ACTION`，同一操作两种结果） |
-| `pipeline_stages` / `pipeline_task_templates` | **补 `deleted_at`** + **封父存在性校验** + **修 `pipelines` 唯一约束** | 与本章无直接耦合，记录于 `DELETE-CONTRACT.md` §6.6-3（B-15）。**(a) 父存在性校验 + (b) `pipelines` 改 partial unique index + (c) 模型时间列映射已于 2026-09-16 落地**；`deleted_at` 待拍板 |
+| `pipeline_stages` / `pipeline_task_templates` | **补 `deleted_at`** + **封父存在性校验** + **修 `pipelines` 唯一约束** | 与本章无直接耦合，记录于 `DELETE-CONTRACT.md` §6.6-3（B-15）。**(a)(b)(c) 已于 2026-09-16 落地；(d) `deleted_at` + 活行唯一 + stage 级联软删已于 2026-09-22 落地**（见 §8.9） |
 | Artifact 孤儿对象 | **先堵源头 → 后做对账（仅报告，不自动删）** | 同 `DELETE-CONTRACT.md` §6.6-4（B-16） |
 
 **未变（仍然有效）**：
@@ -436,3 +439,209 @@ environment_groups ──1:N──▶ environments  (environments.group_id，可
 - §8.6 的折叠状态**不落库**（用户级 UI 偏好）。
 
 **关联 backlog**：`STORY-BACKLOG.md` B-13（环境分组落库）、B-14（config_history 快照列）、B-15（stages/templates 标记与入口校验）、B-16（artifacts 治理）。
+
+### 8.9 落地记录（2026-09-22）
+
+本章相关的 B-13 / B-14 / B-15 项在本轮全部落地：
+
+| 项 | 落地内容 | 代码 / 迁移锚点 |
+| --- | --- | --- |
+| 分组落库（§8.2 / B-13） | 表 `environment_groups` + `environments.group_id`（可空）由启动时 GORM `AutoMigrate` 建出。**未走 §8.2 建议的 `0003` 迁移号** —— `0003` 已是 Keycloak 认证；本机无"从 0001 建库"的存量，故只靠 AutoMigrate，不另写迁移 | `internal/environmentgroup/{models,repository,service,handler}`、`internal/environment/models/environment.go` |
+| 删分组语义（§8.4 第 1/2 行） | ✅ `409 + {reasons}`（reasons 带组内环境条数）；空组硬删。**修正了一处与契约不符**：原实现返回 `400` 且不带 `reasons` | `internal/environmentgroup/service/environment_group.go`；单测 `delete_test.go` |
+| 删环境告知（§8.4 第 3 行） | ✅ 删前统计该环境的 `component_configs` 覆盖行数并写审计告警，**不拒绝**（§6.4 #8 判定为"提示、不拒绝"） | `internal/environment/service/environment.go`；`internal/component/repository/config.go` 的 `CountByEnvironment` |
+| 配置历史去 FK（第 8.8 决策 2 / B-14） | ✅ `component_config_history` 摘 `environment_id` FK + 加 `environment_key` 快照列（写入时冗余当时 key，环境删掉后历史仍可读） | `migrations/0008_config_history_env_key.sql`、`internal/component/{models,service}/config.go` |
+| stages/templates 补 `deleted_at`（第 8.8 决策 3 / B-15） | ✅ 两模型 `BaseNoSoftDelete` → `common.Base`；旧唯一约束改 partial unique index（`where deleted_at is null`）；`StageService.Delete` 服务层级联软删模板 | `migrations/0009_stage_template_soft_delete.sql`、`internal/pipeline/models/{stage,task_template}.go`、`internal/pipeline/service/stage.go` |
+| §8.4 第 4 行"删组件 → 分组应随之消失" | ❌ **仍未做**（组件软删不触发 DB cascade，需服务层显式级联 + 跨 repo 事务设计），登记于 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §3.3 | — |
+
+**§8.7 gate 对照**
+- ✅ 单测：空分组可删 / 非空分组 `409 + {reasons}`（`internal/environmentgroup/service/delete_test.go`）。
+- ✅ 端点：`GET /components/:id/environment-groups` 已注册（`EnvironmentGroupHandler.RegisterRoutes`）。
+- ⚠️ **未覆盖**："删环境前统计到配置覆盖行数"目前**没有单测** —— 该行为由 `EnvironmentService.Delete` 内的一次计数 + 审计日志承担，要构造 `component_configs` 行需要真实 DB（本轮 gate 为 build/vet/test，不含 PG）。属已知缺口，未假装通过。
+- **迁移 `0003` 幂等性**：不适用（未生成该迁移文件，见上表第 1 行）。
+
+**未跑**：真实库上的 `migrations/0008` / `0009`（本地无 Postgres / Docker）。前置检查见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §3.4。
+
+---
+
+## 9. 接入目标注册表与部署拓扑（含「单机版」；2026-09-21 裁定）
+
+> **起因**：console §7.12 补环境对接（`kubeconfig` / `ssh`）时暴露出「集群」一词被三种语境混用。本节钉死 `targets` 的语义、它与 `environments` 的关系、以及"平台自身所在的集群"这一特殊情形。
+> 三层边界（① 能力 / ② 接入 / ③ 自身）的裁定与理由见 [README.md §5.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)。
+
+### 9.1 `targets` 是「目标侧」注册表，不是「平台自身」注册表
+
+`targets` 一行 = **一个部署在被管集群里、出站回连 hub 的 Runner Agent**（`internal/target/models/target.go` 注释：*"a matching runner Agent connects back to the hub for each row here"*；DDL 见 `migrations/0001_init_schema.sql` §5）。
+
+| 列 | 类型 | 说明 |
+| --- | --- | --- |
+| `name` | varchar(128) unique | 目标名。Runner 连网关注自报（`X-Target-Name` header），hub 据此 `GetByName` 定位；查不到 → `404 unknown target` |
+| `vendor` / `region` | varchar | `aliyun` / `tencent` / `aws` / `self-hosted` …；**多厂商、多 region 是设计前提** |
+| `status` | varchar(32) | `online` / `offline`，由网关连接 / 断开触发 `Heartbeat` 翻转 |
+| `agent_version` / `last_heartbeat_at` | | Runner 版本与心跳 |
+| （无其他列） | | **本表刻意不含任何凭据列**：无 kubeconfig、无 kube-apiserver 地址、无 SSH |
+
+**为什么没有凭据列——执行方向决定的**：在 `agent` 通道下，平台**从不入站访问目标**（⚠️ **直连通道 `kubeconfig` / `ssh` 例外** —— hub 侧发起连接并持有目标凭据，见 §9.5）。
+
+- **下发**：hub 经 Runner 的**出站长连接**（WS）推 `ApplyPipelineRunPayload`（§6.1）；
+- **回流**：状态 / 日志由 Runner 出站推回（`status_update` / `MessageLogChunk`），hub 落 `task_runs` 后 `GET /runs/:id/log` **只读 hub 自己持久化的日志分片**，不连集群；
+- **制品**：落在 hub 自己的对象存储（`local` driver 的 HMAC 签名 URL，或 S3 / MinIO presigned URL），不经目标集群。
+
+因此**唯一存在的凭据是反向的**：Runner 持 `GATEWAY_TOKEN`（bearer）连 hub 网关。⚠️ 两点须知道：
+
+1. 该 token 是**全局共享**的（`internal/config/config.go`：*"shared secret Runners present as a Bearer token"*），**不是 per-target**；目标身份由 Runner **自报的 `name`** 决定（`internal/gateway/gateway.go`）。
+2. 故"身份认证"在这一层**偏弱，不是安全性的来源**。现有安全性来自两处：① **平台无入站路径**（对目标零攻击面）；② **集群侧 k8s RBAC 最小权限**（[runner 实现 Story §4.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md)：hub 为每个"组件 × 环境"签发 `RoleBinding`，Runner SA 只碰该组件命名空间）。
+
+### 9.2 关系与不变式
+
+```
+targets ──1:N──▶ environments   (environments.target_id，NOT NULL)
+```
+
+- `environments.target_id` 是 **NOT NULL FK**（0001 §6）→ **没有目标行就建不了环境**；"注册目标"是纳管目标的前置步骤，不是可选装饰。
+- **目标删除**：本表 `BaseNoSoftDelete`（硬删）+ `references targets(id)` **无 `ON DELETE`** → 删被环境引用的目标会 **FK 报错（500）**，而不是优雅 `409`。这是 [DELETE-CONTRACT.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DELETE-CONTRACT.md) §6 已登记的缺口（"硬删撞 NO CASCADE 外键 → 500"），**未修**。
+- `targets` 与 `environments` **同属硬删表**（均无 `deleted_at`）→ 级联须服务层显式处理，不能指望 DB。
+
+### 9.3 「单机版」：目标恰好是平台自身所在集群（**runner 身份不随之改变**）
+
+平台**允许与环境部署在同一个集群**——console / hub / runner 装进同一 K8s 集群（如 [plans/E2E-VERIFY-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/E2E-VERIFY-PLAN.md) 的 P0 拓扑：kind `sdp-dev` + ns `sdp-workflow`），此时：
+
+- Runner 对接的就是**本地集群**，流水线任务在本地集群内执行生效；
+- `targets` 里那一行目标指向的集群**恰好也是平台自身所在集群**——这只是**部署位置**上的巧合。
+
+> **不变式（2026-09-21 二次裁定）**：**runner 是独立的接入代理组件，其组件身份与部署形态无关。**
+> 无论装在异集群还是与 hub 同集群，runner 都只是"被部署到目标侧、出站回连 hub 的 Agent"，**不属于「平台自身」**。
+> ⛔ 此前"单机版下那一行**同时**承担「① 平台底座所在集群」与「② 被发布目标」两个角色"的表述**作废**——它把**部署位置**误当成了**组件身份**。
+> **仍然成立、且必须坚持的是**：不要为"平台自身"另建集群行 / 另建组件 / 另建环境——那会造出两个指向同一集群的行。
+> 凡文档 / 代码 / UI 出现「目标」或「集群」，仍须能回答：**这里说的是哪个角色（被发布目标 / 平台底座）？**
+
+> **安装批次 ≠ 组件身份（2026-09-21 补记）**：Gen0 安装平台时，**console / hub / runner（+ 数据库）由同一份 helm 一次装齐**。因此平台自身集群那一行目标**天然是"已装 runner"**——接入管理里显示"已装"、动作是**升级**，**不存在"点一下装出第二个 runner"**。这只是**安装批次**一致，**不改变 runner 的组件身份**（§9.4）。
+
+### 9.4 平台自身不进产品模型（**范围 = hub / console + 数据库，不含 runner**）
+
+平台自身 = **hub / console（+ 其数据库）**，**不含 runner**——runner 是接入侧代理组件（§9.3、§9.9）。平台自身**不进服务树 / 组件 / 环境**模型：
+
+- 它不是 `components` 锚定的资源，故不受 `DELETE /components/:id` 级联约束——避免"删掉平台自己的组件"这类自指契约漏洞；
+- 它的部署与升级**留在平台之外**：各仓 `make package` / `pnpm image` 产出的镜像 + chart 交付包 → **外部 helm / CI** 发布。裁决与六条理由见 [README.md §5.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md) / [plans/E2E-VERIFY-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/E2E-VERIFY-PLAN.md) P6。
+- **runner 是例外，且不触红线**：runner 的安装 / 升级由 **hub 承担编排、console 只调 API**（§9.9），属"平台对目标做"（① 能力），**不是"平台升级自己"（③）**，故**不受 §5.4 自升级禁令约束**。平台自身的升级仍以 hub / console 的 helm 升级为准，走 §5.4 的"平台之外"通道。
+
+### 9.5 与「接入方式」扩展的关系（**2026-09-21 已裁决**）
+
+② 接入层**不止 `agent` 一条路**。目标类型分 `k8s` / `host`，通道分三条：
+
+| 通道 `access` | 目标类型 | 发起方 | 凭据归属 | 今天是否存在 |
+| --- | --- | --- | --- | --- |
+| `agent` | `k8s` | 目标集群内 Runner **出站回连** | 目标侧（Runner 持 `GATEWAY_TOKEN`）；**hub 零凭据** | ✅ 已实现（§9.1） |
+| `kubeconfig` | `k8s` | **hub 出站**直连 apiserver | **hub 侧** | ❌ hub 零 `client-go`、零出站代码 |
+| `ssh` | `host` | **hub 出站**直连主机 | **hub 侧** | ❌ 全仓零 SSH 代码 |
+
+> **裁决要点**（2026-09-21 用户澄清）：`kubeconfig` / `ssh` 都是 **hub 侧发起连接**，**不是给 Runner 用**；发布目标与归档机器**都可能是非 K8s 的**，平台须覆盖非容器环境的「连接 / 测试 / 发布 / 执行命令」全链路。完整能力矩阵与通道对比见 [README.md §5.6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)；前端形态见 console §7.12。
+
+**三处既有结论因此作废**
+
+1. §9.1 的「平台**从不入站访问目标**」**须限定为"`agent` 通道如此"**——直连通道下 hub 反向持有目标凭据。
+2. §9.1 的安全归因「现有安全性来自 ① 平台无入站路径」**只对 `agent` 通道成立**；直连通道下 hub 反向持有目标凭据。⚠️ **但风险是"按条线性叠加"，不是"爆炸半径反转"**（**2026-09-21 二次裁定更正**）：凭据与环境记录**一一对应**——一条记录一份凭据，**即使指向同一环境、只要条目名称不同就是两份彼此独立的凭据**；**不存在共享的万能凭据**，故单条凭据被攻破的**影响面限于该条对应的目标，不横向扩散到其他目标**。暴露总量随直连条目数**线性增长**，但不产生"一点全破"。
+   > 该结论的**前提**（须同时成立）：凭据**只存 ref、明文不落 DB**（§9.7 第 2 条），且 ref 指向的存储**位于 hub 的信任边界之外**——若 ref 只是指向 hub 同集群内的 Secret，则 hub 被攻破时攻击者可顺 ref 取明文，此时隔离性会退化为“全部直连目标同时暴露”。
+3. §9.1 的「`targets` 刻意不含凭据列」**结论仍成立，但理由要限定**：那不是"平台永不持凭据"，而是"**`targets` 只描述 `agent` 通道的目标**"。直连目标不落本表（见 §9.7）。
+
+### 9.6 落地 gate（若后续为 §9 加代码）
+
+- `GET /targets` 返回需明确区分角色字段（或由前端按"是否等于平台底座集群"标注），否则单机版下 UI 无法表达"这一行有两个角色"。
+- 删目标前置校验：存在引用它的 `environments` → `409 + {reasons}`（现状 500，属缺口修复）。
+- 单测：单机版拓扑下建环境（`target_id` 指向自身所在集群）可正常创建与触发运行。
+
+### 9.7 非容器目标与直连通道的承载（**形状已定，表结构待补**）
+
+> 本节是**问题登记 + 形状约定**，不是已实现的表设计。真正的表须在立项后按 §5 维护约定走迁移。
+
+**为什么需要扩表**：`environments.target_id` 是 **NOT NULL FK**（§9.2），而 `host` 目标**根本没有目标行**——现有模型**表达不出**非容器环境。且同时还要装直连凭据，不是"加个可空列"能了事的。
+
+**形状约定**（三条，后续立项须遵守）
+
+1. **`targets` 的语义仍是窄的**：现表只覆盖 `k8s` + `agent` 目标（§9.1），保持窄语义**不变**；`kubeconfig` 目标与 `host` 目标需要**扩表**——加 `targetKind` 判别列并承载 `credentialRef`。
+2. **凭据只存引用**：沿用既有铁律（§9.1 的 `*SecretRef` 模式）——表中只落 `credentialRef`，**明文不进 DB、API 只回显 `xxxSet: bool`**。凭据的**物理位置**（hub K8s Secret / 外部 Vault / 加密落库）**尚未定**；注意本库 P0 拓扑无独立 secret manager，"存 hub Secret"与"加密落库"的实际隔离差异比直觉小。
+3. **`environments` 的引用要放宽**：`target_id` NOT NULL 须改为**多态引用**（`target_kind` + `target_id`）或"新增可空列 + 恰有其一"约束。**这是破坏性 schema 变更**（现存行都走 `k8s` + `agent` 分支），迁移前须备份。
+
+**已明确、不再讨论的边界**
+
+- 直连通道**必须支持进流水线执行路径**（发布 / 执行命令），不是仅手动诊断——用户明确要求。
+- **`agent` 通道保留且优先**：最敏感目标继续走它，hub 永不持其凭据。
+
+**未定（需另开决策）**
+
+- 凭据物理存放位置（见上 2）。
+- 直连执行的**权限主体**：✅ 平台级 RBAC 已有 HTTP 端点（§7；`STORY-BACKLOG.md` C-10 已于 2026-09-22 关闭），"谁有权用直连通道执行"**已可**在平台内表达 —— 仍缺的是**执行侧强制点**（runner 侧校验，见下条审计落点）。
+- 直连执行的**审计落点**：`agent` 通道有 `task_runs` 状态回流可依；SSH 直连的逐条命令证据链**无现成表**。
+- 是否引入 `executor backend` 抽象（runner 侧现仅"K8s Job"一种实现）。
+
+### 9.8 归档目标也可能是非容器机器
+
+制品归档的落点（对象存储桶 / NFS 机 / 文件服务器）同样可能不是 K8s 资源。它与"发布目标"共享同一套 `targetKind` / `access` 语义，但**生命周期不同**——归档是长期存储 + 保留策略，不是发布槽位（保留策略见 console §7.10）。console §7.10 归档说明条（MinIO + NFS 镜像）描述的是**参考形态**，其"归档机怎么连"取决于 §9.7 的落地。
+
+### 9.9 接入编排：runner 的安装与升级（**2026-09-21 二次裁定**）
+
+**定调**：runner 的**安装 / 升级逻辑全部落在 hub**，console 只需调用 API。这是 ① 能力层（"平台对目标做"），**不属 ③ 自身**（§9.3 / §9.4）。
+
+**为什么必须做**（两条实测缺口）
+
+| 缺口 | 依据 |
+| --- | --- |
+| `targets` 行必须**预先存在**，runner 回连**不自举建行** | `internal/gateway/gateway.go`：`GetByName(X-Target-Name)` 查不到即 `404 unknown target` |
+| **版本不可见**，升级无从判断 | `Target.AgentVersion` 字段存在但**全仓零写入点**；runner 侧也不上报版本 |
+
+**数据流（全部在 hub 侧）**
+
+1. console 提交"接入一个目标" → `POST /targets` 预注册 + 提交 kubeconfig（`POST /credentials`，**只存 ref**）。
+2. hub 从**版本矩阵 CM**（§9.10）取 runner 版本 → 向目标集群下发安装（helm chart + 镜像）。
+3. runner 起来后**出站回连** hub 网关，`Heartbeat` 置 `online`；**kubeconfig 使命就此结束**。
+4. 升级：比对 CM 里的 runner 版本 vs `targets.agent_version`，有差异则执行升级。
+
+**已装 / 未装的判据（统一，无特例）**：**已装** = 该 `targets` 行存在且**有 runner 回连**（心跳 `online`，或 `agent_version` 非空）；**未装** = 无回连记录。UI 据此决定动作：**已装 → 升级**，**未装 → 安装**。平台自身集群那一行在平台安装后即**已装**（§9.3），故天然走**升级**分支。
+
+**凭据生命周期（关键约束）**
+
+- kubeconfig 在本链路里是 **bootstrap 凭据**，只服务"把 runner 装进去"这一次；装完即应可作废 / 回收，**不得升格为 hub 的常驻执行凭据**（常驻直连执行是 §9.7 的另一个决策）。
+- 凭据**逐条对应、互不共享**（§9.5 第 2 条）：一条目标的凭据泄露**不影响其他目标**。
+
+**落地前置（三个，缺一不可）**
+
+1. `Target.AgentVersion` 要有**写入点**（runner 在握手 / 心跳里上报版本）。
+2. **per-target 凭据 / 身份**：现网关 `GATEWAY_TOKEN` 是**全局共享**（§9.1），无法给新装 runner 单独发身份；`POST /targets/:id/enroll-token` 目前**只存在于原型**。
+3. hub 需引入 **k8s 客户端能力**（现 `go.mod` 里 `k8s.io/*` 全是 `// indirect`、代码内零 `clientcmd` / `rest.Config`）——这是**控制面边界扩张**，已随本裁定一并批准。
+
+### 9.10 版本矩阵（`package-versions` ConfigMap，**2026-09-21 二次裁定**）
+
+**机制**：部署平台时把**指定版本**的 console / hub / runner 镜像**一并推入镜像仓库**；三者的版本对应关系由一份 **ConfigMap** 维护，**集成在 hub 的 chart 内**随 hub 一起分发。接入管理的安装 / 升级**按该 CM 取值**。
+
+| 要点 | 约定 |
+| --- | --- |
+| 内容 | `console` / `hub` / `runner` 三个版本号（镜像 tag）的对应关系 |
+| 载体 | ConfigMap 名 **`package-versions`**（2026-09-21 用户定名），**集成在 hub chart 内**（随 hub 部署、随 hub 升级） |
+| 部署形态 | 平台安装 = **一体化**：console / hub / runner + 数据库**同批装齐**，三者版本号由本 CM 对齐 —— 故平台自身集群天然呈"已装 runner"（§9.3 / §9.9） |
+| 事实源 | **hub 仓 `build/hub/versions.yaml`**（**人工填写并维护**的配套清单，构建时渲染进 chart）；它是"当前官方发布版本"的**唯一事实源**。**仓库不参与推断**——三仓各自独立 release、tag 互不知情，"哪个 runner 配哪个 hub"是**人的发布决定**，无法从任何仓的 tag 推导（2026-09-21 用户裁定） |
+| 消费方 | hub 的接入编排（§9.9 取 runner 版本）；console 可经 API 只读展示 |
+| 与 ③ 的关系 | CM 的**更新**属平台发布动作，走 §5.4 的"平台之外"通道——**平台不自己改自己** |
+
+**写入点（2026-09-21 落地）** —— 回答"发 release 时，版本写在哪里、由谁检查"
+
+| 环节 | 落点 | 说明 |
+| --- | --- | --- |
+| ① 事实源（人工） | hub 仓 `build/hub/versions.yaml` | 三组件配套版本的**唯一人工填写点**。三仓各自独立 release（tag 互不知情），配套关系必须显式写下来 |
+| ② 版本检查 | `build/hub/build.sh` → `resolve_versions()` | 清单缺失 / **任一键为空或非法 SemVer** → **构建失败**（带人话提示）；带 `-r1` 这类后缀 → 构建日志给 **NOTE**（非致命，提示其 SemVer 语义，见下）；`hub` 键 ≠ 本次 tag → **告警**（以 tag 为准）。console / runner 键按清单取值 |
+| ③ 渲染 | `build/hub/build.sh` → `render_chart_version()` + `render_package_versions()` | 把 tag 与清单值写进**交付包内的 chart 副本**（`output/charts/...`）；**不动仓内源文件**（源文件仍是模板基线 `v0.0.1`） |
+| ④ 载体 | chart `templates/configmap-package-versions.yaml` + `values.yaml` 的 `packageVersions:` 段 | 渲染出 CM `package-versions`。**不写 `metadata.namespace`**——命名空间内资源一律由 helm 的 release namespace 决定（与本仓 Deployment / Service / PVC 及 console 两个 CM 同约定；全仓仅 runner `rbac.yaml` 显式写，因其为集群级资源 / 跨命名空间引用）。写死 `{{ .Release.Namespace }}` 会让 `helm template`（未带 `-n`）把 CM 渲染进 `default`，而 Deployment 无 namespace → `kubectl apply -n <ns>` 时两者分离，`configMapKeyRef` 解析失败 |
+| ⑤ 消费 | `templates/deployment-hub.yaml` → env `PACKAGE_VERSION_{CONSOLE,HUB,RUNNER}` | hub 端点 `GET /package-versions` **待实现**，env 已就位 |
+| ⑥ 触发 | `.github/workflows/release.yml`（GitHub Release published → `build.sh <tag>`） | **钩子已存在**，本次未新增流程 |
+
+**版本号规范（SemVer 2.0.0，2026-09-21 用户确认）** —— 三组件版本号统一遵循 <https://semver.org/lang/zh-CN/>
+
+| 规则 | 说明 |
+| --- | --- |
+| 形态 | `vMAJOR.MINOR.PATCH`，可带后缀 `-PRERELEASE` / `+BUILD`。`v` 前缀是 **git tag 约定、不属于 SemVer 本体**，写进 `Chart.yaml` 的 `version` 时去掉（`render_chart_version()` 已如此处理） |
+| 谁维护 | **人工填写并维护**（`build/hub/versions.yaml`）。仓库**不知道**版本对应关系——三仓独立 release，配套关系是发布决定、不是可推导的事实 |
+| 三组件不必同号 | 各自独立演进。**一套版本 = 三者的某一条组合**。例：`console v0.1.1 + hub v0.1.1 + runner v0.1.2-r1` 即一套完整发布 |
+| ⚠️ `-r1` 的语义陷阱 | `-r1` 是 **pre-release**，SemVer 规定其优先级**低于**同号正式版（`0.1.2-r1 < 0.1.2`）。若本意是"正式版之后的重制"，语义上更贴切的是升 patch（`0.1.3`）；`build metadata`（`+r1`）不参与优先级比较，**但 Docker/OCI 镜像 tag 不允许 `+`**，故镜像 tag 上只能用 `-` 形式 |
+| 校验落点 | 见上表 ②：非法/空值 → 构建失败；带后缀 → NOTE。已实测 `helm lint` 接受 `Chart.yaml version: 0.1.2-r1`（0 failed） |
+
+**同批修掉的既有缺口**：三仓 `build.sh` 此前只把 `version` 用在 `-ldflags` / 镜像 tag / 交付包文件名三处，**chart 内 `values.yaml` 的 `imageAddr` 与 `Chart.yaml` 的 `version` 是硬编码 `v0.0.1`** —— 发 `v0.0.2` 的包，`helm install` 仍指向 `v0.0.1` 镜像（拉不到 / 装错版本）。现三仓 `build.sh` 均加 `render_chart_version()` 一并修正，已用 `helm template` 验证渲染出的 `image:` 随 tag 走。
+
+**后续可选**（未做）：CI 侧增加"被引用的 runner / console tag 是否真实存在"的**一致性校验**（需 GitHub API 查询）。**边界**：这只能是**校验**，**不得**演化为"自动取各仓最新 tag 填进 CM"——配套关系是人工发布决定（见上表"谁维护"）。

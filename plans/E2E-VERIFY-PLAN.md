@@ -11,7 +11,7 @@
 
 | # | 标识 | 验证阶段 |
 |---|---|---|
-| L2-1 | ✅ runner 连上 hub，gateway 握手 + 心跳正常（2026-09-06，`gateway: cluster local-dev connected`，cluster status=online） | P0 |
+| L2-1 | ✅ runner 连上 hub，gateway 握手 + 心跳正常（2026-09-06，`gateway: target local-dev connected`，target status=online） | P0 |
 | L2-2 | 一条 **Build** 任务真跑通（`go build`/`go test`），Job 退出码正确回传 | P1 |
 | L2-3 | 一条 **Release** 任务真发布（chart 拉取 + values 注入生效） | P3 |
 | L2-4 | 金丝雀实测：晋升推进、**回滚真的把流量拉回 0%** | P4 |
@@ -32,7 +32,7 @@
 宿主机 mac
 ├─ docker
 │  ├─ kind 节点（单节点集群）
-│  │  ├─ ns: sdp-system
+│  │  ├─ ns: sdp-workflow
 │  │  │  ├─ hub (Deployment + Service NodePort)
 │  │  │  ├─ postgres:16 (hub 的 DB, hub 仅支持 postgres)
 │  │  │  ├─ runner (Deployment, CRD 已 apply)
@@ -48,8 +48,8 @@
 
 | 组件 | 配置要点 |
 |---|---|
-| hub | `DATABASE_DSN=postgres://...postgres.svc:5432/sdp`；`ARTIFACT_STORE_DRIVER=local`，`ARTIFACT_STORE_LOCAL_ROOT=/data/artifacts`（挂 PVC/hostPath）；`ARTIFACT_STORE_PUBLIC_URL=http://hub.sdp-system.svc:8080`（使签名 URL 集群内可达）；`GATEWAY_TOKEN=<共享密钥>` |
-| runner | env 指向 `ws://hub.sdp-system.svc:8080<gateway path>`，同一 `GATEWAY_TOKEN`；RBAC 允许管理 Job / TaskRun / Rollout |
+| hub | `DATABASE_DSN=postgres://...postgres.svc:5432/sdp`；`ARTIFACT_STORE_DRIVER=local`，`ARTIFACT_STORE_LOCAL_ROOT=/data/artifacts`（挂 PVC/hostPath）；`ARTIFACT_STORE_PUBLIC_URL=http://hub.sdp-workflow.svc:8080`（使签名 URL 集群内可达）；`GATEWAY_TOKEN=<共享密钥>` |
+| runner | env 指向 `ws://hub.sdp-workflow.svc:8080<gateway path>`，同一 `GATEWAY_TOKEN`；RBAC 允许管理 Job / TaskRun / Rollout |
 | console | `.env.development` proxy target 改为 `http://localhost:<hub NodePort>`；`VITE_AUTH_DISABLED=true` 保持 |
 | kind registry | 本地 `registry:2` + kind 集群 containerd 配置回环（`localhost:5000` 直接可拉），Build 产镜像 push 后集群即用 |
 
@@ -88,7 +88,7 @@
 
 - 首选：`demo-app`——一个极简 Go HTTP 服务（`/healthz` 返回版本号），用于验证链路
 - 二期：`go-devops`（old 完整版，带真实探针/配置），验证复杂 values + secrets 场景
-- **终极目标：平台自己（hub / runner / console）**——见 P6 自举；old 的 go-devops / go-devops-ui 正是它们的前身，构建模式天然同源
+- **平台自身（hub / console）不在此列**（2026-09-21 裁决，见 P6；**2026-09-21 二次裁定把 runner 移出「平台自身」**）：它的**构建**可走平台（吃狗粮验证 Build 链路），**发布 / 升级**留在平台之外；old 的 go-devops / go-devops-ui 正是它们的前身，构建模式天然同源
 
 ---
 
@@ -100,7 +100,7 @@
 2. ✅ runner CRD apply + runner Deployment 部署
 3. ✅ hub 容器化部署（AutoMigrate 建表）+ NodePort 30080（主机 8080 直通）
 4. ✅ console 无需改动（vite proxy 目标 http://localhost:8080 与 kind 端口映射吻合）
-5. ✅ gateway 握手：`gateway: cluster local-dev connected`，集群 status=online
+5. ✅ gateway 握手：`gateway: target local-dev connected`，目标 status=online
 
 **P0 实测抓到并修复的问题**（全部是 build/test 门禁抓不到的运行期问题）：
 - 🔴 **gin 路由 panic（真 bug）**：父级作用域路由用 `:serviceId/:componentId/:pipelineId/:treeId` 与 `RegisterCRUD` 生成的 `:id` 在同位置冲突——hub 从未真正启动过所以一直没暴露。已统一改为 `:id`（10 个文件，含 main.go 的 `wrap` 权限参数名）
@@ -109,7 +109,7 @@
 - hub go.mod `replace ../runner` → hub 镜像用 workspace 根上下文构建（根 `.dockerignore` 收窄）
 - dev 镜像同 tag 覆盖 → `imagePullPolicy: Always`
 - `POSTGRES_HOST_AUTH_METHOD=trust`（dev-only）修复 pg_hba 拒连
-- 集群需先在 hub 注册（`POST /clusters` 种子数据）runner 才能握手
+- 目标需先在 hub 注册（`POST /targets` 种子数据）runner 才能握手
 
 全部固化在 `hub/deploy/p0-up.sh`（幂等可重跑）。
 
@@ -158,38 +158,34 @@
 
 ---
 
-### P6 自举：平台发布平台自己（二期）
+### P6 平台自身部署与升级（二期）—— **2026-09-21 裁决：不走平台，留在平台之外**
 
-> 背景：old/go-devops 是 hub 前身、old/go-devops-ui 是 console 前身——"我如何发布我自己"。
+> 背景：old/go-devops 是 hub 前身、old/go-devops-ui 是 console 前身，曾由此设想"平台发布平台自己"（当时简称「自举」——**该词随方案撤销一并停用**，全库不再单用「自举」二字，见 [README.md §5.5 术语消歧](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)）。
 >
-> **运营模式裁决（2026-09-06 钢人论证后）**：升级频率为每周或更频繁（活跃迭代期）→ 自升级**默认走平台流水线**（版本历史/参数管理/一键回滚在高频下收益最大，且三镜像三 chart 本就是 P5 真实集群部署的必需品，P6 边际成本≈0）；**手工 helm 保留为应急通道**（CRD 破坏性变更、平台被锁死时的 break-glass）。机制上无任何新东西——自升级就是一次普通发布。
+> **裁决（2026-09-21，撤销 2026-09-06 的"自升级默认走平台流水线"）**：平台自身的部署与升级**永远在平台之外**——官方通道 = 各仓 `make package` / `pnpm image` 产出的镜像 + chart 交付包，由**外部 helm / CI** 发布。六条理由（hub 四重自指 / 安全边界 / 不可灰度不可回滚 / 观测真空 / 权限主体缺失 / 收益错配）见 [README.md「5.4 平台自身定位与部署形态」](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)。
 
-**代际阶梯**（解决鸡生蛋，手工只允许出现在 Gen0）：
+**允许与不允许的分界**
 
-| 代际 | 方式 | 内容 |
+| | 内容 | 理由 |
 |---|---|---|
-| Gen0 | 手工（P0，唯一一次） | kubectl/helm 装 postgres + hub + runner |
-| Gen1 | 平台发布（P3/P5） | demo-app |
-| Gen2 | **平台发布自己（P6）** | hub / runner / console 三个镜像 + 三张 chart |
+| ✅ 允许 | **hub / console 与 runner** 的**构建**走平台流水线（编译 hub / runner / console、打镜像、打 chart tgz 并归档进制品库） | 吃狗粮验证 Build 链路；失败可重跑，无自指风险（runner 不属平台自身，但构建同源） |
+| ❌ 不允许 | 平台组件的**发布 / 升级**走平台（`Release` 不发布平台自身） | 见上述六条理由；升级失败时平台无法自救 |
+| ✅ 保留 | **Gen0 手工 helm 基线长期保留**，不是一次性过渡；每次破坏性变更（CRD / DB schema）都回到手工通道 | — |
 
-**P6 交付物**：
-1. 三张镜像（复刻 old build.sh 模式）：hub（Go 二进制 + ubuntu 打包）、runner（Go 二进制）、console（静态文件多阶段构建 + nginx 托管）
-2. 三张 chart（old 模板蓝本）：hub-chart（values 含 postgres DSN secret、GATEWAY_TOKEN、artifact PVC）、runner-chart（RBAC + CRD 存量不碰）、console-chart（反代指向 hub）
-3. 界面编排 self-release 流水线：`Build(编译 hub/console/runner) → Approval → Release(helm upgrade)`
+**"独立升级页面上传组件包升级平台"**：**本期不做**。它不能挂在 console 下（console 本身是被升级对象，它挂了正是最需要该页的时候）；唯一可行形态是**平台之外常驻的 upgrade-controller**（Gen0 手工安装、**永不自升级**，自己服务静态页 + 执行其余三者的 helm 升级）——那是把"平台之外"这条通道产品化，不是把自升级做进平台。若将来要做，作为独立提案重开。
 
-**升级机制（无新东西）**：chart tgz 经制品库进环境 + 镜像进 registry → Release 任务 ChartURL 指向 tgz → `helm upgrade --install` 原地升级。**这就是 P3/P4 已验证的同一条路径**，自举不需要新机制，差别只在被发布物是平台自己。
+**保留的历史分析**（自升级方向已撤销，但下列机制性结论在将来重开时仍然成立）
 
-**排流水线时的四个注意**（是流水线编排约定，不是额外机制）：
-1. `Build → Approval → Release`：加一个 Approval 任务当人工卡点——升级自己挂了没人救，人工确认不可省
-2. hub / runner 分两个 Release 任务、按阶段顺序先 hub 后 runner：hub 升级时 runner 断连只重连不退出（存量任务照跑）；runner 自升级时，执行升级的 releaseContainer Job 独立于 runner Pod 存活，旧 runner 把 reconcile 跑完
-3. 上一版 chart/镜像保持在制品库：helm 原生 rollback / P4 回滚随时可用
-4. **CRD schema 分级处理**（不是一刀切禁止）：
-   - **兼容变更**（新增可选字段、放宽校验、加枚举值）**可进自升级**——但必须是显式前置步骤（pre-upgrade hook Job 或独立的 kubectl apply 任务）。注意 Helm 3 的 `crds/` 目录是 install-only，`helm upgrade` **不会**更新它——靠 chart 直升 CRD 需要放 `templates/`（helm 会接管其生命周期，uninstall 连删，不推荐）或走 hook
-   - **破坏性变更**（加 required、删字段、改类型、引新版本+conversion）走手工：先备份存量对象（`kubectl get -o yaml`）再 apply
-   - 破坏性变更手工的三个硬理由：① CRD 变更是**集群级原子生效，无法灰度**——Deployment 能金丝雀，schema 不能；② helm rollback **不还原 CRD**（helm 不追踪 CRD 版本），"回滚是安全网"的前提对 schema 失效；③ runner 既是升级执行者又是被升级者——破坏性变更会让旧 runner 写出的对象过不了新校验，**锁死自升级通道本身**，唯一救生索就是手工 kubectl
-   - 判断口诀：**改完后，旧版本 runner 创建的对象还能通过新 schema 校验吗？** 能→兼容可自动；不能→破坏必须手工
-
-**通过标准**：hub/console/runner 的新版本经界面流水线发布并滚动替换 Gen0 手工装的实例，服务无中断；随后故意发布一个坏版本 → 回滚成功。此后**平台自身的所有升级都走平台**。
+- 代际阶梯（解决鸡生蛋）：Gen0 手工（postgres + hub + runner）→ Gen1 平台发布 demo-app（P3/P5）→ ~~Gen2 平台发布自己~~（**2026-09-21 撤销**）。
+- `Build → Approval → Release`：升级自己挂了没人救，人工卡点不可省。
+- hub / runner 必须分两个 Release 任务、按阶段顺序先 hub 后 runner：hub 升级时 runner 断连只重连不退出（存量任务照跑）；runner 自升级时，执行升级的 releaseContainer Job 独立于 runner Pod 存活，旧 runner 把 reconcile 跑完。
+- 上一版 chart / 镜像必须留在制品库：helm 原生 rollback / P4 回滚随时可用。
+- **CRD schema 分级处理**（不是一刀切禁止）：
+  - **兼容变更**（新增可选字段、放宽校验、加枚举值）可自动——但必须是显式前置步骤（pre-upgrade hook Job 或独立的 kubectl apply 任务）。注意 Helm 3 的 `crds/` 目录是 install-only，`helm upgrade` **不会**更新它——靠 chart 直升 CRD 需要放 `templates/`（helm 会接管其生命周期，uninstall 连删，不推荐）或走 hook
+  - **破坏性变更**（加 required、删字段、改类型、引新版本+conversion）必须手工：先备份存量对象（`kubectl get -o yaml`）再 apply
+  - 破坏性变更手工的三个硬理由：① CRD 变更是**集群级原子生效，无法灰度**——Deployment 能金丝雀，schema 不能；② helm rollback **不还原 CRD**（helm 不追踪 CRD 版本），"回滚是安全网"的前提对 schema 失效；③ runner 既是升级执行者又是被升级者——破坏性变更会让旧 runner 写出的对象过不了新校验，**锁死自升级通道本身**，唯一救生索就是手工 kubectl
+  - 判断口诀：**改完后，旧版本 runner 创建的对象还能通过新 schema 校验吗？** 能→兼容可自动；不能→破坏必须手工
+- **前置改造（若将来重开必做）**：制品存储须先从 hub 自带的 `local` driver 解耦为外部对象存储——否则 hub 挂了拉不到 chart（现 P0 拓扑下 `ARTIFACT_STORE_PUBLIC_URL` 指向 hub Service）。
 
 ## 4. R1–R3 处置映射
 
