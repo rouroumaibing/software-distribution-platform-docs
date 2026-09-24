@@ -35,8 +35,8 @@
 - `DELETE /components/:id` —— `internal/component/service/component.go` `ComponentService.Delete`：✅ **已落地**。同上，经 `CountActiveByComponent` 计数；有活跃运行 → `409 + {reasons}`；否则软删（`Base.DeletedAt`）。
 - `DELETE /environments/:id` —— `internal/environment/service/environment.go` `EnvironmentService.Delete`：✅ **已落地（审计式，非拒绝）**。删前统计该环境的配置覆盖条数并写审计告警，随后硬删（§6.4 #8）；其审计历史行因 FK 已摘（B-14）而存活。
 - **部分落地（2026-09-23 更新）**：§6.4 的"域内级联软删"中 **service→component 段已实现并真集群验证**——`ServiceService.Delete` 在同一事务内级联软删下级 component、硬删 `component_role_bindings`（实测 DB 侧两表 `deleted_at` 时间戳一致、bindings 零残留）；缺陷登记与后续范围（org→service、制品/对象处理）见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §16.3。
-- **事务性缺口（§4.2 步骤 5）未做**：校验与删除目前不在同一事务，并发插入理论上可绕过校验。
-- 前端 `delDetail` 仍调 `mockDeleteNode`（后端模拟占位），待切换真端点（把 409 body 的 `reasons` 直接渲染进"无法删除"弹窗）。
+- **事务性缺口（§4.2 步骤 5）未做**：校验与删除目前不在同一事务，并发插入理论上可绕过校验（已登记 `plans/STATUS.md` §2 #12）。
+- 新 console（Vue3 重写版）当前**无服务树删除入口**：`ServiceTreeView.vue` 无删除流、`src/api/catalog.ts` 未封装树删除端点；old 前端的 `delDetail`/`mockDeleteNode` 已随重写移除（上述"待切换真端点"表述过时）。后端契约（§1.3，`409+{reasons}`）已就绪，删除 UI 属 console 迭代项（`plans/STATUS.md` §2 #13）。
 
 ## 2. 流水线删除 `DELETE /pipelines/:id`（N-5）
 

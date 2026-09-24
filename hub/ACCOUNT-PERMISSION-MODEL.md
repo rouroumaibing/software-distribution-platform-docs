@@ -96,7 +96,7 @@ Keycloak ≥ 26 **原生支持 Organizations**，可作为「组织」维度的�
 - **claim 形态有两种，Go 侧类型必须兼容**：纯别名时是字符串数组 `"organization": ["acme-corp"]`；**开启 `addOrganizationId` / `addOrganizationAttributes`，或使用 Organization Groups** 时变为富 JSON（`{"organization":{"acme-corp":{"id":"…","groups":["/Engineering/Backend"]}}}`）。
 - 26.6+ 另有 **Organization Groups**（每个组织独立的组层级），组路径出现在 `organization` claim 内；**本环境 Keycloak 26.7.4 ⇒ 已具备**。
 - **启用 Organizations 会把浏览器登录流改为 identity-first**（先识别用户、再要凭据）—— 这是**用户可见**的行为变化，会影响 console 登录路径与既有预置账号的登录体验。
-- **组织集合能否随 realm JSON 一起导入，尚未证实**：`RealmRepresentation` 同时有 `organizationsEnabled`（Boolean）与 `organizations`（`List<OrganizationRepresentation>`）两个字段，但社区证据（26.3.1 时期）称 realm 导入**不带** organizations、官方推荐用 Admin REST API 在 realm 创建后再建组织。⇒ **落地时必须实测**（gate 见 §11 步骤 2）；在结论出来之前，**不要**把「组织集随 realm JSON 进 git」当既定事实。
+- **组织集合能否随 realm JSON 一起导入，尚未证实**：`RealmRepresentation` 同时有 `organizationsEnabled`（Boolean）与 `organizations`（`List<OrganizationRepresentation>`）两个字段，但社区证据（26.3.1 时期）称 realm 导入**不带** organizations、官方推荐用 Admin REST API 在 realm 创建后再建组织。⇒ **落地时必须实测**（gate 见 §11 步骤 2）；在结论出来之前，**不要**把「组织集随 realm JSON 进 git」当既定事实。**（2026-09-24 澄清：D1 已裁定 = ② 组命名约定 `/org:<slug>`（§12），realm JSON 只导组、不开 Organizations ⇒ 本条实测**仅在翻盘切 ①（federation）时才触发**，当前主路径无此依赖——组预置走 provisioner REST，已在真集群 E2E 验证。）
 - **落地硬约定（压降不可逆性）**：**不论选用哪个载体**，hub 侧持久化的**组织键一律取组织 alias 字符串**，且组织**不得**作为 RBAC 主体出现在 `subject_id` —— 于是换载体只改中间件解析、**不需要数据迁移**（论证见 [plans/ACCOUNT-PERMISSION-DECISIONS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/ACCOUNT-PERMISSION-DECISIONS.md) §1.5）。
 - **Keycloak 的角色/组映射没有原生成效机制**（其生命周期概念是 token/session 的 lifespan，不是授权时效）⇒ **权限到期回收必须由 hub 实现**（§7.4）。
 

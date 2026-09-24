@@ -101,6 +101,6 @@ node scripts/runcenter-url-smoke.mjs   # URL 契约冒烟
 ## 6. 风险与开放问题
 
 - **B 节依赖 v3 IA 落点**：在定稿前强行实现会返工，故本计划将 B 单列 hold。
-- **releases 视图仍前端筛**：`GET /releases?scope=global`(N-3) 未实现，releases 视图暂保持现状；不属 P0-3 范围。
+- **releases 视图筛选**：全局 `GET /releases` 端点**已实现**（hub `internal/run/handler/release.go`），但当前仅支持 `pipelineRunId` 参数；`scope=global&state=paused` 形态的筛选后端未支持（`paused` 属 Rollout 任务级状态，见 CONSOLE-UI-DESIGN §7.6 / 附 A N-3，已登记 STATUS §2 #14）。releases 视图暂保持现状；不属 P0-3 范围。
 - **分页一致性**：A 节将 pipelines 视图改为服务端分页，需确保 `RunCenterQuery`（`constants/runCenter.ts`）的 `page` 已贯穿（当前已支持）。
 - **stopgap 不能全删**：`byPipelineId` 供 releases 视图按 kind 过滤运行，仅瘦身为单次 `GET /pipelines`，不整文件删除。

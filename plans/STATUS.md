@@ -77,6 +77,12 @@
 | 9 | **域内级联软删上层**（org→service→制品/对象） | 部分 | service→component 已落并真集群验证；上层以 `DELETE-CONTRACT` §6.4 为准 |
 | 10 | **金丝雀 P4 真流量回 0% / P5 全链路灰度** | 验证项 | 需目标集群带真实 workload |
 | 11 | **swagger 新端点再生成** | 工具项 | 本机无 swag CLI；不影响编译，下次有 CLI 环境跑 `swag init` |
+| 12 | **删除校验同事务化**（`DELETE-CONTRACT` §4.2 步骤 5） | 加固项 | 校验与删除现不在同一事务，并发插入理论上可绕过校验；窗口小、登记待排期 |
+| 13 | **console 服务树删除入口 UI** | 登记 | 后端契约已备（`409+{reasons}`，`DELETE-CONTRACT` §1.3）；新 console（Vue3）无删除入口（old 版 `delDetail`/`mockDeleteNode` 已随重写移除） |
+| 14 | **releases 视图筛选后端支持**（`scope` / `state=paused`） | 登记 | `GET /releases` 已存在但仅支持 `pipelineRunId`；`paused` 属 Rollout 任务级状态、不在 `PipelineRunPhase` 枚举，需设计（CONSOLE-UI-DESIGN §7.6 / 附 A N-3） |
+| 15 | **「待我审批」身份下推（N-2 `assignee=me`）+ 运行时间窗过滤** | 登记 | 现退化为全部待审批（CONSOLE-UI-DESIGN 附 A N-1/N-2） |
+| 16 | **TaskRun 产物/结果落库**（`ResultRef`/`ArtifactRefs`） | 登记 | 跨模块：TaskRun 字段 + 协议 payload 扩展 + runner 补发（ADR-dispatch-durable-queue §6 D 项） |
+| 17 | **权限对账脚本化**（`ACCOUNT-PERMISSION-MODEL` §10 门禁） | 工具项 | 对账表当前已全 ✅；脚本化为持续门禁 |
 
 ## 3. 刻意不做 / 裁定保留
 
