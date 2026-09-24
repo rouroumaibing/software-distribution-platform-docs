@@ -169,7 +169,7 @@ Pipeline  ──1:N──▶  PipelineRun    (pipeline_runs.pipeline_id + target
 **钢人结论（已确认：不建 `stage_runs`，用户决策）**
 - **MVP 采用方案 A**：后端在 `Progress`/`stage-progress` 响应里**顺手算好阶段 rollup** 一起下发（一次查询、后端聚合、前端零计算）。
 - **未来若规模迫使必须引入（当前决策为不建），触发条件如下**：① 实测 progress 查询 p95 延迟在真实并发下超预算；或 ② 出现"阶段级操作"需求（暂停/恢复/重跑某一阶段）需要阶段实体身份。届时 `stage_runs` **只能作为派生缓存**——由 `ApplyStatus` 同一事务/路径、从 `task_runs` **重算**（而非增计数）写入，杜绝双真相源漂移。
-- 阶段进展 API：`GET /runs/:id/stage-progress`（见 §6.5，**确认新增、待实现**）；**当前 hub 仅实现 `GET /runs/:id/progress`**（返回 `phase + per-task`，未做 Stage 级 rollup）。
+- 阶段进展 API：`GET /runs/:id/stage-progress`（见 §6.5）✅ **已落地（2026-09-23）** —— `PipelineRunHandler.StageProgress`（`cmd/hub/main.go` `scoped.GET("/runs/:id/stage-progress")`）在读取时聚合阶段 rollup（`name/sequence/executionMode/status/done/total`），呼应本节的「后端算一次、前端零计算」；`GET /runs/:id/progress` 仍保留为高频轮询端点（返回 `phase + per-task`）。⚠️ 当初「待实现」的陈述已过时。
 
 ### 6.4 DB 表设计变更（本次新增/推荐）
 
@@ -178,8 +178,8 @@ Pipeline  ──1:N──▶  PipelineRun    (pipeline_runs.pipeline_id + target
 ALTER TABLE pipeline_stages ADD COLUMN execution_mode varchar(16) NOT NULL DEFAULT 'parallel';  -- 取值统一**小写**（以面向客户端的 API 契约为准）；实际落地见 migrations/0010
 -- 枚举: 'Parallel' | 'Serial'
 ```
-- （**待实现**）`Serial` 时 hub `buildSpec` 应在同阶段任务间推导 `DependsOn` 链；**当前 `buildSpec` 无此分支**，同阶段任务一律并行。runner 无新字段，纯消费 DAG（CRD 类型无需改）。
-- store 层 `ListByPipelineID` 已按 `sequence` 返回；UI 并行/串行开关写入此列后由 `buildSpec` 消费（待接线）。
+- ✅ **已实现（2026-09-23，backlog C-06 闭口）**：`Serial` 时 hub `buildSpec` 在同阶段任务间按模板顺序推导「紧邻前驱」`DependsOn` 链（与跨阶段推导叠加；调用方手写 `DependsOn` 完全优先）；parallel 阶段不派生阶段内依赖，语义不变。runner 无新字段，纯消费 DAG（CRD 类型无需改）。`pipeline_run_serial_test.go` / `stage_execution_mode_test.go` 钉住。
+- store 层 `ListByPipelineID` 已按 `sequence` 返回；UI 并行/串行开关写入此列后由 `buildSpec` 消费 ✅ **已接线**。
 
 **②（确认不建）`stage_runs` 聚合表** —— 见 §6.3 双向钢人论证，结论：**确认不建（用户决策）**，derive-on-read 为终态方案；DDL 仅留作未来参考（若触发条件出现再评估）。
 ```sql
@@ -206,7 +206,7 @@ CREATE TABLE stage_runs (
 
 ---
 
-## 7. 授权模型（权限管控 G7；目标态 = 多 org；P1 建表 / P2 审批 / P3 Enforcement 均已落地；**平台级 HTTP 端点待补**）
+## 7. 授权模型（权限管控 G7；目标态 = 多 org；P1 建表 / P2 审批 / P3 Enforcement 均已落地；**平台级 HTTP 端点 ✅ 已落地（2026-09-22，C-10）**）
 
 > ✅ **当前状态（2026-09-22 更新）**：本节 §7 表 + Enforcement 中间件已落地，**平台级 HTTP 端点也已注册**（`internal/permission/handler/platform_role.go` / `platform_binding.go`；`main.go` 已接线）—— C-10 关闭，平台管理员绑定现在可经 API 配置。两张绑定表同批补上 **`expires_at`**（`migrations/0011`），且 `ListMatching` **排除过期授权** —— §7.4 的「到期回收」不再只是文档承诺（过期行保留供审计，由回收作业另行清理）。仍未做：platform 级路由的**权限守卫**（随 `ACCOUNT-PERMISSION-MODEL.md` §11 步骤 4「中间件重排」收口）、console 侧权限管理 UI。
 
@@ -234,7 +234,7 @@ CREATE TABLE stage_runs (
 >   - **P3a**：§7 action 枚举成为权威（`internal/permission/models/role.go`），`BindingService` 重写——`ResolveComponentActions` / `HasPermission` / `HasPlatformPermission` 合并 §7 绑定 + owner override + V1 回退；中间件 `rbac.go` 路由判定改用 §7 action（`ActionPipelineTrigger` / `ActionComponentRead` / `ActionApprovalApprove`）；Keycloak `groups` claim 经 `UserContext` 注入（`CurrentGroups`）。
 >   - **P3b**：组件创建自动把 owner 绑 `component-admin`（非致命失败），`Create` 写入 `owner_sub`（= 当前请求的 token `sub`，§5.3）；handler 手写路由、owner 未填时从会话补。见 `internal/component/{service,handler}/component.go`、`internal/permission/handler/binding.go`。
 >   - **P3c**：console `permissions.ts` 切换 §7 `ComponentRoleBinding`（`subjectType` / `subjectId` / `componentRoleId`）+ 新增 hub `GET /component-roles`（`internal/permission/handler/component_role.go`）；`PermissionsTab.vue` 支持 user/group 主体、§7 角色选择器、自审拦截提示。V1 旧行（`userId` / `roleId`）回显兼容。
-> - **遗留（非阻塞）**：V1 `roles` / `approvals` 表与代码路径保留为迁移窗口兼容，未删除；Keycloak 组目录未由 hub 暴露（console 组名手填，待 `/groups` 接口）；平台级权限 UI（`platform_role_bindings` 管理）尚未在 console 落地。
+> - **遗留（非阻塞）**：V1 `roles` / `approvals` 表与代码路径保留为迁移窗口兼容，**经双向钢人裁定保留不删**（全仓仍有活引用 + DROP 不可逆，真删需用户显式确认）；Keycloak 组目录未由 hub 暴露（console 组名手填，待 `/groups` 接口）。**平台级权限 UI 已落地**（console `PlatformAdminView`，C-10 / T-U7）。
 
 ### 7.1 分层授权模型（总览）
 
@@ -691,7 +691,7 @@ exec 的两条执行路径（runner `internal/agentops`）：`agent` access 用 
 | ② 版本检查 | `build/hub/build.sh` → `resolve_versions()` | 清单缺失 / **任一键为空或非法 SemVer** → **构建失败**（带人话提示）；带 `-r1` 这类后缀 → 构建日志给 **NOTE**（非致命，提示其 SemVer 语义，见下）；`hub` 键 ≠ 本次 tag → **告警**（以 tag 为准）。console / runner 键按清单取值 |
 | ③ 渲染 | `build/hub/build.sh` → `render_chart_version()` + `render_package_versions()` | 把 tag 与清单值写进**交付包内的 chart 副本**（`output/charts/...`）；**不动仓内源文件**（源文件仍是模板基线 `v0.0.1`） |
 | ④ 载体 | chart `templates/configmap-package-versions.yaml` + `values.yaml` 的 `packageVersions:` 段 | 渲染出 CM `package-versions`。**不写 `metadata.namespace`**——命名空间内资源一律由 helm 的 release namespace 决定（与本仓 Deployment / Service / PVC 及 console 两个 CM 同约定；全仓仅 runner `rbac.yaml` 显式写，因其为集群级资源 / 跨命名空间引用）。写死 `{{ .Release.Namespace }}` 会让 `helm template`（未带 `-n`）把 CM 渲染进 `default`，而 Deployment 无 namespace → `kubectl apply -n <ns>` 时两者分离，`configMapKeyRef` 解析失败 |
-| ⑤ 消费 | `templates/deployment-hub.yaml` → env `PACKAGE_VERSION_{CONSOLE,HUB,RUNNER}` | hub 端点 `GET /package-versions` **待实现**，env 已就位 |
+| ⑤ 消费 | `templates/deployment-hub.yaml` → env `PACKAGE_VERSION_{CONSOLE,HUB,RUNNER}` | hub 端点 `GET /package-versions` ✅ **已落地（2026-09-23，`internal/packageversion`）**，env 已就位 |
 | ⑥ 触发 | `.github/workflows/release.yml`（GitHub Release published → `build.sh <tag>`） | **钩子已存在**，本次未新增流程 |
 
 **版本号规范（SemVer 2.0.0，2026-09-21 用户确认）** —— 三组件版本号统一遵循 <https://semver.org/lang/zh-CN/>

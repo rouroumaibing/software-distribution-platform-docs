@@ -185,7 +185,7 @@
 
 - ❌ 通知中心（顶栏铃铛真实化）——需后端通知端点。
 - ❌ DAG 自由画布（沿用结论，`DependsOn` 需求明确后评估 vue-flow）。
-- ❌ 流水线版本历史 / 回滚到旧版本（`Pipeline.version` 字段存在但无历史表）。
+- ✅ ~~流水线版本历史 / 回滚到旧版本~~ **已落地（2026-09-22，C-09）** —— hub `GET /pipelines/:id/versions` + `/:version` + `/:version/diff` + `POST /:version/rollback`；console `PipelineVersionPanel.vue`（对比 + 回滚二次确认）。回滚 = 结构回填 + 追加新版本，绝不重写历史。
 - ❌ 左栏内联资源树（**已明确否决**，见 S5）。
 - ❌ API 管理模块（新平台无此后端域）。
 
@@ -337,7 +337,7 @@
 - **阶段（Stage）串行**：流水线由有序阶段组成，按 `sequence` 从前到后逐阶段执行；前一阶段全部子任务完成（成功/跳过）才解锁下一阶段。
 - **阶段内子任务按 `executionMode` 串行/并行**（**`ExecutionMode` 已确认放在 Stage 级**，一个阶段统一一种模式）：
   - `Parallel`（默认）：阶段内子任务并发启动，互不等待；
-  - `Serial`（**仅字段与 UI 已就绪，调度待实现**）：计划由 hub `buildSpec` 在各子任务间按序推导 `DependsOn` 链，严格先后；
+  - `Serial`（✅ **调度已落地（2026-09-23，C-06）**）：hub `buildSpec` 在同阶段子任务间按序推导「紧邻前驱」`DependsOn` 链，严格先后（调用方手写 `DependsOn` 优先）；runner `serialBlocked()` 消费；
   - **阶段完成条件**：该阶段所有子任务 `Succeeded` 或 `Skipped` 即视为完成；任一 `Failed` 且不可重试 → 阶段失败，下游不调度（DAG `Skipped`）。
 - **数据与执行解耦（推送模型，已确认）**：触发 `POST /pipelines/:id/runs` 时 hub 先把"任务落实到数据库"（`pipeline_runs` + 按 DAG 种子的 `task_runs` + `dispatch_jobs`），再把整份已解析 spec 经 WebSocket **推送**给目标环境 runner；runner 在集群内建 CRD 执行，**不直连 hub DB**，状态经 WS `status_update` 流回 hub 写回 `task_runs`。详见 [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) §6 / [runner STORY](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md) §4.3。
 - **原型对应**：编排页阶段卡可前后移动（重排 `sequence`）、阶段内子任务可上下移动（重排 `displayOrder`）、阶段头 `executionMode` 一键在 并行/串行 间切换（原静态「并行 ▾」已改为可点击切换）。
@@ -783,10 +783,10 @@ Dashboard「待办」区三段，每段一个 CTA（深链形态与 §7.6 的视
 | 环境 CRUD | `POST/GET/PUT/DELETE /api/v1/environments`、`GET /components/:id/environments` | ✅ 已有 |
 | 环境创建 | `POST /api/v1/environments` | ⚠️ 请求体需扩 `access` / `kubeconfigSecretRef?` / `sshTargets?` / `sshSecretRef?`（现仅 `targetId` / `namespace` / `envType`） |
 | 环境分组 | `environment_groups` + `environments.group_id` | ⚠️ 见 [hub 数据模型 §8](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)（DDL 已拟，未落库） |
-| 连接测试 | `POST /api/v1/environments/:id/test` → 逐项 checklist | ⚠️ **待补** |
-| 凭据库 | `GET/POST/PUT /api/v1/credentials`（只回 `xxxSet`，不返明文） | ⚠️ **待补**（现无凭据实体，只有 `secret_ref` 字符串列） |
-| kubeconfig 解析 | `POST /api/v1/credentials/parse-kubeconfig` | ⚠️ 可选：前端做预览、后端做权威校验 |
-| 目标注册 token | `POST /api/v1/targets/:id/enroll-token`（一次性） | ⚠️ **待补**（Agent 回连目前无注册凭据约束） |
+| 连接测试 | `POST /api/v1/environments/:id/test` → 逐项 checklist | ✅ **已落地** —— `EnvironmentService.Test` / `TestReport`（配置完整性结构校验；连通性项如实返回 `skip`，hub 无出站能力），结果持久化到 env |
+| 凭据库 | `GET/POST/PUT/DELETE /api/v1/credentials`（只回 `valueSet`，不返明文） | ✅ **已落地（2026-09-23）** —— `internal/credentials`（AES-GCM 信封加密落库，列前缀 `enc:v1:`；API 仅回 `valueSet`）+ console `CredentialsView.vue`（平台管理第 3 个 Tab） |
+| kubeconfig 解析 | `POST /api/v1/credentials/parse-kubeconfig` | ✅ **已落地** —— 结构化回显 `server`/`caPresent`/`insecureSkipTLS`/`authMethod`/`currentContext`/`defaultNamespace` + `errors`（**拒绝 `exec:` 插件**） |
+| 目标注册 token | `POST /api/v1/targets/:id/enroll-token`（一次性） | ✅ **端点已落地** —— `TargetHandler.EnrollToken` / `TargetService.GenerateEnrollToken`（一次性 + 过期）。⚠️ 网关仍用全局共享 `GATEWAY_TOKEN`，per-target 身份约束（`agent_version` 上报 + 凭据流转）属 `§9.9` 引导特性 |
 
 > **SSH 属净新增能力**：hub 全仓无 `ssh` 命中、hub 亦无 `client-go`（**零出站能力**）；`sshTargets` / `sshSecretRef` / `POST /environments/:id/test` / `POST /environments/:id/exec` 均需新建。按层分写约定，列定义应落 `docs/hub/DATA-MODEL.md`、请求体与响应落 `docs/hub/API-REFERENCE.md`；本节只给 console 侧的消费形状。**凭据由 hub 侧持有**（§7.12.4）。
 
@@ -1430,7 +1430,7 @@ Dashboard「待办」区三段，每段一个 CTA（深链形态与 §7.6 的视
 | Run | `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision` | run.ts ✅（后端 `h.Approve` 已实现） |
 | Artifact | `GET /components/:componentId/artifacts` `/artifacts/:id` `/download` `/DELETE` | artifact.ts ✅ |
 | Permission | `GET /component-roles`（§7.9 角色选择器数据源）`POST/GET /components/:componentId/role-bindings` `/DELETE /role-bindings/:id` `GET /roles` | permission.ts ✅（2026-09-23 **去掉 `GET /users`**：hub 不存用户表（D3），主体改为「绑定表派生 + 手输 `sub`」，见 ACCOUNT-PERMISSION-DECISIONS §3.5 (b′)） |
-| Release | `GET /releases`、`POST/GET/PUT/DELETE /releases/:id` | **后端已有**（N-3）；发布视图数据源。`GET /releases?scope=global&state=paused` 待补 |
+| Release | `GET /releases`、`POST/GET/PUT/DELETE /releases/:id` | **后端已有**（N-3，全局端点、非组件作用域）；发布视图数据源。`?scope=global&state=paused` 细粒度筛选尚未加（`internal/run/handler/release.go` 仅基础 CRUD + 列表）；console 侧以「前端聚合 + 数据截断显式提示」过渡，不静默给错数字 |
 | Search | `GET /search?q=&type=&limit=` | **后端已有**（N-8，2026-09-22）；result = `[{type,id,name,path,keyword}]`，`type` ∈ `service,component,pipeline`（逗号分隔、缺省三类全搜） |
 
 > **作废声明**：本表旧版曾写"后端无 `GET/POST/PUT/DELETE /pipelines/:id`（仅按组件列出）→ 流水线自身 CRUD 曾受 G1 影响"、"无 `PUT /stages/:id`（G6 已修）"、"无独立 Rollout 控制/日志读取端点（G4/G2 已修）"。**这些结论均已过期**：`/pipelines` 的 CRUD 已于 N-4 核对存在；G1–G6 全部关闭。
@@ -1577,7 +1577,7 @@ Dashboard「待办」区三段，每段一个 CTA（深链形态与 §7.6 的视
    - 派生信号改用**真实落库**的两组配置：`releaseConfig`（chart / manifest 有值）→ 发布任务；`approvalConfig.allowedApprovers` 有值 → 人工审核阶段。
    - 优先级 Release > Approval（与原型 `deriveType` 一致）；两组都填时**显式提示**"按发布任务处理，审批人将被忽略"，不静默丢弃。
    - 顺带收紧：原型用 JS 真值判断，**纯空白串会被误判为已填**（派生出 Release 却没有任何发布配置）；改为 trim 后判空。
-2. **`executionMode` 只做往返，不改调度。** 字段已落地（存得下、读得回、UI 可切换），但 `Serial` 的**调度行为**仍未实现（backlog C-06）—— serial 阶段里的子任务在 runner 侧**仍并发启动**。UI 只显示"并行 / 串行"标签，**不声称串行已生效**。
+2. **`executionMode` 的调度行为 ✅ 已落地（2026-09-23，C-06）。** 字段存得下、读得回、UI 可切换；hub `buildSpec` 为 serial 阶段按模板顺序派生「紧邻前驱」`DependsOn` 链，runner `serialBlocked()` 据此严格先后 —— serial 阶段里的子任务**不再并发启动**。（本条写于该调度落地前，已更正。）
 
 ### H.3 「保存」的实际语义（附 D.4 落差的落地形态）
 

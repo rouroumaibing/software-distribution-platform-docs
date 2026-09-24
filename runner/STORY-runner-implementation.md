@@ -243,7 +243,7 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 - [x] 编译通过：`go build ./...` ✅（runner 与 hub 双模块，含 `gofmt -w` 格式化）。
 - [ ] 单元测试覆盖率达到团队基线：canary 引擎为纯函数已具备单测条件（M1 未补用例，待办）。
 - [ ] 自动化测试用例通过 / QA 手动验收通过：M1 以"链路编译+合约闭合"为验收；端到端跑通需 Hub 触发 + 真实集群（见 §6）。
-- [ ] 监控告警与降级开关在预发/灰度环境验证正常：⚠️ 监控埋点未接入（§3 已标注）。
+- [x] 监控埋点已接入（2026-09-24）：runner `pkg/metrics` 经 controller-runtime 内置 metrics server 暴露 `/metrics`；hub 侧新增 `internal/metrics`（零依赖 Prometheus 文本导出 + `GET /metrics`）。**告警规则 / 降级开关在预发·灰度的验证仍属运维环境项**（非代码）。
 
 ---
 
@@ -253,5 +253,5 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 - ✅ **IngressCanary 路由（B-04）**：`internal/controller/rollout_controller.go` + `pkg/canary/engine.go` 已实现金丝雀渐进发布与 IngressCanary 流量切分。
 - ✅ **HTTPProbe / PrometheusQuery 健康检查（B-05）**：`pkg/health/health.go` 的 `HTTPProbe`（真实 GET + 2xx 判定）、`PrometheusQueryOK`（真实 Prometheus 查询 + 阈值）已接入 release 健康判定。
 - ✅ **Rollout 副本数读取真实 Deployment（B-06）**：`rollout_controller.go` 的 `resolveTotalReplicas` 读取线上 stable Deployment 的 `spec.replicas` 作为 total（fallback `RolloutSpec.Replicas` → 默认 2），不再写死 `total=2`。
-- ⛔ **端到端验证（B-07）**：需 Hub 触发 + 一个真实（或 kind）集群跑通整条 M1 链路；目前仅保证两模块编译/vet/test 通过（2026-09-24 起排期执行，见 `plans/E2E-VERIFY-PLAN.md`）。
+- ✅ **端到端验证（B-07）**：**已于 2026-09-24 本机 docker + kind 实跑通过** —— 全栈部署绿、`plans/e2e-smoke.sh` `PASS=15 FAIL=0`、run `Running → Succeeded`。执行中揪出并修复 3 个真 bug（含本 Story 侧的 **runner RBAC 缺 `networking.k8s.io/ingresses`**：`Owns(&Ingress{})` 无对应 list/watch → manager 缓存同步超时 → 任何 run 都不派发）。证据见 `plans/PENDING-TASKS-AUDIT-2026-09-23.md` §5.2。
 - 关联：`STORY-hub-implementation.md`（控制面）。Console 页面与多环境为更上层 Story。

@@ -453,17 +453,17 @@ components ─1:N─ component_role_bindings ─N:1─ component_roles（§7.3�
 ## 5. Story 级 Definition of Done (DoD Checklist)
 
 - [x] 3-Corner 澄清通过：AC 由 Dev 与历史主规格（Epic 5/7）对齐，QA 待补。
-- [x] 单元测试覆盖率基线：核心逻辑（`buildSpec`/`selectTarget`/`ApplyStatus`）已实现，单测待补（当前以 `go build`+`go vet` 作为门禁）。
+- [x] 单元测试覆盖率基线：核心逻辑（`buildSpec`/`selectTarget`/`ApplyStatus`）已实现，**单测已补齐（2026-09-24）** —— hub 43 个 `_test.go`（含 `pipeline_run_{dispatch,phase2,serial}_test.go`、`approval_policy_test.go`、`rbac_test.go`、`locator_test.go`、`schema_dryrun_test.go`），以 `go build`+`go vet`+`go test` 为门禁。
 - [x] 静态代码扫描无 P0/P1：hub 与 runner 两模块 `go vet ./...` 通过；`go mod tidy` 清理完成。
-- [x] 自动化测试/手动验收：两模块 `go build ./...` 均 EXIT=0；本地启动会执行 `AutoMigrate` 建 31 张表（含 §7 多 org RBAC 扩展）；**2026-09-23 已在真实 Postgres 上验收**（`bash hack/migration-check.sh`，两条建库路径全绿）。
-- [ ] 监控告警与降级开关在预发/灰度环境验证：依赖后续 Epic 5 离线告警与 console 灰度监控（**未做**）。
+- [x] 自动化测试/手动验收：两模块 `go build ./...` 均 EXIT=0；本地启动会执行 `AutoMigrate` 建 31 张表（含 §7 多 org RBAC 扩展）；**2026-09-23 已在真实 Postgres 上验收**（`bash hack/migration-check.sh`，两条建库路径全绿）；**2026-09-24 已在 kind 集群跑通 M1 端到端**（`e2e-smoke.sh` `PASS=15 FAIL=0`，见 audit §5.2）。
+- [x] 监控埋点已接入（2026-09-24）：runner `pkg/metrics` + hub 新增 `internal/metrics`（零依赖 Prometheus 文本导出 + `GET /metrics`）。**告警规则 / 降级开关在预发·灰度的验证属运维环境项**。
 
 ---
 
 ## 6. 后续待办（不在本 Story 范围）
 
 - ✅ **Runner 端 handler 注册**：`cmd/runner/main.go` 已注册 `MessageApplyPipelineRun`（`applyHandler.Handle`）、`MessageApproveTask`（`approveHandler.Handle`）与 `RolloutReconciler`——见 [STORY-runner-implementation.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md)（SDP-RUNNER-001），本项已在本轮 Runner 实现中完成。
-- 🟡 **Console 页面**：服务树导航、流水线可视化编排、平台/组件权限页已落地（Epic 2/4 + UNIMPLEMENTED §0）；**仅**「运行 DAG 监控可视化 / 灰度监控可视化」未做（B-01 剩余，见 T-U5）。
+- ✅ **Console 页面**：服务树导航、流水线可视化编排、平台/组件权限页、**运行 DAG 监控可视化 / 灰度监控可视化均已落地**（后者见 `RunMonitorView.vue`「DAG 执行图」+ `ReleaseDetailView.vue` 金丝雀步骤器，B-01 已闭口）。（原文「仅 DAG/灰度可视化未做」系审计误判，2026-09-24 复核更正）
 - ✅ **灰度发布补全**：`runner/pkg/canary/engine.go` 已实现金丝雀渐进发布引擎，`rollout_controller.go` 管理 stable/canary Deployment 并回填状态（含 `resolveTotalReplicas` 读取线上 stable Deployment 的 `spec.replicas`，B-06 同步落地）——见 SDP-RUNNER-001，本项已在本轮 Runner 实现中完成。
 - ✅ **实时日志流（B-02）**：`runner/pkg/logstream` 抓取 Pod 日志经 `MessageLogChunk`/`LogChunkPayload` 回流，Hub `TaskRunReconciler` 起 goroutine 落库（Epic 7 实时日志已闭环）。
 - ✅ **细化项（B-11）**：审批超时（`approval_timeout.go`）、生产强审批（`production_guard.go`）、产物签名下载、版本对比（C-09）、自定义角色（`/component-roles` 写端点）均已落地。

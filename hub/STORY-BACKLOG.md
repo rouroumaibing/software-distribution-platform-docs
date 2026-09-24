@@ -13,16 +13,16 @@
 
 | # | 功能域 | 待办项 | 状态 | 来源 | 关联 Epic |
 |---|--------|--------|------|------|-----------|
-| B-01 | **Console 前端** | 服务树导航、流水线可视化编排、运行 DAG 监控、灰度监控页面 | ⬜ 未做 | hub §6:381 | Epic 2/4/5/6 |
-| B-02 | **实时日志流** | `log_chunk` 仅打印未落库；Runner 侧 Pod 日志抓取与发送未实现（类型/`LogChunkPayload` 已定义） | ⬜ 未做 | hub §6:383, runner §6:193 | Epic 7 |
+| B-01 | **Console 前端** | 服务树导航、流水线可视化编排、运行 DAG 监控、灰度监控页面 | ✅ **已完成（2026-09-24 复核）** —— `ServiceTreeView`（服务树导航 + 懒加载 + 服务端搜索）、流水线编排器（C-12）、`RunMonitorView`「DAG 执行图」（阶段列 + 相位着色 + 箭头 + 图例）、`ReleaseDetailView` 金丝雀步骤器/暂停·晋升·回滚；审计时判「未做」系误判 | hub §6:381 | Epic 2/4/5/6 |
+| B-02 | **实时日志流** | `log_chunk` 仅打印未落库；Runner 侧 Pod 日志抓取与发送未实现（类型/`LogChunkPayload` 已定义） | ✅ **已完成** —— `runner/pkg/logstream` 抓 Pod 日志经 `MessageLogChunk` 回流，hub `TaskRunReconciler` 起 goroutine 落库（D-3 已 source-grounded 对账） | hub §6:383, runner §6:193 | Epic 7 |
 | B-03 | **审批下发闭环** | Hub 侧补齐 approve_task 决策发送：新增 `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision`，经 `gateway.Approve` → `MessageApproveTask` 下发，接上 Runner 已就绪的 `ApproveTask` handler | ✅ 已完成 | hub gateway/run svc+handler + main | Epic 7 |
-| B-04 | **IngressCanary 路由** | `TrafficRoutingIngressCanary` 已记录，M1 降级为副本切分；专用 canary Ingress 资源为后续项 | ⬜ 未做 | runner §6:194 | Epic 6 |
-| B-05 | **HTTP/Prometheus 健康检查** | M1 实际只校验 `PodReady`；`HTTPProbe`/`PrometheusQuery` 引擎分支已留但未接真实探测 | ⬜ 未做 | runner §6:195 | Epic 6 |
-| B-06 | **Rollout 副本数读取真实 Deployment** | M1 默认 `total=2`，未读线上 Deployment 的 `spec.replicas` | ⬜ 未做 | runner §6:196 | — |
-| B-07 | **端到端验证** | ⛔ **仍未跑（2026-09-22 复核）** —— 本机**无集群**：`kind` 未安装、`kubectl` 无 current-context、无可用 Postgres。Hub/Console/Runner 三仓仅经 `go build` + `go vet` + 单测 / `pnpm build` + 冒烟验证，**整条 M1 链路未做端到端联调，且未伪造结果**。跑法见 `plans/E2E-VERIFY-PLAN.md` + `plans/e2e-smoke.sh` | ⛔ 阻塞（需集群） | runner §6:197 | M1 验收 |
-| B-08 | **单元测试** | 核心逻辑（`buildSpec`/`selectTarget`/`ApplyStatus`/canary 引擎）具备单测条件，M1 未补用例，当前以 `go build`+`go vet` 作门禁 | ⬜ 待补 | hub §5:371, runner §5:185 | 质量基线 |
-| B-09 | **监控告警与降级开关验证** | 依赖后续 Epic 5 离线告警与 console 灰度监控；Prometheus 指标埋点未接入 | ⬜ 未做 | hub §5:374, runner §5:187, hub §3:66 | Epic 5 |
-| B-10 | **QA 负责人待补** | Story 责任人 QA 字段、（3-Corner 澄清）QA 待补 | ⬜ 待补 | hub §1:13, hub §5:370 | 协作流程 |
+| B-04 | **IngressCanary 路由** | `TrafficRoutingIngressCanary` 已记录，M1 降级为副本切分；专用 canary Ingress 资源为后续项 | ✅ **已完成** —— `rollout_controller.go`（`Owns(&networkingv1.Ingress{})`，:464）+ `pkg/canary/engine.go` 实现金丝雀 Ingress 流量切分。⚠️ 其配套 RBAC 曾缺 `networking.k8s.io/ingresses`（致 runner manager 起不来，2026-09-24 已补，见 audit §5.2） | runner §6:194 | Epic 6 |
+| B-05 | **HTTP/Prometheus 健康检查** | M1 实际只校验 `PodReady`；`HTTPProbe`/`PrometheusQuery` 引擎分支已留但未接真实探测 | ✅ **已完成** —— `pkg/health/health.go` `HTTPProbe`（真实 GET + 2xx 判定）/`PrometheusQueryOK`（真实查询 + 阈值）已接入 release 健康判定 | runner §6:195 | Epic 6 |
+| B-06 | **Rollout 副本数读取真实 Deployment** | M1 默认 `total=2`，未读线上 Deployment 的 `spec.replicas` | ✅ **已完成** —— `rollout_controller.go` `resolveTotalReplicas` 读线上 stable Deployment 的 `spec.replicas`（回退 `RolloutSpec.Replicas` → 默认 2），`TestResolveTotalReplicas` 钉住 | runner §6:196 | — |
+| B-07 | **端到端验证** | ✅ **已执行（2026-09-24 本机 docker + kind 实跑）** —— 全栈部署绿、`plans/e2e-smoke.sh` `RESULT: PASS=15 FAIL=0`、run `Running → Succeeded`（证明 runner 真执行）；执行中揪出并修复 **3 个真 bug**（deploy 脚本空数组 / runner RBAC 缺 ingresses / component 删 500）。证据见 `plans/PENDING-TASKS-AUDIT-2026-09-23.md` §5.2 | ✅ 已执行 | runner §6:197 | M1 验收 |
+| B-08 | **单元测试** | 核心逻辑（`buildSpec`/`selectTarget`/`ApplyStatus`/canary 引擎）具备单测条件，M1 未补用例，当前以 `go build`+`go vet` 作门禁 | ✅ **已补齐** —— hub 43 个 `_test.go`、runner 9 个（含 `pkg/canary/engine_test.go`、`internal/dispatch/*`、`pipeline_run_{dispatch,phase2,serial}_test.go`、`rollout_controller_test.go`、`pkg/health`、`pkg/logstream`），覆盖调度 / 派发 / 审批超时 / 生产强审批 / 灰度引擎 / 租约 | hub §5:371, runner §5:185 | 质量基线 |
+| B-09 | **监控告警与降级开关验证** | 依赖后续 Epic 5 离线告警与 console 灰度监控；Prometheus 指标埋点未接入 | 🟡 **埋点已补齐（2026-09-24，T-U6）** —— runner `pkg/metrics`（controller-runtime 内置 metrics server 暴露 `/metrics`）+ hub **新增** `internal/metrics`（零依赖 Prometheus 文本导出：`GinMiddleware` 计数 + `GET /metrics`，`main.go` 已挂载）；**告警规则 / 降级开关在预发·灰度的验证仍属运维环境项** | hub §5:374, runner §5:187, hub §3:66 | Epic 5 |
+| B-10 | **QA 负责人待补** | Story 责任人 QA 字段、（3-Corner 澄清）QA 待补 | ⬜ **流程项（非代码）** —— 待人工指定 QA 负责人后回填，不阻塞代码验收 | hub §1:13, hub §5:370 | 协作流程 |
 | B-11 | **主规格细化项** | ✅ **已完成（2026-09-22，Epic E）** —— ① **审批超时**：`run/service/approval_timeout.go`（超时判负，先派发 runner 拒绝再记 hub 侧 `Cancelled`，目标离线顺延；env `APPROVAL_TIMEOUT_INTERVAL` 默认 60s）；② **生产强审批**：`run/service/production_guard.go`（**fail-closed**，`409 + reasons`，`ERR.08409005`）+ `environment/repository.ProductionTargets` + console 触发对话框原样渲染拒绝；③ **产物签名下载**：核对待办为**过时标记** —— `GET /artifacts/:id/download` → `DownloadURL` → `PresignDownload`（S3 presigned / Local HMAC）与 console 下载入口**早已完整**，本轮仅更正文档；④ **版本对比**：由 C-09 交付；⑤ **自定义角色**：平台级 = C-10，组件级本轮补齐 `POST/PUT/DELETE /component-roles`（**读挂裸 `api`、写要求平台级 `user:manage`**）+ `(org_id, name)` 唯一（`migrations/0014`）。见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §11.1 | ✅ 已完成 | hub §6:384 | 多 Epic |
 | B-12 | **后端 DELETE 级联校验** | ✅ **已完成（2026-09-22）** —— 协议层 `APIError.Reasons` + `Envelope.reasons` 已落地；`PipelineService.Delete` 收窄为"仅活跃 phase（Pending/Running/WaitingApproval）拒绝、历史放行"；Component/Service 注入活跃运行计数 → `409 + {reasons}`；Environment.Delete 改为"删前统计配置覆盖并写审计日志"（不拒绝，§6.4 #8）。**本轮未做**：§6.4 的"域内级联软删"（org→service→component→pipeline 的子资源物理清理）按 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §3.3 留作独立任务 | ✅ 已完成 | DELETE-CONTRACT §4 | N-15 / N-5 |
 | B-13 | **环境分组落库** | ✅ **已完成（2026-09-22）** —— 新表 `environment_groups` + `environments.group_id`（可空）已落地；删非空分组 `409 + {reasons}`，空组硬删。DDL + 删除语义 + gate 见 `hub/DATA-MODEL.md` §8 | ✅ 已完成 | DATA-MODEL §8 | 环境/配置 |
@@ -50,7 +50,7 @@
 
 ## 3. 汇总统计
 
-- **真实未做项**：19 项（B-01 ~ B-19）。其中 ✅ 已完成 7 项（B-03 审批下发；B-12 后端 DELETE 级联校验；B-13 环境分组落库；B-14 config_history 去 FK + 快照列；B-15 全部含 `deleted_at`；B-17 跨资源搜索端点；B-18 鉴权强制点 id 反查）、🟡 部分完成 1 项（B-16：源头已堵，级联 + 清理标记 + 对账未做）、⬜ 未做/待补 11 项（含 **B-19**，属**条件触发**而非待排期）。
+- **真实未做项**：19 项（B-01 ~ B-19）。**2026-09-24 复核刷新（下表逐行证据）**：✅ 已完成 = B-02/B-03/B-04/B-05/B-06/B-07/B-08/B-11/B-12/B-13/B-14/B-15/B-17/B-18（B-01 亦经复核为已完成，原判「未做」系误判）；🟡 部分 = B-09（Prometheus 埋点已接入，告警规则/降级开关验证属运维）、B-16（`expires_at`+GC+对账已落，**自动删除刻意不做**）；⬜ = B-10（QA 流程项，非代码）、**B-19**（条件触发，非待排期）。
   - **本轮（2026-09-22）落地**：B-12（含协议层 `reasons`）、B-13、B-14、B-15 剩余的 `deleted_at`、B-16 的 (a) 源头堵漏；同批新增未落地总表 `plans/UNIMPLEMENTED-MODULES-PLAN.md`（含 Epic 分组、执行顺序与验证 gate）。
   - **本轮（2026-09-22）第二批**：B-17（跨资源搜索端点，R-8 的后端部分）—— hub `internal/search` + `GET /search` + `GET /orgs/:id/services`；console 侧四项规模机制（懒加载 / 服务端搜索 / 虚拟滚动 / 独立滚动容器）同批落地，见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §6 与 `console/CONSOLE-UI-DESIGN.md` 附 I。
   - **本轮（2026-09-22）第三批**：B-18（鉴权强制点 id 反查，`ACCOUNT-PERMISSION-MODEL.md` §10 第 14 行）；同批产出 Epic C 的 D1–D6 决策材料 `plans/ACCOUNT-PERMISSION-DECISIONS.md`（备选 / 推荐 / 连锁改动 / 不可逆性分级），下一步见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §7。
@@ -59,13 +59,13 @@
   - **本轮（2026-09-22）第五批**：**C-10**（平台级 RBAC HTTP 端点）落地 —— repo 扩 CRUD、新增 `PlatformRoleService` / `PlatformBindingService`（§5.3 主体校验 + `/org:` 保留前缀 + 到期校验）、两个 handler 与 `main.go` 注册；**同批补 `expires_at` ×2**（`migrations/0011`）并让 `ListMatching` 排除过期授权（否则 TTL 只是装饰）；种入 `/sdp-admin` 组 → `sdp-admin` 绑定；新增 **47 条测试**（服务层脱库 24 + 子 23，含 handler 路由断言）。见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §8。
   - **本轮（2026-09-16）新增 4 项**：B-13 ~ B-16，来源为删除检查项梳理 + 三项双向钢人论证（`hub/DELETE-CONTRACT.md` §6.5~§6.7、`hub/DATA-MODEL.md` §8.8）。
   - **2026-09-16 落地**：B-15 的 (a) 父存在性校验 + (b) `pipelines` 改 partial unique index + (c) 模型时间列映射，见 `hub/DELETE-CONTRACT.md` §6.6-3「落地记录」。
-- **过时期待办**：2 项（已在 Runner 实现中消化，待回填 Hub 文档）。
-- **优先级提示**（按 M1 验收阻塞程度）：
-  - 阻塞 M1 端到端验收：B-07（端到端验证）、B-03（审批下发，若用审批任务）。
-  - 影响可观测/质量基线：B-08（单测）、B-09（监控告警）。
-  - **数据模型/一致性：已清空** —— B-14 / B-15 已完成；B-16 仅剩"源头残余（级联 + 清理标记 + `expires_at` 生效）+ 对账（仅报告）"，见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` Epic E。
-  - 功能完整性：B-01/B-02/B-04/B-05/B-06/B-11（B-12/B-13 已完成，移出）。
-  - 协作流程：B-10（QA 待补）。
+- **过时期待办**：2 项（已在 Runner 实现中消化）。
+- **优先级提示（2026-09-24 复核后）**：
+  - **M1 端到端验收：✅ 已通过** —— B-07 于 2026-09-24 本机 kind 实跑（`PASS=15 FAIL=0`）；B-03 审批下发早已闭环。
+  - **可观测/质量基线：✅ 已达标** —— B-08 单测已补齐；B-09 埋点已接入（runner + hub `/metrics`），仅剩运维侧告警规则 / 降级开关验证。
+  - **数据模型/一致性：已清空** —— B-14 / B-15 完成；B-16 仅剩「自动删除」且**刻意不做**（对账只报告），见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` Epic E 与 §17。
+  - **功能完整性：已清空** —— B-01/B-02/B-04/B-05/B-06/B-11 均已完成（B-12/B-13/B-17/B-18 更早完成）。
+  - **协作流程**：B-10（QA 负责人，流程项、非代码）；B-19（Casbin）为**条件触发**，非待排期。
 
 ---
 
@@ -77,14 +77,14 @@
 | --- | --- | --- | --- | --- |
 | C-01 | Console | ⌘K 全局搜索（Cmd/Ctrl+K 浮层，资源直达） | ✅ **已完成（2026-09-22）** —— `components/CommandPalette.vue`（四态 + ↑↓/Enter/Esc，上限 20）+ `utils/search.ts`（**零 import** 分档打分：全等 > 名称前缀 > 名称子串 > 路径 > 类型 > 别名）+ `composables/useGlobalSearch.ts`（索引 / 200ms 防抖 / 请求序号丢弃过期响应）；浮层已改「**服务端优先、客户端索引兜底**」并在降级时明示（不静默）。门禁 `pnpm test:theme-search` 25 条 | P1-2 |
 | C-02 | Console | 暗色主题（dark token 集 + 切换开关 + WCAG AA 对比度） | ✅ **已完成（2026-09-22）** —— `styles/tokens.css` 重写为双主题（`:root` + `:root[data-theme="dark"]`，§9.2 权威名与工程别名同值并存）+ `utils/theme.ts`（**零 import**：归一 / 优先级 / 切换 / 灰阶）+ `composables/useTheme.ts`；首屏防白闪用 `index.html` 内联脚本（其键名与 `theme.ts` 的同步由静态断言钉住） | P1-3 |
-| C-03 | Hub | Pipeline 触发时 stages/tasks 快照序列化固化 | ⬜ 未做 | P1-7 |
-| C-04 | Hub | 清理未调用的 `PipelineRunHandler.RegisterRoutes`（冗余/遗留代码） | ⬜ 待清 | P1-8 |
-| C-05 | Runner | connector 重连后 resync（在途 PipelineRun 重新对账，TODO） | ⬜ 未做 | P1-6 |
-| C-06 | Runner | ExecutionMode=Serial（阶段内串行，当前仅 Parallel） | ⬜ 未做 | P2-10 |
-| C-07 | Runner | 失败节点单任务重跑（当前仅整 run redispatch） | ⬜ 未做 | P2-9 |
-| C-08 | Console | DAG 自由画布编辑器（当前 stage/task 列表式编排） | ⬜ 未做 | P2-6 |
+| C-03 | Hub | Pipeline 触发时 stages/tasks 快照序列化固化 | ✅ **已完成（2026-09-22，Epic E）** —— `PipelineVersionService.Publish`（去重同 body）在阶段/子任务结构变更时留档；`models.BuildSnapshot`/`currentSnapshot` 组装快照；`PipelineRun` 记 `PipelineVersion`，历史运行可回溯到不可变快照（`internal/pipeline/service/version.go`） | P1-7 |
+| C-04 | Hub | 清理未调用的 `PipelineRunHandler.RegisterRoutes`（冗余/遗留代码） | ✅ **已完成（2026-09-24）** —— 该方法从未被调用（`cmd/hub/main.go` 逐个注册 run 路由并加权限包装），且是旧路由子集；已删除并以注释说明为何不用聚合注册。`internal/run/handler/pipeline_run.go` | P1-8 |
+| C-05 | Runner | connector 重连后 resync（在途 PipelineRun 重新对账，TODO） | ✅ **已完成** —— `pkg/connector/client.go` `OnConnect` 回调 + `internal/controller.ResyncAll`（只重推非终态）；`cmd/runner/main.go:120-122` 接线；`TestResyncAllSendsOnlyNonTerminal` 钉住 | P1-6 |
+| C-06 | Runner | ExecutionMode=Serial（阶段内串行，当前仅 Parallel） | ✅ **已完成（2026-09-23）** —— hub `buildSpec` 为 serial 阶段派生「紧邻前驱」`DependsOn` 链 + runner `serialBlocked()`（`pipelinerun_controller.go:164`）；`pipeline_run_serial_test.go` / `stage_execution_mode_test.go` | P2-10 |
+| C-07 | Runner | 失败节点单任务重跑（当前仅整 run redispatch） | ✅ **已完成** —— `internal/dispatch/rerun_handler.go`（`MessageRerunTask` 协议）+ `internal/dispatch/rerun_handler_test.go` | P2-9 |
+| C-08 | Console | DAG 自由画布编辑器（当前 stage/task 列表式编排） | ⬜ **刻意不做**（§4.2）—— 沿用「列表式编排 + `DependsOn` 需求明确后再评估 vue-flow」的结论；非缺口 | P2-6 |
 | C-09 | Hub/Console | 流水线版本历史 / 对比 / 回滚 | ✅ **已完成（2026-09-22，Epic E）** —— hub：结构性保存自动留档（stage/task 增删改挂 `VersionPublisher`，去重同 body）+ `GET /pipelines/:id/versions` · `GET .../versions/:version` · `GET .../versions/:version/diff?against=` · `POST .../versions/:version/rollback`；diff **按对象名**对齐（不按 row id），**回滚 = 结构回填 + 追加新版本，绝不重写历史**（`migrations/0013`）。console：`PipelineVersionPanel.vue`（对比选择器 + 差异表 + 版本列表 + 结构预览 + 回滚二次确认）+ 编辑器「版本历史」入口。见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §11.2 | ✅ 已完成 | P2-7/P2-8 |
 | C-10 | Hub | 平台级 RBAC HTTP 端点（`/platform-roles`、`/platform-role-bindings`） | ✅ **已完成（2026-09-22）** —— repo 扩 CRUD（含 `ExistsActive` / `CountBindings`）+ `PlatformRoleService` / `PlatformBindingService`（§5.3 主体校验 + `/org:` 保留前缀 + 到期校验）+ 两个 handler + `main.go` 注册；**同批加 `expires_at` ×2**（`migrations/0011`）并让 `ListMatching` 排除过期授权；种入 `/sdp-admin` 组 → `sdp-admin` 绑定；47 条新测试。见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §8 | P1-1 / DATA-MODEL §7 |
-| C-11 | Hub/Runner | 目标离线告警 + Helm 一键接入 + runner 重连对账（**2026-09-21 二次裁定：安装/升级逻辑落 hub、console 只调 API；版本按版本矩阵 CM 取；前置 = `agent_version` 上报 + per-target 身份 + hub 引入 k8s 客户端**）。**版本矩阵的发布链路已于 2026-09-21 落地**（hub 仓 `build/hub/versions.yaml` → `build.sh` 校验并渲染 → CM `package-versions` + env `PACKAGE_VERSION_*`；三仓 `imageAddr` 硬编码缺口同批修复）——**端点与编排仍待实现**（`hub/DATA-MODEL.md` §9.10） | ⬜ 未做 | P2-11 |
+| C-11 | Hub/Runner | 目标离线告警 + Helm 一键接入 + runner 重连对账（**2026-09-21 二次裁定：安装/升级逻辑落 hub、console 只调 API；版本按版本矩阵 CM 取；前置 = `agent_version` 上报 + per-target 身份 + hub 引入 k8s 客户端**）。**版本矩阵的发布链路已于 2026-09-21 落地**（hub 仓 `build/hub/versions.yaml` → `build.sh` 校验并渲染 → CM `package-versions` + env `PACKAGE_VERSION_*`；三仓 `imageAddr` 硬编码缺口同批修复）——**端点已落地**（`POST /targets/:id/enroll-token` + `install`/`upgrade` 台账，2026-09-23）；**一键接入编排仍属 §9.9 引导特性** —— install/upgrade 执行器经双向钢人裁定留守 queued（`hub/DATA-MODEL.md` §9.10 / §16.5） | 🟡 部分 | P2-11 |
 | C-12 | Console | 流水线全生命周期 UI（新建/删除入口、编辑器支持 build/release/approval 编排） | ✅ **已完成（2026-09-22）** —— 列表五列 + `＋ 新建流水线` + 删除强确认（输入名称）+ 渲染 `409 + {reasons}`；编辑器支持阶段 `◀ ▶` / 子任务 `▲▼` 重排、阶段 `executionMode` 切换、保存前弹 JSON/YAML 预览与实际调用序列；子任务表单改为**配置派生**（去掉违反 §7.4 的三选一）；删掉过时的 `kind !== 'build'` 客户端闸门（N-7）。落地记录见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §5（`pnpm test:pipeline` 41 条） | P0-3 |
-| C-13 | Runner | Test 类型 / 环境模型（daily/版本归档/转测/生产环境语义） | ⬜ 未做 | P2-1 |
+| C-13 | Runner | Test 类型 / 环境模型（daily/版本归档/转测/生产环境语义） | ✅ **已完成** —— runner 侧模型已落地：`api/v1alpha1/pipelinerun_types.go` 的 `TaskTypeTest`（`"Test"`）+ `EnvironmentType`（dev/test/staging/prod/canary/bluegreen）+ `IsValidEnvironment`；`internal/dispatch/snapshot.go` 消费并派生 | P2-1 |

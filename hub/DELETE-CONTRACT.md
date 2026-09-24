@@ -122,10 +122,10 @@
 
 | 实体 | 端点 / 代码位置 | 软删? | **hub 现有检查** | 原型 `mockDelete*` 检查 |
 | --- | --- | --- | --- | --- |
-| Org | `DELETE /orgs/:id` · `org/service/org.go:58` | **软删** | **无**。TODO：平台管理员校验；注释明写"只做软删除，保留恢复窗口，不允许立刻级联物理清除下属全部资源" | 递归下级 service/component |
-| Service | `DELETE /services/:id` · `catalog/service/service.go:31` | **软删** | **无**。TODO："删除前检查是否还有下属 Component" | 同上（递归） |
-| Component | `DELETE /components/:id` · `component/service/component.go:98` | **软删** | **无**。TODO：权限校验 + "检查是否还有运行中的 PipelineRun" | 同级流水线数 + 环境数 |
-| Environment | `environment/service/environment.go:39` | **硬删** | **无**。TODO：生产环境二次确认 + "检查是否还有关联的运行中发布" | 被 `RELEASES.env` 引用即拒 |
+| Org | `DELETE /orgs/:id` · `org/handler/org.go` | **软删** | ✅ **平台级守卫已落地（2026-09-24）**：删除路由移至平台组（`RequirePlatformPermission(user:manage)`，`cmd/hub/main.go` + `org/handler/org.go:RegisterAdminRoutes`），dev 裸挂；软删语义与恢复窗口不变（原注释保留在 `org/service/org.go`） | 递归下级 service/component |
+| Service | `DELETE /services/:id` · `catalog/service/service.go` | **软删** | ✅ **已落地**：删除时统计下属 Component 并**同事务级联软删**（`component_role_bindings` 硬删），2026-09-23 真集群验证（§6.4） | 同上（递归） |
+| Component | `DELETE /components/:id` · `component/service/component.go` | **软删** | ✅ **已落地**：注入活跃运行计数（Pending/Running/WaitingApproval）→ **409 + {reasons}**（`ERR.05409001`，与 service 层测试一致）；handler 曾把该 409 误报成 500，2026-09-24 修（`errors.As` 透传 `ae.Code`） | 同级流水线数 + 环境数 |
+| Environment | `environment/service/environment.go` | **硬删** | ✅ **已落地（不拒绝）**：删前统计配置覆盖数并写审计日志（§6.4 #8）；生产环境二次确认为 console 侧交互 | 被 `RELEASES.env` 引用即拒 |
 | Pipeline | `DELETE /pipelines/:id` · `pipeline/service/pipeline.go:79` | **软删** | ✅ **有**：`CountByPipeline>0` → `409`（**任意** run 历史即拒） | `mockDeletePipeline` |
 | EnvironmentGroup | — | 表不存在 | — | 组内有环境即拒 |
 | PipelineStage / TaskTemplate | `pipeline/service/stage.go:39` / `task_template.go:65` | 硬删 | 无 | — |
@@ -134,7 +134,7 @@
 | RolloutRun（= Release 视图） | `run/service/release.go:41` | 硬删 | 无 | — |
 | Binding / User / Target | `permission/service/*` · `target/service/target.go:29` | Binding·Target 硬删 / User 软删 | 无 | — |
 
-**结论：hub 侧目前只有 pipeline 一条真实检查。** 原型的 4 条（组件→流水线+环境、服务/org→递归、环境→发布、分组→环境）在 hub **全部未落地**，其中"环境→发布"一条**在 hub 没有数据源**（见 §6.3 ⑦）。
+**结论（2026-09-24 更新）：hub 侧的真实检查已不止 pipeline 一条。** 上表 Org / Service / Component / Environment 四行的 TODO 均已落地 —— Component / Service = 活跃运行 `409 + {reasons}`；Org = 平台级删除守卫（`RequirePlatformPermission(user:manage)`）；Environment = 删前统计配置覆盖并写审计；分组→环境为 `409 + {reasons}`（§6.4 #11）。仍**无数据源**的只剩"环境→发布"一条（见 §6.3 ⑦）。
 
 ### 6.2 残留矩阵：决定"该检查什么"的四条底层机制
 
@@ -355,7 +355,7 @@
 1. **stages/templates 是"定义（模板）"不是"历史"**，删流水线就是想它消失；留一个"软删的阶段"没有独立恢复场景。
 2. **硬删是更强的保证**：数据**不存在** → **没有任何查询能漏**；而 `deleted_at` 是"有标记但可能漏查"（raw SQL / 手写 join 不受 GORM 默认 scope 保护）。从"消除残留"角度，硬删优于软删。
 3. **硬删在 DB 层已就绪**：父 FK 本就是 `on delete cascade`，只需在服务层显式发硬删。
-4. **`pipeline_versions` 已是定义的专属承载者**（`0002:109`，`snapshot jsonb`，`pipeline_id → pipelines(id) on delete cascade`；`PipelineService.PublishVersion` 已存在，快照组装仍是 TODO）→ "恢复定义"有专属机制，结构软删是**冗余的第二套恢复机制**，两套易不一致。
+4. **`pipeline_versions` 已是定义的专属承载者**（`0002:109`，`snapshot jsonb`，`pipeline_id → pipelines(id) on delete cascade`；快照组装 ✅ **已落地（2026-09-22，C-09/C-03）** —— `PipelineVersionService.Publish`（去重同 body）+ `models.BuildSnapshot`/`currentSnapshot`，非本轮范围的 TODO 已消）→ "恢复定义"有专属机制，结构软删是**冗余的第二套恢复机制**，两套易不一致。
 5. **软删扩散会增加漏过滤面**：每多一张软删表，就多一处"必须记得过滤"的地方。
 
 **真正的分歧**：stages / templates 是**独立生命周期的实体**，还是 **pipeline 聚合内的部件**？

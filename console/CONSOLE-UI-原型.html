@@ -1376,12 +1376,12 @@ function pageAdminTarget(){
 /* 目标 / 凭据的增改都还是"设计占位"：后端尚无统一注册表与凭据管理端点，先把需要的契约摊开 */
 function openTargetNote(){
   openModal('<h3>接入目标的注册与凭据（设计占位）</h3>' +
-    '<div class="mb">本页的三张表都是设计先行：后端目前只有 <span class="mono">/targets</span> 一族端点，统一注册表与凭据管理尚未落地。</div>' +
+    '<div class="mb">本页三张表：后端已落地 <span class="mono">/targets</span> 一族、<span class="mono">/credentials</span>（AES-GCM 加密落库、仅回 <span class="mono">valueSet</span>）与 <span class="mono">/environments/:id/test</span>；非容器 / 直连目标的扩表仍待补（§9.7）。</div>' +
     '<div class="infobar-b" style="display:grid;grid-template-columns:180px 1fr;gap:5px 10px">' +
-      '<span class="hint">K8s 集群注册</span><span class="mono">POST /targets（现有）· per-target enroll token 待补</span>' +
-      '<span class="hint">主机登记</span><span class="mono">POST /targets（待补，含 targetKind=host）</span>' +
-      '<span class="hint">凭据 CRUD</span><span class="mono">/credentials（待补，只存引用名）</span>' +
-      '<span class="hint">连通性测试</span><span class="mono">POST /environments/:id/test（待补，逐项各自超时）</span>' +
+      '<span class="hint">K8s 集群注册</span><span class="mono">POST /targets（已落地）· POST /targets/:id/enroll-token（已落地，一次性引导令牌）</span>' +
+      '<span class="hint">主机登记</span><span class="mono">POST /targets（已落地，含 targetKind；ssh / 非容器直连扩表待补 §9.7）</span>' +
+      '<span class="hint">凭据 CRUD</span><span class="mono">/credentials（已落地，AES-GCM 加密落库）</span>' +
+      '<span class="hint">连通性测试</span><span class="mono">POST /environments/:id/test（已落地，逐项 checklist）</span>' +
       '<span class="hint">手动执行</span><span class="mono">POST /environments/:id/exec（已落地·hub 侧；console 消费 UI 待补）</span>' +
       '<span class="hint">版本矩阵</span><span class="mono">GET /package-versions（已落地·hub 侧；console 消费 UI 待补）</span>' +
       '<span class="hint">安装 runner</span><span class="mono">POST /targets/:id/install（已落地·hub 侧；执行器待补 §9.9）</span>' +

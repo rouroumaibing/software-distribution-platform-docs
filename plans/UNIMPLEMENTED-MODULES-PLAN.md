@@ -3,6 +3,8 @@
 > 来源：`software-distribution-platform-docs` 全库 + 三仓实际代码（source-grounded 核对，2026-09-22）。
 > 目的：把"文档里写了、代码里还没落地"的模块**全部梳理**成一张清单，按优先级给出执行顺序，并标注本期已实现的部分。
 > 本文是**权威待办索引**；具体契约见各自文档（`DELETE-CONTRACT.md` / `DATA-MODEL.md` / `ACCOUNT-PERMISSION-MODEL.md` / `STORY-BACKLOG.md`）。
+>
+> ⚠️ **当前状态以 §17「全量复核收口（2026-09-24）」为准。** §3–§16 是按批次的历史记录，各节末的「仍未做 / 如实标注」列表写于当时，多数已被后续批次消化 —— 例：**B-07 端到端已于 2026-09-24 本机 kind 实跑通过**（`PASS=15 FAIL=0`）；`resource_ownership` / `audit_log` / `permission_request` / 角色↔接口映射表**已落地**；Artifact GC、§6.4 级联软删、run 触发走 service 校验、Serial 调度、console agent-ops UI **均已落地**。读历史节时请对照 §17.2 / §17.3 判定当前真伪。
 
 ---
 
@@ -142,7 +144,7 @@
 | 单测 | `go test ./...` | ✅ 全部 ok |
 | 格式 | `gofmt -l`（仅本轮触碰的文件） | ✅ clean |
 
-> `gofmt -l` 在本仓**全量**跑仍会列出 9 个文件（`credentials/*`、`db/db.go`、`environment/models/environment.go`、`environmentgroup/handler/*`、`middleware/user_context.go`、`permission/models/{binding,role}.go`、`target/models/target.go`）—— 这些是本轮**未触碰**的历史遗留漂移，未一并格式化以免污染 diff。
+> ~~`gofmt -l` 在本仓**全量**跑仍会列出 9 个文件…… 这些是本轮未触碰的历史遗留漂移~~ ✅ **已清零（2026-09-24 复核）** —— 本仓 `gofmt -l .` 与 runner 仓 `gofmt -l .` 均返回空（0 个文件），历史漂移已全部格式化。
 
 **新增测试（18 例）**
 
@@ -897,6 +899,42 @@ Epic C 后端已收口到「可逆边界」。剩余：① ~~**D3 删 `users` �
 
 **意外获得的排水路径真实验证**：存量 queued exec op（昨日 E2E 留下）在新 runner 重连时被 hub DrainTarget 补派 → 目标集群 Job 创建并执行（busybox 无 kubectl 而失败，符合预期）→ 日志分片落 `agent_op_logs`（seq=1，stdout `sh: kubectl: not found`）→ 状态回写 `failed` + message「Job has reached the specified backoff limit」；install/upgrade 如裁定留守 queued。**排水 → 派发 → Job 执行 → 日志落库 → 状态回转全链路被现实验证**。
 
-**遗留**：install/upgrade 执行器（§9.9 bootstrap 特性，见裁定 3）；真集群 E2E（exec 全链路，视集群状态执行）；console 侧 agent op 台账 UI / SSE 消费端未做（API 已就绪，属 console 迭代）。
+**遗留**：install/upgrade 执行器（§9.9 bootstrap 特性，见裁定 3）；真集群 E2E（exec 全链路，视集群状态执行）；~~console 侧 agent op 台账 UI / SSE 消费端未做~~ ✅ **已完成（2026-09-23，T-U3）** —— `AgentOpsView.vue` + `api/agentOp.ts` + `utils/agentOp.ts` + `scripts/agent-op-smoke.mjs`。
+
+---
+
+## 17. 全量复核收口（2026-09-24 · 「继续全量补齐开发验证」第二轮）
+
+> 触发：对全库 `⬜/待补/待实现/未做` 标记做 source-grounded 复核。**结论：绝大多数标记已过时**（对应实现早已落地），真代码缺口仅 2 处且已修复；本轮**不重跑**已验证项。
+
+### 17.1 本轮实做代码（2 项）
+
+| 项 | 内容 | gate |
+| --- | --- | --- |
+| C-04 | 删除死代码 `PipelineRunHandler.RegisterRoutes`（从未被调用，且为旧路由子集；run 路由在 `cmd/hub/main.go:518-532` 逐个注册并加权限包装） | hub build/vet/test + gofmt |
+| org 守卫 | `DELETE /orgs/:id` 收进平台组（`RequirePlatformPermission(user:manage)`），消解 `org/service/org.go:116` TODO；新增 `internal/org/handler/org_routes_test.go` 路由分离断言 | hub build/vet/test + gofmt |
+
+### 17.2 复核为「已落地」的过时标记（档案，非新开发）
+
+- **B-01/B-02/B-04/B-05/B-06/B-07/B-08/B-09(埋点)/B-11** 全部已落地（B-07 于 2026-09-24 本机 kind 实跑，`PASS=15 FAIL=0`）。
+- **C-03/C-05/C-06/C-07/C-13** 已落地（快照固化 / 重连 resync / Serial / 单任务重跑 / Test 类型与环境模型）。
+- **DATA-MODEL**：§6.3 stage-progress、§6.4 Serial、§7 平台端点、§9.10 package-versions 均已落地。
+- **console**：§4.2 版本历史/回滚（C-09）、§7.12 连接测试/凭据库/parse-kubeconfig/enroll-token、Serial 调度均已落地。
+- **runner STORY**：B-07 已执行；监控埋点已接入。**user-stories**：见该文附「⬜ 项状态复核」。
+- **gofmt 漂移**：全量 `gofmt -l` 已清零（hub + runner）。
+
+### 17.3 仍开放项（已登记，非静默缺口）
+
+| 项 | 性质 | 处置 |
+| --- | --- | --- |
+| 取消运行中流水线 | **真缺口** | hub 无 cancel 端点；runner 有 `PipelineRunCancelled` 相位但无 hub→runner 消息 → 按 §16.5 wire-format 纪律单独立项 |
+| install/upgrade 执行器 | 设计裁定 | 留守 queued（§9.9 / §16.5） |
+| Casbin | 条件触发 | 无 `resource:action` 无法表达的策略前不引入（B-19） |
+| Agent 版本兼容性检查 / per-target 身份 | 登记 | 前置 = `agent_version` 上报（§9.10） |
+| 集群离线告警规则 / 降级开关验证 | 运维环境项 | 埋点已接入；规则与验证属部署环境 |
+| console token 静默刷新 / 通知中心 | 登记 | 依赖 SSO 会话 / 需后端通知端点 |
+| DAG 自由画布 | 刻意不做 | `CONSOLE-UI-DESIGN` §4.2 |
+| 域内级联软删（org→service→制品/对象） | 部分 | service→component 已落并真集群验证；上层以 `DELETE-CONTRACT` §6.4 为准 |
+| V1 `roles` / `approvals` 表 | 裁定保留 | 有活引用 + DROP 不可逆，真删需用户显式确认 |
 
 

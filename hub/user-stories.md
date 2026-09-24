@@ -9,6 +9,8 @@
 
 状态标记:✅ 已有代码脚手架 ｜ 🚧 部分实现 ｜ ⬜ 未开始
 
+> ⚠️ **正文多处 ⬜ 已过时**（实现早已落地）。**当前状态以文末「附：⬜ 项状态复核（2026-09-24）」为准**，正文保留供追溯。
+
 ---
 
 ## 一、hub(控制平面)
@@ -145,4 +147,51 @@
 1. **M1 · 打通单条流水线全链路**:hub 触发运行 → runner Reconcile → Job 真正跑起来 → 状态回传 → console 能看到结果(目前最大缺口是 hub 的 `gateway/` 和 runner 的 connector handler 注册还没接起来)
 2. **M2 · Console 补上服务树导航 + 流水线可视化编排**:没有这两块,平台目前只能靠调 API 使用
 3. **M3 · 灰度发布**:`runner` 的 `pkg/canary/` + `RolloutController`,加上 console 的灰度监控面板
-4. **M4 · 多集群规模化**:Helm Chart 一键接入、Agent 版本兼容性检查、集群离线告警
+4. **M4 · 多集群规模化**：Helm Chart 一键接入、Agent 版本兼容性检查、集群离线告警
+
+---
+
+## 附：⬜ 项状态复核（2026-09-24，source-grounded）
+
+> 本文写于实现早期，多处 ⬜ 已被后续 Epic（B-11 / C-05~C-13 / Epic E）消化。此处逐条以**实际代码**复核，取代正文过时标记（正文保留供追溯）。
+
+### hub
+| 行 | 原 ⬜ 项 | 实际状态 |
+|---|---|---|
+| 19 | 邀请用户加入组织并分配初始角色 | ⛔ **设计裁定不实现**：hub **无用户表**（D3 已删 `users`），主体 = token `sub`；"邀请 + 初始角色"由 Keycloak 侧（realm/组）承担，"JIT 用户 `OrgID` 空"随该表删除而消解 |
+| 24 | 删除组件前提醒"是否还有运行中发布" | ✅ 已落地：`ComponentService.Delete` 活跃运行计数 → `409 + {reasons}`（2026-09-24 修 handler 曾误报 500） |
+| 28 | 生产环境强制审批 | ✅ 已落地（B-11）：`run/service/production_guard.go`，**fail-closed** `409 ERR.08409005` |
+| 34 | 删除配置前旧值写入审计 | ✅ 已落地：`ComponentConfigService.Delete` 写 `component_config_history`（`OldValue`，secret 打码） |
+| 39 | 集群离线超时告警 | 🟡 埋点已接入（runner/hub `/metrics`，2026-09-24）；**告警规则属运维环境项** |
+| 45 | 对比两个版本差异 | ✅ 已落地（C-09）：`GET /pipelines/:id/versions/:v/diff?against=` |
+| 50 | 实时看到任务日志流 | ✅ 已落地（B-02，`pkg/logstream`） |
+| 51 | 取消正在运行的流水线 | ⬜ **真缺口（登记）**：hub 无 run cancel 端点；runner 有 `PipelineRunCancelled` 相位但**无 hub→runner cancel 消息**。按 §16.5 wire-format 纪律需单独立项（新增协议消息），本轮不擅自加消息 |
+| 55 | 审批超时自动失败 | ✅ 已落地（B-11，正文已注） |
+| 62 | 产物保留策略/过期自动清理 | 🟡 部分：`expires_at` + 保留期 GC + 孤儿对账已落地；**自动删除刻意不做**（对账只报告） |
+| 73 | 新用户"待激活/待分配组织"引导 | ⛔ **设计裁定**：hub 无用户表；引导属 console/Keycloak 侧，非 hub 域 |
+| 19(hub E6) | （版本对比）见 45 | — |
+
+### runner
+| 行 | 原 ⬜ 项 | 实际状态 |
+|---|---|---|
+| 85 | 失败节点"从失败处重试" | ✅ 已落地（C-07）：`internal/dispatch/rerun_handler.go` + `MessageRerunTask` |
+| 90 | 任务日志实时流式回传 | ✅ 已落地（B-02） |
+| 93/94/95 | 灰度步进 / 健康回滚 / 手动暂停·回滚 | ✅ 已落地：`pkg/canary/engine.go` + `rollout_controller.go`（`resolveTotalReplicas` 读真实副本） |
+| 100 | 重连后对账在途任务 | ✅ 已落地（C-05）：`OnConnect` + `ResyncAll` |
+| 103 | Helm Chart 一键部署 Agent | 🟡 部分：runner chart 已可 `helm install`；"一键"引导编排属 `§9.9` 特性 |
+| 104 | Agent 升级版本兼容性检查 | ⬜ **登记**：前置 = 版本矩阵（已落）+ `agent_version` 上报 + per-target 身份（`§9.9`） |
+
+### console
+| 行 | 原 ⬜ 项 | 实际状态 |
+|---|---|---|
+| 112 | token 快过期静默刷新 | ⬜ **登记**：现依赖 Keycloak SSO 会话；静默刷新未做 |
+| 115/116 | 服务树层级导航 / 搜索定位 | ✅ 已落地：`ServiceTreeView`（懒加载）+ ⌘K `CommandPalette`（C-01） |
+| 119/120 | 组件详情五 Tab / 敏感配置打码 | ✅ 已落地（组件详情 Tab 集 + 配置打码） |
+| 123 | 拖拽式编排 | 🟡 列表式编排已落地；**拖拽式 = 刻意不做**（§4.2，`DependsOn` 需求明确后评估 vue-flow） |
+| 124/125 | Build/Release 配置项 / 版本号变化+历史版本 | ✅ 已落地（C-12 配置派生表单 / C-09 `PipelineVersionPanel`） |
+| 128/129/130 | DAG 实时状态 / 节点实时日志 / 运行页审批 | ✅ 已落地：`RunMonitorView`（DAG + 日志面板 + Approval 节点） |
+| 133 | 灰度权重·健康·暂停/回滚监控 | ✅ 已落地：`ReleaseDetailView` 金丝雀步骤器（10/50/100）+ 控制（暂停/晋升/回滚） |
+| 136 | 产物按版本浏览/下载 | ✅ 已落地：`ArtifactsTab` + `artifactApi.getDownloadUrl`（签名下载） |
+| 139 | 权限页搜索用户+分配角色 | ✅ 已落地：`PermissionsTab` + 平台管理（`PlatformAdminView`） |
+
+> **复核净结论**：除「取消运行」「Agent 版本兼容性检查」「token 静默刷新」「集群离线告警规则」四项**已登记**外，正文 ⬜ 均已由后续 Epic 落地；两项（hub 邀请用户 / 新用户引导）为**设计裁定不实现**（hub 无用户表）。

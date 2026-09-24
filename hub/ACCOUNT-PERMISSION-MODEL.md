@@ -326,10 +326,10 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 | `platform_roles` / `platform_role_bindings` | DATA-MODEL §7.7 | 需加 `expires_at` |
 | `component_roles` / `component_role_bindings` | DATA-MODEL §7.7 | 需加 `expires_at`；`user` 主体改为 `sub` |
 | `pipeline_approvals` | DATA-MODEL §7.4 | 流水线审批（**与 §7 权限申请是两件事**，勿混） |
-| `resource_ownership` | **本文件 §3**（DDL 待补） | 新增 |
-| 角色 → 接口映射表 | **本文件 §5.1③**（DDL 待补） | 新增 |
-| `audit_log` | **本文件 §6**（DDL 待补） | 新增 |
-| `permission_request` | **本文件 §7.2**（DDL 待补） | 新增 |
+| `resource_ownership` | **本文件 §3** | ✅ **已落地** —— `internal/permission/{models,repository,service,handler}/resource_ownership*.go` + 中间件 `RequireResourceOwnership` |
+| 角色 → 接口映射表 | **本文件 §5.1③** | ✅ **已落地** —— `internal/permission/handler/role_api_mapping.go`（`RoleAPIMappingHandler`） |
+| `audit_log` | **本文件 §6** | ✅ **已落地** —— 由 `middleware.AuditMiddleware` 唯一写入（`internal/middleware/audit*.go` + `audit_test.go`） |
+| `permission_request` | **本文件 §7.2** | ✅ **已落地** —— `internal/permission/{models,repository,service,handler}/permission_request*.go` + `PermissionRequestHandler` |
 | realm（账户 / 客户端 / 角色 / 组 / Organizations） | [hub/KEYCLOAK.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/KEYCLOAK.md) | Keycloak 侧 |
 
 ---
@@ -404,7 +404,7 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 | --- | --- |
 | [hub/KEYCLOAK.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/KEYCLOAK.md) | 上游：认证子系统部署、realm 预置、账号改密 |
 | [hub/DATA-MODEL.md §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) | 下位：两层 RBAC 与审批表的字段级 DDL |
-| [hub/API-REFERENCE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/API-REFERENCE.md) | 端点权威清单（`/api/userinfo` 待补入） |
+| [hub/API-REFERENCE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/API-REFERENCE.md) | 端点权威清单（`/api/userinfo` ✅ **已补入** —— `GET /userinfo`，`internal/permission/handler/userinfo.go`，`cmd/hub/main.go` 注册于裸 `api`） |
 | [hub/STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md) | C-10（平台级 RBAC 端点缺失） |
 | [console/CONSOLE-UI-DESIGN.md §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) | 前端权限与审批 UX |
 | [runner/STORY-runner-implementation.md §4.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md) | 下游：runner 侧 k8s RBAC 授权边界 |

@@ -135,3 +135,55 @@
 
 - **§2（代码未完成清单）整体需要重判**：U-3/U-5/U-7/U-8 经代码核对**均为已完成**（审计时的「未做」结论已过时）；U-6 的 hub 缺口已补齐；真正「未做」的只剩 U-1（环境门禁）、U-4/U-2（设计裁定）。
 - 最高优先项 T-D0 已落地；其余 T-D1~D3 已在代码侧核对修正。
+
+---
+
+## 6. 第二轮全量复核：文档闭环 + 残留代码缺口（2026-09-24）
+
+> 触发：「继续全量补齐开发，不确定的使用双向钢人论证，直到把未补齐的任务都开发完；已完成的把相关文档闭环上，不重复开发验证」。
+> 方法：全库 Grep `⬜ / 待补 / 待实现 / 未做 / TODO`，并单独扫三仓**代码侧** `TODO/FIXME`。**结论：绝大多数文档标记已过时（对应实现早已落地），真代码缺口仅 2 处，均已修复；本轮不重跑已验证项。**
+
+### 6.1 本轮实做代码（2 项，gate 全绿）
+
+| 项 | 内容 | 证据 |
+| --- | --- | --- |
+| **C-04** | 删除死代码 `PipelineRunHandler.RegisterRoutes` | 该方法从未被调用（run 路由实际在 `cmd/hub/main.go:518-532` 逐个注册并加权限包装），且只覆盖旧路由子集 |
+| **org 删除平台级守卫** | `internal/org/handler/org.go` 拆路由：读/建/改挂裸 `api`，`DELETE /orgs/:id` 挂 `RegisterAdminRoutes`（→ `main.go` 的 `platformGroup`，`RequirePlatformPermission(user:manage)`）；新增 `internal/org/handler/org_routes_test.go` | 消解 `internal/org/service/org.go:116` 的 TODO。此前 org 全 CRUD 挂裸 `api`，开鉴权后任何登录用户可删组织 |
+
+gate：hub `go build ./...` + `go vet ./...` + `go test ./...` + `gofmt -l` 全绿（新增路由分离断言通过）。
+
+**双向钢人（org 守卫）**
+- FOR：真权限缺口（裸 `api` 下任何登录用户可删组织）+ 代码库既有 `platformGroup` / `RegisterAdminRoutes` 先例 + 代码内显式 TODO。
+- AGAINST：`common.RegisterCRUD` 一次注册五方法，只守 DELETE 需改为显式路由（改动面扩大）；动作选型不得臆造。
+- 裁定：**落地**。显式注册 + 只把 DELETE 收进平台组；沿用既有 `user:manage`（不新造动作）；dev（`auth==nil`）保持裸挂，行为不变；用独立测试钉住「删除不在裸读组」。
+
+### 6.2 本轮文档闭环（把过时标记按实际代码刷新）
+
+| 文档 | 刷新点 |
+| --- | --- |
+| `hub/STORY-BACKLOG.md` | §1 B-01/02/04/05/06/07/08/09/10；§3 汇总；§4 C-03/04/05/06/08/11/13 |
+| `plans/UNIMPLEMENTED-MODULES-PLAN.md` | §15.5 gofmt 漂移清零；新增 §17 全量复核收口 |
+| `hub/DATA-MODEL.md` | §6.3 stage-progress、§6.4 Serial、§7 平台端点、§7.4 遗留、§9.10 package-versions |
+| `hub/API-REFERENCE.md` | 「待补端点」表头改「均已落地」；运行端点清单补 stage-progress |
+| `hub/DELETE-CONTRACT.md` | §6.1 现状盘点四行 TODO + §6.1 结论 + §6.5 快照组装 |
+| `hub/ACCOUNT-PERMISSION-MODEL.md` | §9 四张表 DDL「待补」→ 已落地；§11 `/api/userinfo` 已补入 |
+| `hub/user-stories.md` | 新增「⬜ 项状态复核（2026-09-24）」附节 |
+| `hub/STORY-hub-implementation.md` | §5 DoD 单测/监控 + §6 Console DAG/灰度已落地 |
+| `runner/STORY-runner-implementation.md` | B-07 已执行；监控埋点已接入 |
+| `console/CONSOLE-UI-DESIGN.md` | §4.2 版本历史/回滚；Serial 调度；§7.12 连接测试/凭据库/parse-kubeconfig/enroll-token；§1433 releases 筛选 |
+| `plans/E2E-VERIFY-PLAN.md` | 状态「计划（未执行）」→「已执行（2026-09-24）」 |
+
+### 6.3 仍开放项（已登记，非静默缺口）
+
+| 项 | 性质 | 处置 |
+| --- | --- | --- |
+| 取消运行中流水线 | **真缺口** | hub 无 run cancel 端点；runner 有 `PipelineRunCancelled` 相位但无 hub→runner cancel 消息。按 §16.5 wire-format 纪律单独立项（不擅自加协议消息） |
+| install/upgrade 执行器 | 设计裁定 | 留守 queued（§9.9 引导特性；§16.5 裁定） |
+| Casbin（B-19） | 条件触发 | 无 `resource:action` 无法表达的策略前不引入 |
+| Agent 版本兼容性检查 / per-target 身份 | 登记 | 前置 = `agent_version` 上报（§9.10） |
+| 集群离线告警规则 / 降级开关验证 | 运维环境项 | 埋点已接入；规则与验证属部署环境 |
+| console token 静默刷新 | 登记 | 现依赖 Keycloak SSO 会话 |
+| 通知中心（顶栏铃铛） | 登记 | 需后端通知端点 |
+| DAG 自由画布 | 刻意不做 | `CONSOLE-UI-DESIGN` §4.2 结论 |
+| 域内级联软删（org→service→制品/对象） | 部分 | service→component 已落并真集群验证；更上层以 `DELETE-CONTRACT` §6.4 为准 |
+| V1 `roles` / `approvals` 表 | 裁定保留 | 有活引用 + DROP 不可逆，真删需用户显式确认 |

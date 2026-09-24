@@ -50,7 +50,9 @@
 - **runner 的安装 / 升级是 ① 能力层动作**（2026-09-21 二次裁定）：**逻辑全部落在 hub**，console 只调用 API；runner 是接入侧代理组件、**不属"平台自身"**，故不触发 §5.4 的自升级禁令。目标版本取自**版本矩阵 CM**（`DATA-MODEL.md` §9.9 / §9.10）。
 - ⚠️ **本表只覆盖 `agent` 通道的目标（2026-09-21 裁决）**：`kubeconfig` 直连的集群与 `ssh` 直连的非容器主机**不落 `targets`**，需扩表承载（`DATA-MODEL.md` §9.7）。因此"平台能纳管的目标 = `GET /targets` 的结果"这一推论**已不成立**。
 
-**待补端点（尚未实现，仅登记形状；通道归属见 `DATA-MODEL.md` §9.5）**
+**凭据 / 直连 / 接入编排端点（✅ 均已在 hub 落地，通道归属见 `DATA-MODEL.md` §9.5）**
+
+> 下表原为「待补端点（尚未实现）」，2026-09-23 逐项按实际代码审计后**已全部收口**——「状态」列即逐项证据。曾误记为「未实现」的 `parse-kubeconfig`、`/targets` CRUD、`/environments/:id/test` 实为**既有实现**（文档 stale）；`package-versions`、`stage-progress`、`exec` 为本轮新开发。`install`/`upgrade` 的 **runner 侧执行器**属 §9.9 接入引导特性，经钢人裁定**留守 queued**（§16.5）。
 
 | 端点 | 用途 | 通道 | 状态 |
 | --- | --- | --- | --- |
@@ -170,7 +172,7 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 
 ### 运行 / 审批 / 回滚
 - `POST /pipelines/:id/runs`（触发）· `GET /pipelines/:id/runs`
-- `GET /runs` · `GET /runs/:id` · `GET /runs/:id/tasks` · `GET /runs/:id/progress` · `GET /runs/:id/log` · `GET /runs/:id/tasks/:name/log`
+- `GET /runs` · `GET /runs/:id` · `GET /runs/:id/tasks` · `GET /runs/:id/progress` · `GET /runs/:id/stage-progress` · `GET /runs/:id/log` · `GET /runs/:id/tasks/:name/log`
 - `POST /runs/:id/redispatch` · `POST /runs/:id/tasks/:name/rollout`
 - `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision`（审批）
 
