@@ -870,6 +870,8 @@ Dashboard「待办」区三段，每段一个 CTA（深链形态与 §7.6 的视
 - **主题切换**：即时生效、记住选择（`localStorage`）；首次访问跟随系统 `prefers-color-scheme`。
 - 触发运行：对话框校验目标必选；提交后跳运行监控或运行中心。
 - 重新投递：运行失败/卡住时按钮（`redispatch`），需确认避免重复派发。
+- 取消运行：**非终态**（`Pending`/`Running`/`WaitingApproval`）才显示按钮；**两段式内联确认**（刻意不用 `window.confirm`——内嵌预览下不可靠），终态由后端 `409` 兜底。相位判定在 `utils/run.ts` `isRunCancellable`，由 `scripts/run-control-smoke.mjs` 冒烟钉住。
+- 单任务重跑：任务 `Failed`/`Skipped` 时在任务详情显示「重跑任务（含下游）」（`POST /runs/:id/tasks/:name/rerun`）；重跑会把 `Failed` 的运行拉回 `Running`（否则对终态短路的 reconciler 不会重新调度）。
 - 审批：批准/拒绝均需填意见；拒绝后运行终止并标记（见 §7.9）。
 - 参数管理删除：后端曾有 501（G3 已修），前端保留容错 toast。
 - 阶段/任务重排：阶段可前后移动（重排 `sequence`）、子任务可上下移动（重排 `displayOrder`），拖动/点击后即更新预览，不即时落库。

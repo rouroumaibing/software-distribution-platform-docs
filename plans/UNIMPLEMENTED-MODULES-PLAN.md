@@ -927,7 +927,7 @@ Epic C 后端已收口到「可逆边界」。剩余：① ~~**D3 删 `users` �
 
 | 项 | 性质 | 处置 |
 | --- | --- | --- |
-| 取消运行中流水线 | **真缺口** | hub 无 cancel 端点；runner 有 `PipelineRunCancelled` 相位但无 hub→runner 消息 → 按 §16.5 wire-format 纪律单独立项 |
+| ~~取消运行中流水线~~ | ✅ **已收口（2026-09-24）** | 新增 `cancel_pipeline_run` 协议消息 + runner `CancelHandler`（打注解）→ `PipelineRunReconciler` 落 `Cancelled`、清在途 TaskRun；hub `CancelRun` + `POST /runs/:id/cancel`；console 已接按钮。**真集群 E2E 通过**。详见 §18 |
 | install/upgrade 执行器 | 设计裁定 | 留守 queued（§9.9 / §16.5） |
 | Casbin | 条件触发 | 无 `resource:action` 无法表达的策略前不引入（B-19） |
 | Agent 版本兼容性检查 / per-target 身份 | 登记 | 前置 = `agent_version` 上报（§9.10） |
@@ -936,5 +936,39 @@ Epic C 后端已收口到「可逆边界」。剩余：① ~~**D3 删 `users` �
 | DAG 自由画布 | 刻意不做 | `CONSOLE-UI-DESIGN` §4.2 |
 | 域内级联软删（org→service→制品/对象） | 部分 | service→component 已落并真集群验证；上层以 `DELETE-CONTRACT` §6.4 为准 |
 | V1 `roles` / `approvals` 表 | 裁定保留 | 有活引用 + DROP 不可逆，真删需用户显式确认 |
+
+---
+
+## 18. 第三轮：取消运行 / 单任务重跑收口（2026-09-24）
+
+> 触发：「继续全量补齐开发、验证……直到把未补齐的任务都开发完」。§17.3 唯一真缺口 = **取消运行中流水线**；深入核对时另发现 **C-07 单任务重跑的 hub 半边从未落地**（§17.2 曾把 C-07 整体标为「已落地」——当时只核了 runner 侧）。
+
+### 18.1 取消运行中流水线（新增，全链路）
+
+| 层 | 产物 |
+| --- | --- |
+| 协议（runner `api/v1alpha1`） | `MessageCancelPipelineRun = "cancel_pipeline_run"`、`CancelPipelineRunPayload`（`pipelineRunName` / `namespace` / `operator`） |
+| runner 派发 | `internal/dispatch/cancel_handler.go`：**只给 PipelineRun 打注解** `sdp.io/cancel-requested`（不直接写 status） |
+| runner 调和 | `internal/controller/pipelinerun_cancel.go` `applyCancelIfRequested`：落 `phase=Cancelled`、删在途 TaskRun（Job 随属主 GC 级联）、把未完成任务在汇总里标终态；**已终态（含 `Succeeded`/`Failed`）不被覆盖** |
+| hub | `gateway.CancelPipelineRun` + `PipelineRunService.CancelRun`（非终态校验，终态 → `409` `ERR.09409001`）+ `POST /runs/:id/cancel` |
+| console | `runApi.cancel`；`RunMonitorView` 非终态显示「取消运行」（两段式内联确认）；相位判定 `utils/run.ts::isRunCancellable`，由 `scripts/run-control-smoke.mjs` 冒烟钉住 |
+
+**关键设计（注解而非直写 status）**：reconciler 是 PipelineRun status 的**唯一 writer**。若 handler 直接写 status，会与 reconcile 读到的陈旧副本竞态——把 `Cancelled` 覆盖回 `Running`。故 handler 只打注解，终态由 reconciler 在同一条写路径落。
+
+### 18.2 单任务重跑（C-07）：hub 半边补齐 + 真缺陷修复
+
+- **补的 hub 半边**：`gateway.RerunTask` + `PipelineRunService.RerunTask`（校验任务名确属该 run）+ `POST /runs/:id/tasks/:name/rerun`；console `runApi.rerunTask` + 失败/跳过任务的「重跑任务（含下游）」按钮。
+- **E2E 揪出的真缺陷（已修）**：原 runner `RerunHandler` 只把目标 TaskRun 复位，而 `PipelineRunReconciler` 对**终态相位短路**（`Succeeded`/`Failed`/`Cancelled` 直接 return）⇒ 在 `Failed` 运行下重跑**静默无效**。修复：重跑时把 `Failed` 的运行拉回 `Running`（`Cancelled` 不复活），下游 TaskRun 由 DAG 重建。
+
+### 18.3 验证（真集群 kind，`SKIP_AUTH=1`）
+
+| 场景 | 结果 |
+| --- | --- |
+| 取消（`Running`） | `POST /runs/:id/cancel` → 200 → 轮询至 `phase=Cancelled`；在途任务终止；重复取消 → `409` |
+| 重跑（`Failed`） | `POST /runs/:id/tasks/:name/rerun` → **`Failed → Running`**（40×1s 定向轮询捕获跃迁）；下游任务删除重建 |
+| 回归 | 标准 `e2e-smoke.sh` `PASS=15 FAIL=0`，run 到 `Succeeded` |
+| 门禁 | hub/runner：`go build` + `go vet` + `go test` + `gofmt -l` 全绿；console：`vue-tsc` + `vite build` + 7 套冒烟全绿 |
+
+> 复现脚本：`plans/e2e-cancel-rerun.sh`（定向驱动 cancel/rerun 两个端点）。
 
 

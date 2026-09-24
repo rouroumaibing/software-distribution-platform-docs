@@ -177,7 +177,8 @@ gate：hub `go build ./...` + `go vet ./...` + `go test ./...` + `gofmt -l` 全�
 
 | 项 | 性质 | 处置 |
 | --- | --- | --- |
-| 取消运行中流水线 | **真缺口** | hub 无 run cancel 端点；runner 有 `PipelineRunCancelled` 相位但无 hub→runner cancel 消息。按 §16.5 wire-format 纪律单独立项（不擅自加协议消息） |
+| ~~取消运行中流水线~~ | ✅ **已收口（2026-09-24 第三轮）** | 新增 `MessageCancelPipelineRun` + runner `dispatch.CancelHandler`（打 `sdp.io/cancel-requested` 注解）→ `PipelineRunReconciler` 落 `Cancelled`、清在途 TaskRun；hub `gateway.CancelPipelineRun` + `PipelineRunService.CancelRun` + `POST /runs/:id/cancel`；console 非终态「取消运行」按钮。**真集群 E2E 通过**（见 §7） |
+| ~~C-07 单任务重跑（hub 半边）~~ | ✅ **已收口（2026-09-24 第三轮）** | §6.2 曾误标「已完成」（只核了 runner 侧）；本轮补 hub `gateway.RerunTask` + `PipelineRunService.RerunTask` + `POST /runs/:id/tasks/:name/rerun`，并修 E2E 揪出的 revive 缺陷（见 §7） |
 | install/upgrade 执行器 | 设计裁定 | 留守 queued（§9.9 引导特性；§16.5 裁定） |
 | Casbin（B-19） | 条件触发 | 无 `resource:action` 无法表达的策略前不引入 |
 | Agent 版本兼容性检查 / per-target 身份 | 登记 | 前置 = `agent_version` 上报（§9.10） |
@@ -187,3 +188,40 @@ gate：hub `go build ./...` + `go vet ./...` + `go test ./...` + `gofmt -l` 全�
 | DAG 自由画布 | 刻意不做 | `CONSOLE-UI-DESIGN` §4.2 结论 |
 | 域内级联软删（org→service→制品/对象） | 部分 | service→component 已落并真集群验证；更上层以 `DELETE-CONTRACT` §6.4 为准 |
 | V1 `roles` / `approvals` 表 | 裁定保留 | 有活引用 + DROP 不可逆，真删需用户显式确认 |
+
+---
+
+## 7. 第三轮：取消运行 / 单任务重跑收口（2026-09-24）
+
+> 触发：「继续全量补齐开发、验证……直到把未补齐的任务都开发完，完成后把相关文档闭环」。
+> §6.3 登记的唯一真缺口 = **取消运行中流水线**；深入核对时另发现 **C-07 单任务重跑的 hub 半边从未落地**（§6.2 曾把 C-07 整体标为「已完成」——当时只核了 runner 侧）。
+
+### 7.1 本轮实做（2 项，gate 全绿）
+
+| 项 | 内容 | 证据 |
+| --- | --- | --- |
+| **取消运行** | `MessageCancelPipelineRun` 协议 + `CancelPipelineRunPayload`（runner `api/v1alpha1`）；runner `dispatch.CancelHandler`（仅打 `sdp.io/cancel-requested` 注解）+ `PipelineRunReconciler.applyCancelIfRequested`（落 `Cancelled`、清在途 TaskRun、未完成任务标终态）；hub `gateway.CancelPipelineRun` + `PipelineRunService.CancelRun`（终态 `409` `ERR.09409001`）+ `POST /runs/:id/cancel`；console 非终态「取消运行」按钮 | hub/runner `build`+`vet`+`test`+`gofmt` 全绿；console `vue-tsc`+`vite`+7 套冒烟全绿 |
+| **C-07 hub 半边** | `gateway.RerunTask` + `PipelineRunService.RerunTask` + `POST /runs/:id/tasks/:name/rerun`；console `runApi.rerunTask` + 任务级「重跑任务（含下游）」 | 同上 |
+
+**关键设计裁定（注解而非直写 status）**：reconciler 是 PipelineRun status 的**唯一 writer**；handler 直写会与 reconcile 的陈旧副本竞态，把 `Cancelled` 覆盖回 `Running`。故 handler 只打注解，终态由 reconciler 在同一条写路径落。
+
+**E2E 揪出的真缺陷（已修）**：runner `RerunHandler` 原先只复位 TaskRun，而 reconciler 对终态相位短路 ⇒ `Failed` 运行下重跑**静默无效**。修复为「重跑把 `Failed` 拉回 `Running`」（`Cancelled` 不复活）。
+
+### 7.2 真集群验证（kind，`SKIP_AUTH=1`）
+
+| 场景 | 结果 |
+| --- | --- |
+| 取消（`Running`） | 200 → 轮询至 `Cancelled`；在途任务终止；重复取消 → `409` |
+| 重跑（`Failed`） | **`Failed → Running`**（40×1s 定向轮询捕获跃迁）；下游 TaskRun 删除重建（runner 日志 `downstream=N`） |
+| 回归 | 标准 `e2e-smoke.sh` `PASS=15 FAIL=0`，run 到 `Succeeded` |
+
+> 复现脚本：`plans/e2e-cancel-rerun.sh`。
+
+### 7.3 §6.3 开放项变更（本轮）
+
+| 项 | §6.3 原判 | 现态 |
+| --- | --- | --- |
+| 取消运行中流水线 | 真缺口 | ✅ 已收口（本轮） |
+| C-07 单任务重跑 | （§6.2 误标已完成） | ✅ 两端齐（本轮补 hub 半边 + 修 revive 缺陷） |
+
+其余开放项（install/upgrade 执行器、Casbin、Agent 版本兼容性检查、集群离线告警、console token 静默刷新、通知中心、DAG 自由画布、V1 `roles`/`approvals` 表）维持 §6.3 处置不变——均为**设计裁定 / 条件触发 / 运维环境项**，非静默缺口。

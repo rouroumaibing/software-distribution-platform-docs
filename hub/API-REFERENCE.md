@@ -174,6 +174,8 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 - `POST /pipelines/:id/runs`（触发）· `GET /pipelines/:id/runs`
 - `GET /runs` · `GET /runs/:id` · `GET /runs/:id/tasks` · `GET /runs/:id/progress` · `GET /runs/:id/stage-progress` · `GET /runs/:id/log` · `GET /runs/:id/tasks/:name/log`
 - `POST /runs/:id/redispatch` · `POST /runs/:id/tasks/:name/rollout`
+- `POST /runs/:id/cancel`（**取消运行**：Runner 把 PipelineRun 置 `Cancelled` 并清掉在途 TaskRun；仅 `Pending`/`Running`/`WaitingApproval` 可取消，终态 → `409` + `{reasons}` `ERR.09409001`）
+- `POST /runs/:id/tasks/:name/rerun`（**单任务重跑**：只重跑该任务及其下游，不重投整个 run。**会把 `Failed` 的运行拉回 `Running`** —— 否则 reconciler 对终态短路，重跑静默无效；`Cancelled` 的运行不会复活）
 - `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision`（审批）
 
 **触发期策略校验（B-11，均在 `buildSpec` 之后、创建 Run 之前）**

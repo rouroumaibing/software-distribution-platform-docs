@@ -165,7 +165,7 @@
 | 39 | 集群离线超时告警 | 🟡 埋点已接入（runner/hub `/metrics`，2026-09-24）；**告警规则属运维环境项** |
 | 45 | 对比两个版本差异 | ✅ 已落地（C-09）：`GET /pipelines/:id/versions/:v/diff?against=` |
 | 50 | 实时看到任务日志流 | ✅ 已落地（B-02，`pkg/logstream`） |
-| 51 | 取消正在运行的流水线 | ⬜ **真缺口（登记）**：hub 无 run cancel 端点；runner 有 `PipelineRunCancelled` 相位但**无 hub→runner cancel 消息**。按 §16.5 wire-format 纪律需单独立项（新增协议消息），本轮不擅自加消息 |
+| 51 | 取消正在运行的流水线 | ✅ **已落地（2026-09-24）**：新增 `MessageCancelPipelineRun` + `CancelPipelineRunPayload`（runner `api/v1alpha1`）+ runner `dispatch.CancelHandler`（只打 `sdp.io/cancel-requested` 注解）+ `PipelineRunReconciler.applyCancelIfRequested`（落 `Cancelled`、清在途 TaskRun、并把未完成任务在汇总里标终态）；hub `gateway.CancelPipelineRun` + `PipelineRunService.CancelRun` + `POST /runs/:id/cancel`（终态 → `409`）。**注解而非直接写 status** 是刻意的：reconciler 保持唯一 status writer，避免与 reconcile 竞态（否则陈旧副本会把 `Cancelled` 覆盖回 `Running`）。console 非终态显示「取消运行」（两段式内联确认）。**真集群 E2E**：Running → 200 → `Cancelled`，在途任务终止、重复取消 409 |
 | 55 | 审批超时自动失败 | ✅ 已落地（B-11，正文已注） |
 | 62 | 产物保留策略/过期自动清理 | 🟡 部分：`expires_at` + 保留期 GC + 孤儿对账已落地；**自动删除刻意不做**（对账只报告） |
 | 73 | 新用户"待激活/待分配组织"引导 | ⛔ **设计裁定**：hub 无用户表；引导属 console/Keycloak 侧，非 hub 域 |
