@@ -94,7 +94,7 @@
 
 ## 5. 收口复核结论（T-U* 续做 · 2026-09-23 续）
 
-> 本轮在「代码是权威源」原则下，对 §3 的 T-U* 逐项重新核对并补齐/裁定。结论：**多数任务已被代码实际完成（审计时判为「未做」属误判），唯一真缺口是 hub /metrics 已补齐；install/upgrade 执行器与 Casbin 为设计裁定不开发；E2E 为环境门禁未做。**
+> 本轮在「代码是权威源」原则下，对 §3 的 T-U* 逐项重新核对并补齐/裁定。结论：**多数任务已被代码实际完成（审计时判为「未做」属误判）；hub /metrics 缺口已补齐；install/upgrade 执行器与 Casbin 为设计裁定不开发；E2E（T-U1）已于 2026-09-24 本机 kind 实跑通过，并借此揪出 3 个真 bug（见 §5.2）。**
 
 ### 5.1 任务状态总表
 
@@ -109,14 +109,27 @@
 | T-U6 | 监控告警 metrics 接入 | ✅ **hub 缺口已补齐** | runner：`pkg/metrics` 已注册，经 controller-runtime 内置 metrics server 暴露 `/metrics`；**hub 此前无 /metrics** → 新增 `internal/metrics`（零依赖 Prometheus 文本导出：`GinMiddleware` 计数 + `GET /metrics` 路由，`main.go` 已挂载）；build/vet/test 全绿 |
 | T-U4 | install/upgrade 执行器（§9.9） | ⛔ **设计裁定不开发** | hub `POST /targets/:id/install|upgrade` 仅落 `agent_ops` 台账并**留守 queued**（`target.go:69,81`：「execution is the Runner's job (§9.9)」）；执行器依赖 enroll-token 凭据流转 + runner 自升级 SA 两项产品级前置未决；且与 E2E 计划 P6「平台自身升级永远在平台之外」裁定一致 → 不反向写 hub 表 |
 | T-U2 | B-19 Casbin 条件触发 | ⛔ **条件触发，无代码** | `go.mod` 无 casbin；`ACCOUNT-PERMISSION-MODEL §5.2` 划界：仅当首条无法用 `resource:action` 表达的策略出现才引入。当前全策略可表达 → 不引入 |
-| T-U1 | B-07 端到端验证（kind） | ⛔ **环境门禁，非代码缺口** | E2E 计划 §3 明确：P0 编排脚本 `hub/deploy/{p0-up.sh,...}` 已于 **2026-09-15 删除且「不随任何仓库分发」**，全量 kind+helm 联调由维护者本机临时脚本完成；本机 `kind` 未安装（docker 可用）。三仓 `go build/vet/test` + console `vue-tsc/build/冒烟` 已全部绿，代码侧验收通过；运行侧验收待环境就绪 |
+| T-U1 | B-07 端到端验证（kind） | ✅ **已执行（2026-09-24 本机 docker + kind 实跑）** | 全栈部署绿、E2E `PASS=15 FAIL=0`、run `Running→Succeeded`；执行中揪出并修复 **3 个真 bug**（deploy 脚本空数组 / runner RBAC 缺 ingresses / component 删除 500）。详见 §5.2 |
 
-### 5.2 T-U1 解除阻塞步骤（留给环境就绪时执行）
+### 5.2 T-U1 执行记录（2026-09-24 · 本机 docker + kind 实跑）
 
-1. `brew install kind` 安装 kind（本机 docker 已具备）。
-2. 按 `E2E-VERIFY-PLAN.md` §1.2/§3 重建 P0：本地 `registry:2` + kind 集群（containerd 回环 patch）+ postgres:16 + CRD apply + hub/runner 部署（`GATEWAY_TOKEN` 两端一致）。
-3. 用各仓自带交付：`make package` / `pnpm image` 产出镜像 + chart（`output/*.tar.gz`），load/push 进本地 registry；`make start-dev` / `pnpm start:dev` 起本地服务。
-4. 跑 P0–P5（L2-1~L2-8），尤其 P4 金丝雀回滚真把流量拉回 0%、P5 全链路一次触发跑通。
+**前置**：根脚手架 `deploy-local.sh` 已能全自动起 registry→kind→三镜像→postgres→Envoy Gateway→hub(+keycloak)→runner→console。此前「kind 未安装」判断不成立——`kind` 位于 `~/.workbuddy/binaries/bin/kind`，docker daemon 可用。
+
+**执行中揪出并修复的 3 个真 bug**：
+
+1. **`deploy-local.sh` 空数组未绑定**（脚手架，不入仓）：macOS `/bin/bash` 3.2 + `set -u` 下空数组 `"${AUTH_SETS[@]}"` 抛 `unbound variable`，仅 `SKIP_AUTH=1` 路径触发（auth ON 有 6 元素从不暴露）→ 部署死在中途。修法：`${#AUTH_SETS[@]}` 长度守卫条件追加（注：`"${A[@]:-}"` 在本机 bash 会注入空串参数，不可用）。
+2. **runner RBAC 缺 `networking.k8s.io/ingresses`**（`runner/…/templates/rbac.yaml`）：B-04 金丝雀给 `RolloutReconciler` 加了 `Owns(&networkingv1.Ingress{})`（`rollout_controller.go:464`）但配套 RBAC 未加 → Ingress informer 永不 sync → `manager.WaitForCacheSync` 超时 → **runner 管理器完全起不来、任何 run 都不派发**（表现为各 controller 轮流传出 cache-sync 超时）。修法：补 `ingresses` 的 `get/list/watch/create/update/patch/delete`。
+3. **component 删除返回 500 而非 409**（`hub/internal/component/handler/component.go`）：处理器硬编码 500，覆盖 service 层结构化 `*common.APIError`（活跃 run 拒删=409），破坏 console「先终止 run」UX 且与自身 service 测试（断言 409）矛盾。修法：改 `errors.As(err, &ae)` 透传 `ae.Code`（与 pipeline 删除处理器一致）。
+
+**验证**（`SKIP_AUTH=1`，hub 直连 `:8080`）：
+
+- 全栈 Pod Running、网关握手 OK。
+- `e2e-smoke.sh`（已修 harness 3 处：Trigger 返回**列表** `data[0].id`、`/users` 属预期 404 改信息项、清理段非计数）→ **`RESULT: PASS=15 FAIL=0`**；run 轮询 `Running → Succeeded`（证明 runner 真执行）。
+- 定向守卫：造活跃 run（`sleep 600` 任务）后 `DELETE /components/:id` → **409** + `errorCode=ERR.05409001` + reasons（不再 500）。
+- runner 管理器启动后 5 分钟窗口 **0 次 cache-sync 失败**。
+- 三仓 `go build/vet/test` + console `vue-tsc/build/冒烟` 全绿。
+
+**本机未覆盖（记录为后续）**：金丝雀「精确权重」从 `Rollout.Status.CurrentWeight` 回传（代码注释已标为增强）；P4 真流量回 0% / P5 全链路灰度（需目标集群带真实 workload）。
 
 ### 5.3 一句话修订
 
