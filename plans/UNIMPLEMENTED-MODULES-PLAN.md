@@ -57,7 +57,7 @@
 | **C-10** | 平台级 RBAC HTTP 端点（`/platform-roles`、`/platform-role-bindings`） | ✅ **已落地（2026-09-22）** —— 见 §8 | — |
 | PermissionsTab 功能化 | §7.9 组件级权限 Tab 真正可用（绑定 CRUD） | ✅ **已落地（2026-09-22）** —— 页面骨架 + 绑定 CRUD 均已实现 | — |
 | 平台级权限管理 UI | 「用户与平台权限」页（PlatformAdminView）真正可用：平台角色 CRUD + 平台绑定 CRUD，消费 C-10 端点 | ✅ **已落地（2026-09-22 第七批）** —— 见 §8.5 | — |
-| 账号/权限模型缺口 | §10 对账 15 行（组织 claim 未接 / 无 audit / 无 permission_request / Casbin / `/api/userinfo`） | ✅ **大部分已落地（2026-09-22 第八批，见 §9）**：四张表（`resource_ownership` / `role_api_mappings` / `audit_log` / `permission_requests`）+ 审计中间件 + `/api/userinfo` + 到期回收作业 + platform 路由守卫 + D3 主体 `sub` 语义（**可逆部分**）。**仍未做**：删 `users` 表（D3 唯一不可逆，待确认 scope）、Casbin（D4 已定延后）、realm 侧**组织组** `/org:<slug>`（DB 驱动，须按库中 orgs 逐条建，写不进静态 realm JSON）。**已补（第十一批，见 §12）**：组织 claim 落中间件（`CurrentOrgs`）+ `resource_ownership` 在鉴权链强制生效（`RequireResourceOwnership`）+ realm 侧 RBAC 组 `/sdp-admin` | 部分 |
+| 账号/权限模型缺口 | §10 对账 15 行（组织 claim 未接 / 无 audit / 无 permission_request / Casbin / `/api/userinfo`） | ✅ **已全部落地**：第八批（§9：四表 + 审计 + 审批 + 回收 + D3 可逆部分）、第十一批（§12：组织 claim + 资源归属强制点）、**第十四批（§14：D3 全量执行 —— 删 `users` 表 / `owner_sub` / V1 遗留列）**。**仍不做**：Casbin（D4 已定延后）；**仍未建**：realm 侧**组织组** `/org:<slug>`（DB 驱动，须按库中 orgs 逐条建，写不进静态 realm JSON） | 仅剩 2 项非本仓代码 |
 | **§10 #14（预修）** | `RequirePermission` 把 pipeline/run id 当 component id 查绑定 ⇒ 开鉴权后**恒 403** | ✅ **已修复（2026-09-22）** —— 见 §7 | 无（不依赖 D1–D6） |
 
 ### Epic D — Runner / 执行后端
@@ -94,7 +94,7 @@
    - ⚠️ 原写「+ C-08 DAG 画布」系误列：DAG 自由画布属 §4.2 **刻意不做**，不在执行序内。
 4. ~~**Epic B：R-8 服务树规模化** —— 原本卡在"服务端搜索端点未定"。~~ ✅ **已完成（2026-09-22）**，见 §6。
    - 端点不再等外部拍板：由本轮自行定形并实现（`GET /search` + `GET /orgs/:id/services`），落地后 `CONSOLE-UI-DESIGN.md` 附 A 的 N-8 / N-9 两条后端依赖**同时关闭**。
-5. **Epic C（账号权限）** — ✅ **第一批已落地（2026-09-22）**：**C-10**（平台级端点）+ **`expires_at` ×2**，见 §8。**后端已收口**：批次七（PermissionsTab + 平台权限 UI）、批次八（§9：四表 + 审计 + 审批 + 回收 + D3 可逆部分）、批次十一（§12：组织 claim + 资源归属强制点）。**剩余** = D3 删 `users` 表（唯一不可逆，待确认 scope + 备份）、realm 侧组织组 `/org:<slug>`（DB 驱动）、Casbin（D4，条件触发）。
+5. **Epic C（账号权限）** — ✅ **已全部落地**：第一批（**C-10** + `expires_at` ×2，见 §8）、批次七（PermissionsTab + 平台权限 UI）、批次八（§9：四表 + 审计 + 审批 + 回收 + D3 可逆部分）、批次十一（§12：组织 claim + 资源归属强制点）、**第十四批（§14：D3 全量执行，含唯一不可逆的删 `users` 表）**。**剩余（均非本仓代码）** = 部署侧手工跑 `migrations/0015`、realm 侧组织组 `/org:<slug>`（DB 驱动）、Casbin（D4，条件触发）。
 6. **Epic D / E（Runner / 功能完整性）** — ✅ **Epic D 已完成（2026-09-22）**，见 §10；✅ **Epic E 已完成（2026-09-22 本轮）**，见 §11（**唯一未跑项 = B-07 端到端验证**，需真实/kind 集群）。**下一步 = 有集群后跑 B-07**（`plans/E2E-VERIFY-PLAN.md` + `plans/e2e-smoke.sh`），其余登记项见 §11.4。
 
 ---
@@ -464,16 +464,16 @@ gofmt -l（本轮触碰文件） ✅ clean
 新增测试：ownership `IsAllowed` / share 集 3 例 · `OrgsFromGroups` 6 例 · 审计中间件（写才记 / 只记写 / 状态码 / nil sink 安全）· 审批状态机 6 例（含 grant 失败上抛）· 回收谓词渲染 2 例；既有 rbac / dryrun 测试随签名同步更新。
 
 ### 9.3 如实标注（仍未做）
-- **D3 唯一不可逆项 = 删 `users` 表**：本轮只做**可逆**的 `sub` 主体语义（绑定按 `sub` 匹配），**表未删**。删表前须确认 scope + 备份（memory 约定：不可逆动作先确认）。
+- ~~**D3 唯一不可逆项 = 删 `users` 表**~~ → ✅ **已执行（2026-09-23，见 §14）**：第八批只做了可逆的 `sub` 主体语义；本批在确认 scope + 备份后完成删表（迁移 `0015`）。
 - ~~**`resource_ownership` 未在鉴权链强制生效**~~ → ✅ **已接（2026-09-22 第十一批，见 §12）**：`middleware/RequireResourceOwnership` + `CurrentOrgs`（`/org:<slug>` → `orgs.id`）。仍未建的是 **realm 侧的组织组本身**（DB 驱动，须按库逐条建）。
-- **`component.owner_user` 仍按本地 UUID 做 owner override**：完整切 `sub` 属删表同批（需列类型迁移），本轮保留以不破现有行为。
+- ~~**`component.owner_user` 仍按本地 UUID 做 owner override**~~ → ✅ **已切 `sub`（2026-09-23，见 §14）**：`owner_user` → `owner_sub`（text），owner override 改为与请求 `sub` 直接比对。
 - **Casbin（D4）** 仍延后（已登记 B-19）。
 - **未跑真实库**：`migrations/0012` 与 0011 均需手跑 psql；种子 `/sdp-admin` 组需先在 realm 建立。
 - **审计无保留期 / 归档**：单表 append，长期增长需后续 GC（与 B-16 对账同族）。
 
 ### 下一步（第九批）
 
-Epic C 后端已收口到「可逆边界」。剩余：① **D3 删 `users` 表**（唯一不可逆，需确认 scope + 备份）；② realm 侧 `/org:<slug>` 组 + 组织 claim 落中间件（解 `resource_ownership` 强制点）；③ Casbin（D4，条件触发）。**转向 Epic D / E**：runner 执行后端（Epic D，已见 §10）与流水线版本历史/对比/回滚（C-09）、制品孤儿对账（B-16 对账）。
+Epic C 后端已收口到「可逆边界」。剩余：① ~~**D3 删 `users` 表**~~ → ✅ **已执行（2026-09-23，§14）**；② realm 侧 `/org:<slug>` 组 + 组织 claim 落中间件（解 `resource_ownership` 强制点）；③ Casbin（D4，条件触发）。**转向 Epic D / E**：runner 执行后端（Epic D，已见 §10）与流水线版本历史/对比/回滚（C-09）、制品孤儿对账（B-16 对账）。
 
 ---
 
@@ -644,7 +644,7 @@ Epic C 后端已收口到「可逆边界」。剩余：① **D3 删 `users` 表*
 - ⛔ **realm 侧组织组 `/org:<slug>` 仍未建**：本批只补了 **RBAC 维度**的组 `/sdp-admin`。组织组要**按库里的 orgs 逐条建**（DB 驱动，写不进静态 realm JSON），故仍是待办；在它到位前 `CurrentOrgs` 恒为空 ⇒ 归属门对**已登记归属**的资源一律拒（这是设计意图，不是缺陷）。
 - ⛔ **未跑真实库 / 真实 Keycloak**：`--import-realm` 只对**新建** realm 生效，既有安装需手工建组加人；本批两组新测试均为 DryRun / 纯逻辑，未经真实 Postgres 与真实 token 验证。
 - **`resource_ownership` 的 CRUD 仍只挂在平台级守卫下**（`RequirePlatformPermission`），未按 org 细分。
-- **D3 删 `users` 表** 仍为唯一不可逆待办（见 §9.3）。
+- ~~**D3 删 `users` 表** 仍为唯一不可逆待办（见 §9.3）~~ → ✅ **已执行（2026-09-23，见 §14）**。
 
 ---
 
@@ -686,5 +686,217 @@ Epic C 后端已收口到「可逆边界」。剩余：① **D3 删 `users` 表*
 - **未跑真实库 / 未打真实 HTTP**：全部为脱库单测，`GET /environments/:id/test` 的响应体形状由服务层单测间接保证，未经真实请求验证。
 - **`ListByComponent` 未补测试**（本批聚焦 Delete / Update / Test 三条分支）。
 - **console 侧无改动**：缺陷在 hub 响应体，前端本就是按契约读 `status`/`testedAt`。
-- 既有的 **Artifact GC**、**§6.4 域内级联软删**、**run 触发路径走 pipeline service 校验**、**D3 删 `users` 表** 仍未做（见 §3.1 / §9.3）。
+- 既有的 **Artifact GC**、**§6.4 域内级联软删**、**run 触发路径走 pipeline service 校验** 仍未做（见 §3.1 / §9.3）；~~**D3 删 `users` 表**~~ → ✅ **已执行，见 §14**。
+
+---
+
+## 14. D3 全量执行：删 `users` 表 + 主体语义收口（2026-09-23 第十四批）
+
+> 规格权威：`hub/ACCOUNT-PERMISSION-MODEL.md` §2.2 / §5.3 / §12 D3；执行清单 `plans/ACCOUNT-PERMISSION-DECISIONS.md` §3.5。
+> **这是本仓第一份「删列 + 删表」的变更**（迁移 `0015`），也是 D3 里唯一不可逆的一步 —— 本轮由用户明确拍板执行。
+
+### 14.1 交付清单
+
+| 处 | 落地物 |
+| --- | --- |
+| ➎ `users` 表 + provision + `CurrentUserID` | 删 `permission/{models,repository,service,handler}/user.go`；`UserContext()` 改为**纯解析**（无库、无 `GetOrProvisionByKeycloakID`、去掉 `contextKeyUserID`）；`CurrentUserID` 删除，**原 7 个读取点**（component ×1 / config ×2 / pipeline ×1 / run ×2 / rbac ×1）全部改用 `CurrentSubject`；`db.go` AutoMigrate 去掉 `User` |
+| ① owner | `components.owner_user *uuid.UUID` → **`owner_sub *string`**（存 token `sub`）：`component/handler` 落 owner 改 `CurrentSubject`；`component/service.bindOwner` 直接用 `*OwnerSub`；`BindingService.ownerActions` 的 owner override 改为**字符串相等** |
+| ② V1 遗留列 | `component_role_bindings.user_id` / `role_id` 删列 + V1 解析分支移除；`BindingService` 不再依赖 V1 `roles` 仓储；`bindingRepo.GetByComponentAndUser`（只服务 V1）删除；DryRun 测试改成**反向断言** —— `user_id` 不得再出现在生成的 SQL 里 |
+| ③ approver / operator | approver（审批）、operator（rollout 控制）、`pipeline.CreatedBy` 一律改取 `sub` |
+| 附带（规范没列的同类写入点） | `component_configs.created_by` / `updated_by`、`component_config_history.changed_by`、`component_role_bindings.granted_by` 原本是 `uuid` 且唯一写入源是 `CurrentUserID` —— 一并改为 `*string`（subject），否则删表后这几处**没有值可写** |
+| ④ console | 去掉 `GET /users` / `permissionApi.users`；授权表单改为「**下拉已绑定主体（绑定表派生）+ 手输 `sub` / 组路径**」；`utils/permission.ts` 新增纯函数 `knownSubjects` / `validateSubjectInput` / `subjectInputHint` / `failMsg`；「用户」只读表改为「**已绑定主体**」表 |
+| 迁移 | `migrations/0015_d3_drop_users_and_legacy_columns.sql`：**先**回填（`owner_sub` ← `users.keycloak_id`，作者类列同法）**→** 对映射不到的残留显式置空 + `RAISE WARNING` **→** 再删列删表；整份包在一个事务里；幂等 |
+| 种子 | `cmd/hub/conf/06_permissions.sql` 去掉 `users` 插入，绑定改走 §7（`subject_type`/`subject_id` + `component_role_id`）；`conf/README.md` 同步 |
+
+### 14.2 门禁（全绿）
+
+```
+（hub）go build ./...  ✅    go vet ./...  ✅ clean    go test ./...  ✅ 18 包 ok    gofmt -l  ✅ clean
+（console）pnpm build ✅（vue-tsc + vite）    pnpm test ✅ 16/16 · 25/25 · 63/63 · 22/22 · 21/21
+```
+
+权限侧冒烟从 10 例扩到 **21 例**：新增 `knownSubjects` 去重/排序、`validateSubjectInput`（组必须带前导斜杠 —— §5.3 的真实踩坑点）、`subjectInputHint`（非阻塞提醒）、`failMsg`（409 `reasons` 优先）；并把 `subjectLabel` 的断言从「会补全成 `张三（z@sdp.io）`」改成「**只显示真值，不截断、不补名**」。
+
+### 14.3 双向钢人（本批唯一有争议的取舍）
+
+**① 手输主体会不会把授权闭环打断？**（决策文档「假钢人第 1 条」正是最硬的反驳）
+删表后 hub 说不出「系统里有哪些人」，控制台选不到新人 ⇒ **新主体无法被授权**。
+- **裁定**：取 (b′)，并承认反驳成立**但前提可拆** —— 它成立的前提是「只能从列表里选」。加上**手输 `sub`** 后，管理员从 Keycloak 复制 `sub` 即可授权新人，**不需要对方先登录一次**（而这恰恰是删表堵死的那条路）。
+- 闭环由**输入**补，不靠 Admin API 补 ⇒ 不新增「hub 持有一把 Keycloak 管理凭据」这个新安全面。记为**暂时**而非永远：一旦出现「必须展示全量用户目录」的产品要求，按决策 §3.5 第 3 条重估 (a) 并独立评审。
+
+**② 旧 `owner_user` 回填失败的组件怎么办？** —— 留 NULL 还是阻断迁移？
+- **裁定**：**留 NULL + `RAISE WARNING`**。owner override 只是「绑定被删后的兜底」，而 P3b 在创建组件时已把 owner 绑成 `component-admin`（**那条绑定不受影响**）。为一个兜底字段中断删表不值当；但静默丢弃也不可接受 —— 所以告警必须打出来。
+
+**③ 作者类列要不要一起切？**（规范 D3 只列 5 处，没提这几列）
+- **裁定**：一起切，并**清掉映射不到的残留**。它们是 `uuid`、唯一写入源是 `CurrentUserID`，不切等于删表后在审计里留白。而残留的旧 uuid 是个「看起来像主体、实际解析不到人」的值，留着比清掉更危险 ⇒ 显式置 NULL 并告警。
+
+### 14.4 如实标注（仍未做 / 不在本批范围）
+
+- ⛔ **`migrations/0015` 未在真实库跑过**：本机无 Postgres。SQL 已按「先回填、后删列」的依赖顺序写并加了 `to_regclass` 守卫，但**未经真实执行验证**；部署侧请**先备份再手工 psql**（命令见迁移文件头部）。
+- ⛔ **V1 `roles` 表未删**：`role_id` 列已删（本批范围），但「删 `roles` 表」**不在已确认的 D3 scope 内** ⇒ 属单独一件事。现状：`GET /roles` 仍可读，但**已不可被任何绑定引用**。
+- ⛔ **realm 侧 `/org:<slug>` 组织组未建**（DB 驱动，须按库中 orgs 逐条建）。
+- ⛔ **B-07 端到端验证** 仍不可运行（无集群）。
+- **`owner_sub` 的 owner override 无回归测试**：判定逻辑由 uuid 相等改成字符串相等，但 `BindingService` 的 owner 分支仍未被单测覆盖（**既有缺口**，非本批引入）。
+- **console 的 IA 命名未动**：左栏仍叫「用户与权限」。页面内容已改为「主体 + 已绑定主体」，菜单名保留以免动 IA（`CONSOLE-UI-DESIGN.md` 铁律）。**是否改名（→「主体与权限」）留作独立小决策。**
+- **`component_configs.created_by` / `updated_by` 仍可由请求体直接写入**（handler 把 JSON 绑进 model）：这是 D3 之前就存在的「客户端可自报作者」面，本批只把类型从 `uuid` 放宽为 `string`、**未新增校验也未收紧**，留给后续单独处理。
+
+---
+
+## 15. Epic E 收尾（第十五批）：Artifact 保留期 GC —— 让 `expires_at` 真正生效（2026-09-23）
+
+> 关闭 B-16 最后一个**功能**缺口（`expires_at` 无读取点 + 无 `cleanup_state`）。规格：`hub/DELETE-CONTRACT.md` §6.6-4；契约：`hub/API-REFERENCE.md`（制品段新增 GC 小节）。
+
+### 15.1 交付清单（hub）
+
+| 处 | 落地物 |
+| --- | --- |
+| 模型 | `artifact/models/artifact.go`：新增 `cleanup_state`（`active` \| `pending_deletion`）+ 两个常量 —— 用常量而非字面量，防止 GC 谓词与列表谓词各自悄悄改字 |
+| 仓储 | `artifact/repository/artifact.go`：`liveForComponent`（**列表**谓词，排除 `pending_deletion`）、`expiredQuery`/`FindExpired`（**GC**谓词，**包含** `pending_deletion`）、`MarkCleanupPending` |
+| 服务 | `artifact/service/gc.go`（新）：`ArtifactGC` + 窄接口 `ExpiredArtifactSource`/`ObjectDeleter` + `GCReport`；`RunOnce` **先删对象、后删行**；`Run` 默认关闭（interval≤0 立即返回） |
+| 配置 | `internal/config/config.go`：`ARTIFACT_GC_INTERVAL`（秒，默认 `0` = 关）、`ARTIFACT_GC_BATCH`（默认 `100`，≤0 落回 `DefaultArtifactGCBatch`） |
+| 装配 | `cmd/hub/main.go`：GC 与对账**分开**装配；显式处理 **typed-nil**（把 `storage.Client(nil)` 直接转 `ObjectDeleter` 会得到**非 nil** 接口 ⇒ `store != nil` 误判 ⇒ 在 `Delete` 上 panic） |
+| 迁移 | `migrations/0016_artifact_cleanup_state.sql`：补列 + `CHECK (cleanup_state IN (...))` + 两条索引（`expires_at` 部分索引、`(component_id, cleanup_state)`）；**须手跑 psql** |
+
+### 15.2 门禁（全绿）
+
+```
+（hub）go build ./... ✅   go vet ./... ✅ clean   go test ./... ✅ 19 包 ok   gofmt -l ✅ clean
+```
+
+新增测试 **14 例**（计数命令：`go test ./internal/artifact/... -run 'ArtifactGC|QueryShape' -v | grep -c '^=== RUN'`）：
+- `artifact/service/gc_test.go`（**10** 个用例）：删除顺序 / 对象失败⇒保留行+标记 pending / **pending 行下轮重试成功后删行（自愈）** / 无对象存储仍删行且零对象调用 / 行删失败单独计数 / `FindExpired` 错误上抛 / batch 默认与覆盖 / 失败样本封顶 / interval≤0 不触库 / **结构断言 GC 无列举能力**。
+- `artifact/repository/artifact_dryrun_test.go`（**4** 个用例，逐条钉住）：**列表与 GC 谓词必须不同**（本批最容易在重构中被抹平的差异）、过期判定落 SQL 且时钟为参数（同例内还断言 oldest-first 与批量闸门）、limit≤0 时无 LIMIT 子句。
+
+### 15.3 双向钢人（本批唯一争议：GC 该不该**自动删**？）
+
+- **正方**：`expires_at` 是运维写下的保留期声明。全仓无读取点 ⇒ 这列是一句空话，存储单调增长 —— 表结构承诺了保留策略而功能不存在，**比没有更糟**（让人误以为已有策略）。
+- **反方**：对象删除不可逆；同类问题（对账）已被用户拍板为"仅报告"（`DELETE-CONTRACT` §6.5 决策 4「少删优于多删」）⇒ 应同解。
+- **裁定：自动删，但仅在输入无歧义时。** 反方的漏洞是**借用结论却没借用前提**：对账的输入（DB 行集合 vs 对象集合的差集）**有合法歧义** —— 归档任务刚上传完对象、行还没落库的那一瞬间，"有对象无行"完全正常，自动删会把在途制品抹掉。GC 的输入（`expires_at < now()`）**没有歧义**：它不推断任何意图，只执行运维**已经写下**的意图。⇒ **危险的是推断，不是执行。**
+- 由裁定推出两条硬约束：①**默认关闭**（会删数据的作业不该由一次部署悄悄打开）；②**先删对象、后删行**（与 `ArtifactService.Delete` 相反且刻意）—— 即时删除时元数据是权威记录，先删它、失败剩孤儿由对账兜底；GC 是回收存储，若先删行则对象删失败就**没有行可用于重试**，只能留孤儿等人读报告；先删对象则行还在、本轮标记 pending、下轮重试，**失败被自动修复**，不需要人。两个驱动的 `Delete` 对不存在的键都幂等（Local 容忍 `os.IsNotExist`、S3 `RemoveObject` 成功返回），故重试安全。
+
+### 15.4 顺手修掉的**文档假绿**（真实缺陷）
+
+`hub/STORY-BACKLOG.md` 的 B-16 行把「(c) 级联 + `cleanup_state` 清理标记 + `expires_at` 生效：**已随 Epic A / B-16(源头) 落地**」记成了完成 —— 实测三项里**两项根本不存在**（`cleanup_state` 列不存在、`expires_at` 全仓无读取点）。本批既补了实现，也把那行改成如实描述（并标注"此前误记"）；`DELETE-CONTRACT.md` 的 B-16 状态行、`DATA-MODEL.md` 的相关行同步。
+
+### 15.5 如实标注（仍未做 / 未跑）
+
+- ⛔ **`migrations/0016` 未在真实 Postgres 跑过**（本机无 PG）。列本身会由 AutoMigrate 补上，但 **CHECK 约束与两条索引只存在于本 SQL**，落库前请先备份再手工 `psql`。
+- **Artifact 的域内级联软删（§6.4）仍未做** —— 这是 B-16 的最后一项（删 org→service→component→pipeline 时对制品/对象的处理）。
+- GC **不做**对象存储分层（"热层 90 天 → 冷归档 1 年"属 bucket 生命周期规则，不在 hub 内）。
+- console **无改动**：制品页本就不提供删除入口；`pending_deletion` 的隐藏发生在 hub 的列表端点。
+
+---
+
+## 16. 部署验证遗留缺陷登记（2026-09-23 第十六批）
+
+> 来源：2026-09-23 上午 Envoy Gateway 迁移 + kind 集群重建 + 三服务全量部署 + §6.4 级联删除**真集群**端到端验证。部署链路本身已全绿（console/https 200、hub API 经网关 200、keycloak realm 导入成功、runner 心跳 online），本节登记验证过程**新暴露**的缺陷与勘误。
+
+### 16.1 新发现缺陷（本轮验证直接暴露）
+
+| 编号 | 缺陷 | 现象 / 根因（source-grounded） | 影响 | 建议修法 | 优先级 |
+| --- | --- | --- | --- | --- | --- |
+| **D-01** | runner 断连恢复路径缺陷 | hub `rollout restart` → runner websocket 断开 → controller-runtime manager **重建** → TaskRun/PipelineRun informer `cache sync` 超时 → 进程退出 CrashLoop。**首启路径正常**（CRD 首次 sync 成功过），k8s 自动重启容器后可自愈 —— 但恢复依赖容器重启而非进程内重连 | hub 任何滚动重启都会引发 runner 短暂 CrashLoop（自愈窗口 ≈ 重启周期） | 恢复路径复用首启的 informer 容错 / 退避重试，**不要整建 manager**；或对 cache sync 失败做有界重试后再退出 | 高 |
+| **D-02** | `POST /services` 不校验 `serviceTreeId` 存在性 | 传**不存在的** `serviceTreeId` 仍返回 201，产生悬挂引用（本轮验证时顺带发现） | 脏数据可入库存；后续按树遍历/级联时行为未定义 | service 层对 `serviceTreeId` 做 `ExistsActive` 校验（对齐 B-15 封父存在性校验套路）+ DryRun 查询形状测试 | 中 |
+
+> **闭环（2026-09-23 第十七批 · 收口）**：D-01、D-02 已于「继续全量补齐开发」本轮修复。D-01＝runner 断连后复用首启 informer 容错、以指数退避重连而非整建 manager，并设 `maxManagerStartAttempts` 有界重试（`cmd/runner/main.go`）；D-02＝`catalog/service` 在 `Create` 前对 `serviceTreeId` 做 `ExistsActive` 校验，悬挂引用返回 400（`internal/catalog/service/service.go` + `create_test.go`）。处置汇总见 §16.4。
+
+### 16.2 在册遗留项汇总（截至 2026-09-23，勿误报完成）
+
+以下项为 §16 原登记项的处置结果（与 §16.1 D-01/D-02 一并于本轮「继续全量补齐开发」收口，2026-09-23 第十七批）：
+
+| 原项 | 缺陷 | 处置 | 状态 |
+| --- | --- | --- | --- |
+| 1 | run 触发路径直读 repo、不绕 pipeline service 校验 | 触发统一经 `PipelineRunService.Trigger`（service 层）：`buildSpec`→`enforceProductionApproval`→`pipelineRepo.GetByID`→`createRun`→`repo.Create`，不再直写 repo（`internal/run/service/pipeline_run.go`） | ✅ 已修（Task #1） |
+| 2 | realm 组织组 `/org:<slug>` 未建 | `orgsvc` 在 `Create` 后 `provisionOrgGroup` 幂等建组；启动 `ReconcileGroups` 回填存量；依赖可测 Keycloak Admin 客户端（`internal/keycloak`）+ realm 赋 `manage-users`/`query-groups` 最小集（Task #4） | ✅ 已修 |
+| 3 | console 组件级自定义角色管理 UI 未做 | `PlatformAdminView.vue` 增「组件角色」区块 + CRUD Modal，`utils/permission.ts` 导出 `COMPONENT_ROLE_ACTION_GROUPS`（与 hub `component:*` 等逐字对齐），`api/permission.ts` 增 create/update/remove（Task #5） | ✅ 已修 |
+| 4 | V1 `roles` 表未删 | **双向钢人裁定保留**：全仓仍有 model `TableName()="roles"`、`RoleRepository`、`RoleService`、`GET /roles`、`AutoMigrate`、`conf/06_permissions.sql` 引用；DROP 不可逆且会破坏既有端点，按 plan「有引用则停手记录」。真删需用户显式确认（Task #6） | ⚠️ 裁定保留 |
+| 5 | `credentials` 无种子 + 明文存储 | 新增 `credentials/codec` AES-GCM 信封加密（写加密/读解密，明文兼容 legacy），`10_credentials.sql` 幂等种子，service 层改造（`internal/credentials`，Task #7） | ✅ 已修 |
+
+> 注：原项 1 与 §16.1 的 D-02、原项 2 与 D-01 属同一批修复，统一汇总见 §16.4。
+
+### 16.3 勘误（随本轮验证更新既有记录）
+
+- §15.5 曾记「Artifact 的域内级联软删（§6.4）**仍未做**」——**service→component 部分已落地并真集群验证（2026-09-23）**：`DELETE /services/:id` 在同一事务内级联软删 component、硬删 `component_role_bindings`（DB 侧两表 `deleted_at` 时间戳一致、bindings 零残留）；`hub/DELETE-CONTRACT.md` §1.3 状态行同步更新。org→service 及制品/对象在级联中的处理范围仍以该文档 §6.4 后续落地记录为准。
+- 部署/网关侧新沉淀的**工程约定**（EG v1.6 的 envoy svc 建在 `envoy-gateway-system` ns、BackendTLSPolicy(v1) 必填 `validation.hostname`、KC26 须 `KC_HOSTNAME_STRICT=false` 且 realm JSON 禁引 `uma_authorization`、keycloakx OnDelete 须手动删 pod、registry 旧镜像致部署跳过重建、本机 `https_proxy` 劫持 `curl --resolve`）不属代码缺陷，已记入项目工作记忆，此处仅留索引。
+
+### 16.4 本轮闭环汇总（2026-09-23 第十七批 · 继续全量补齐开发收口）
+
+本轮按「继续全量补齐开发，不确定的使用双向钢人论证」指令，将 §16 登记的全部 7 项遗留收口（代码侧 + 单元/构建 gate 全绿；真集群端到端未重跑）：
+
+| 任务 | 对应缺陷 | 落点 | gate |
+| --- | --- | --- | --- |
+| #1 | §16.2 项 1（run 触发直读 repo） | `internal/run/service/pipeline_run.go` Trigger 走 service 校验 | hub build/vet/test |
+| #2 | §16.1 D-02 | `internal/catalog/service/service.go` serviceTreeId `ExistsActive` 校验 + `create_test.go` | hub build/vet/test |
+| #3 | §16.1 D-01 | `cmd/runner/main.go` 重连退避 + `maxManagerStartAttempts` | runner build/vet/test |
+| #4 | §16.2 项 2 | `internal/keycloak` + `internal/org/service/org.go` + realm `manage-users`/`query-groups` | hub build/vet/test + keycloak httptest |
+| #5 | §16.2 项 3 | console `PlatformAdminView.vue` / `api/permission.ts` / `utils/permission.ts` | console pnpm build/test |
+| #6 | §16.2 项 4 | V1 `roles` 表 **裁定保留**（不删），写入 MEMORY.md | —（决策类） |
+| #7 | §16.2 项 5 | `internal/credentials/codec` AES-GCM + `10_credentials.sql` 种子 | hub build/vet/test + codec_test |
+
+**关键裁定（双向钢人论证）**
+- Task #4 实现自带可测 Keycloak Admin 客户端（`net/http` + `httptest`），而非引外部 SDK——保证零外部依赖即可单测。
+- Task #7 选 AES-GCM 信封加密（而非「只存引用名」）——项目无外部 secret store，引用名方案无法落地；明文兼容 legacy 以保迁移安全。
+- Task #6 保留 V1 `roles` 表——全仓活引用 + DROP 不可逆，按 plan「有引用则停手记录」；删除须用户显式确认。
+
+**遗留 / 未跑**
+- ~~keycloak 组建、凭据加密的真集群端到端验证按惯例记为「未跑」~~ → **凭据加密已真集群验证（2026-09-23，docker/kind 就位后补跑）**：本地 kind 集群 hub 设 `CREDENTIAL_ENCRYPTION_KEY`（32B）→ `POST /credentials` 201 → PG 原始列为 `enc:v1:` 前缀 AES-GCM 密文、API 仅回 `valueSet:true`。keycloak 组建（Task #4）的真集群全链路受 dev 部署姿态耦合（`KEYCLOAK_ISSUER` 空 ⇒ auth 与组预置同关）限制未跑；客户端逻辑由 5 个 httptest 用例覆盖，全链路验证需 issuer-enabled 部署 + realm 用户，记为 follow-up。
+- V1 `roles` 表如后续确认可删，需先清全部引用（model/repo/service/handler/AutoMigrate/seed）再 DROP。
+
+**Phase-2 补齐（2026-09-23 下午，同日第二轮）**
+- §16.2 之外的 API-REFERENCE「待补端点」逐项**按实际代码审计**后收口：`parse-kubeconfig`、`/targets` CRUD、`/environments/:id/test` **代码早已落地**（文档 stale，非新开发）；本轮新开发 = `GET /package-versions`、`GET /runs/:id/stage-progress`、serial 调度（C-06 闭口）、`POST /environments/:id/exec` + `POST /targets/:id/install|upgrade`（hub 层：校验 + `agent_ops` 台账 + 202 句柄；**runner 侧执行 + SSE 流式为明确 follow-up**，非静默缺口）。
+- 真集群验证（kind sdp-dev，docker 就绪后）：Task #7 凭据加密 ✅（见上）；新端点真集群 E2E 见同日记录（package-versions / parse-kubeconfig / exec / install 直接可达，stage-progress 需真实 run 数据）。
+- **E2E 结果（2026-09-23 13:2x，第三/四次镜像重建后全量 curl）**：
+  - `GET /package-versions` → `{console:v0.0.1, hub:v0.0.1, runner:v0.0.1}`（CM 注入生效）✅
+  - `POST /credentials/parse-kubeconfig`：合法 kubeconfig → 结构化回显 + `errors:[]`；`exec:` 插件 → 明确拒绝 ✅
+  - `POST /environments/:id/exec`：202 + op 句柄；PG `agent_ops` 表落 `exec|queued|<command>` ✅；空请求体 400「command 或 script 至少其一必填」✅
+  - `POST /targets/:id/install|upgrade`：202 + `detail:v0.0.1` ✅
+  - `GET /runs/:id/stage-progress`：不存在 run → 404 形状 ✅（200 聚合形状由 `pipeline_run_serial_test.go` 单测覆盖，真集群 200 需触发真实 run，记 follow-up）
+- **E2E 揪出并修复的 2 个真 bug**：
+  1. `environments.status` 列 `varchar(16)` 装不下状态机自身值 `configured_unverified`（21 字符）——任何 key-field 变更回落都触发 SQLSTATE 22001。修复：模型 `size:16→32`（`environment.go`）+ `migrations/0017_environments_status_widen.sql`（AutoMigrate 不改列宽，需手工 ALTER），现库已 ALTER 并复验 PUT 成功落 `configured_unverified`。
+  2. `parseKubeconfig` 的 `reHasClusters` 缺 `(?m)` 多行标志——真实 kubeconfig（`clusters:` 前有其他顶层键）恒误报「缺少 clusters 段」。修复：加 `(?m)`；新增回归测试 `credential_test.go`（clusters 非首段 / exec 拒绝 / 缺 clusters 三例）。
+  - 验证 gate：hub `go build/vet/test`（24 包 ok）+ `gofmt -l` clean；修复经 `docker rmi` + 重部署后真集群复验通过（另见镜像陈旧陷阱：E2E 首跑 INSERT 明文即此坑复现）。
+- **Task #4 真集群 E2E ✅（2026-09-23 13:36–13:41，临时接线后还原）**：
+  - 铺路：kcadm（KC26 须 `--server http://localhost:8080/keycloak`）清 e2e 用户 requiredActions + 补 firstName/lastName（声明式 profile 缺姓名 ⇒ password grant 报 `Account is not fully set up`）；集群内 password grant 取 token（port-forward 取的 token issuer 不匹配）。
+  - hub 临时注入 `KEYCLOAK_ISSUER=http://hub-keycloak-http/keycloak/realms/sdp`（KC 通告短名 svc、默认端口被剥）+ `KEYCLOAK_ADMIN_CLIENT_SECRET` → 未认证 401 ✅ → `POST /orgs` 201 ✅。
+  - **组预置闭环验证**：首次 org 创建暴露 403 —— realm JSON 把 `query-groups`/`manage-users` 写在 SA 的 `realmRoles` 里被 `--import-realm` 静默丢弃（它们是 realm-management 客户端角色）；REST 补授后二次 `POST /orgs` 201 → KC 组列表出现 **`org:e2e-org2`** ✅（provisioner 非失败即告警语义也得到真实验证）。
+  - 收尾：还原 env（dev 姿态 `AuthDisabled` 恢复，无认证 API 可用 ✅）；realm JSON 修复为 `clientRoles` 映射（`build/hub/charts/.../keycloak-realm-configmap.yaml`，仅新 realm 首次导入生效，存量 realm 靠手工/kcadm 补授）。
+
+**文档勘误索引（本轮收口推翻的早期陈述）**
+- §10/§11/§13 中「realm 侧 `/org:<slug>` 组织组未建 / 仍为零」等历史陈述：已被 Task #4（hub 运行时自动预置）推翻，以 §16.4 与 `hub/KEYCLOAK.md`、`hub/ACCOUNT-PERMISSION-MODEL.md` 第 2/6 行现状为准。
+- `hub/API-REFERENCE.md`「待补端点」表中 `POST /credentials` 等由 ❌未实现 改为 ✅已落地（加密落库，Task #7）；~~同表其余 `kubeconfig`/`ssh` 直连端点仍 ❌ 未实现~~ → **Phase-2（2026-09-23）已全部收口**：`parse-kubeconfig`、`/targets` CRUD、`/environments/:id/test` 为审计确认的既有实现（文档 stale），`package-versions`、`stage-progress`、`exec`、`install/upgrade` 为本轮新开发（后三者 runner 侧执行为 follow-up），以 `hub/API-REFERENCE.md` 现表为准。
+- `hub/DATA-MODEL.md` §9.7「凭据只存引用、物理位置尚未定」改为「AES-GCM 加密落库已定」（与原 ref 铁律偏离，见 Task #7 裁定）。
+
+### 16.5 第十八批：agent_ops 全链路补齐（2026-09-23 傍晚 · 「继续全量补齐开发」）
+
+§16.4 遗留的「runner 侧 exec/install/upgrade 执行 + SSE 流式」本轮立项收口。**exec 全链路已落地**；install/upgrade 经钢人裁定留守 queued（理由见下）。
+
+**双向钢人裁定（四点）**
+
+1. **协议形态**：复用 `status_update`/`log_chunk`（加 OpID）被反钢人否决——hub 的 statusH 直接写 `pipeline_runs`、logH 按 `PipelineRunName` 索引，混入 op 语义会污染两条既有管道 → **新增 `agent_op` / `agent_op_status` / `agent_op_log` 三类专用消息**（runner `api/v1alpha1`，双端唯一 wire format）。
+2. **exec 执行语义**：进程内 pod exec 有「exec 到哪个 pod」语义空洞且无留痕 → **目标集群创建 Job（`sh -c`）**：K8s 原生留痕 + batchv1 超时语义 + 与 TaskRun 执行模型同构。`agent` access 用 in-cluster 凭据；`kubeconfig` access 由 hub 派发时解密 `KubeCredRef` 凭据随 payload 下发（runner 是直连执行器、合法需要；信任边界 = 已认证 gateway WS；hub 自身仍零 client-go）。
+3. **install/upgrade 边界**：install 存在**引导鸡生蛋**（目标无 runner 连接则 op 无处投递，数据模型亦无「引导执行器」登记位）；upgrade 需**图表来源**（版本矩阵只有版本号）+ **runner 自升级 SA 权限**两个产品级前置 → **本轮留守 queued 不派发**，执行器属 §9.9 接入引导特性（enroll-token 凭据流转）单独立项。
+4. **SSE 形态**：follow-up 明确要求流式 → **SSE（事件 `status`/`log`/`end`，先重放持久化日志再推增量，15s 心跳）+ `GET /agent-ops/:id` 轮询兜底**。订阅为进程内态 ⇒ 单实例 hub 假设记录在案；多实例回退轮询+重放（该回退路径本就存在，故重放优先设计成立）。
+
+**落点**
+
+| 端 | 文件 | 内容 |
+| --- | --- | --- |
+| 协议 | runner `api/v1alpha1/{protocol,gateway_payloads}.go`、`pkg/connector/client.go` | 3 类消息 + `AgentOpDispatchPayload`（OpID/Detail/Namespace/Kubeconfig）/`AgentOpStatusPayload`/`AgentOpLogPayload` + re-export |
+| hub 模型 | `internal/target/models/agent_op.go` | 状态机四态 + `IsValidAgentOpTransition`（只前进、终态不可变）+ `AgentOpLog`；`detail` size:1024→text |
+| hub 迁移 | `migrations/0018_agent_op_logs.sql` | `agent_op_logs` 建表（幂等）+ `agent_ops.detail` ALTER text（AutoMigrate 不改列类型/宽度） |
+| hub repo | `internal/target/repository/agent_op.go` | `UpdateStatus`（WHERE status=from 防回退竞态）/`AppendLog`（seq=MAX+1）/`ListLogs`/`ListQueuedByTarget`（仅 queued exec） |
+| hub service | `internal/target/service/{agent_op,op_stream}.go` | `ApplyStatus`（409 守卫）/`AppendLog`/`DrainTarget`/`SetDispatcher`/`SetStream` + `OpStream` SSE 扇出（满则丢、不阻塞回传路径） |
+| hub 派发 | `cmd/hub/agentop_dispatcher.go` + main.go 接线 | payload 组装（env namespace + kubeconfig 解密）→ `gw.DispatchAgentOp`；connect drain 并联 agent-op 排水；`agent_op_status/log` 回调 → ApplyStatus/AppendLog |
+| hub SSE | `internal/target/handler/agent_op.go` | `GET /agent-ops/:id`（轮询）/`GET /targets/:id/agent-ops`（台账）/`GET /agent-ops/:id/stream`（SSE：状态→重放→增量→end） |
+| runner | `internal/agentops/handler.go` + `cmd/runner/main.go` | 异步执行（不阻塞 readLoop）：in-cluster / kubeconfig 双路 clientset → Job（GenerateName、BackoffLimit 0、TTL 1h）→ Job 轮询 + pod 日志差量回传 → 终态回传；`SDP_AGENT_EXEC_IMAGE`（默认 `busybox:1.36`）、`SDP_AGENT_EXEC_TIMEOUT`（默认 10m） |
+| docs | `hub/API-REFERENCE.md`（exec 行改全链路 + 3 个新端点 + install/upgrade 裁定注记）、`hub/DATA-MODEL.md` §9.5（台账/日志表/双路执行）、`hub/README.md`（模块图 + follow-up 行改为全链路说明） | — |
+
+**gate**：hub `go build/vet/test`（全量零失败）+ `gofmt -l` clean；runner `go build/vet/test`（全量零失败）+ `gofmt -l` clean。单测新增：hub 状态流转守卫（409）/创建即派发/离线留守/install·upgrade 不派发/日志落库+扇出/排水；runner Job 信封（命名空间回退/命令逐字/审计标签/TTL/BackoffLimit）。
+
+**E2E 揪出并修复的 1 个真 bug（D-01 补丁缺陷）**：manager 启动重试（D-01）在同一进程里重建 manager，controller-runtime 默认按 controller 名做进程内唯一性校验，第二次 Setup 起恒报 `controller with name pipelinerun already exists`——把一次瞬时 cache-sync 超时（runner 先于 CRD ready）放大成**永久 CrashLoop**（实测 21 次重启）。修复：三个 reconciler 的 builder 加 `WithOptions(controller.Options{SkipNameValidation: &skipNameValidation})`（旧 manager 已停、无双跑风险）。修复经 `docker rmi` + 重部署后 runner manager 正常启动。
+
+**意外获得的排水路径真实验证**：存量 queued exec op（昨日 E2E 留下）在新 runner 重连时被 hub DrainTarget 补派 → 目标集群 Job 创建并执行（busybox 无 kubectl 而失败，符合预期）→ 日志分片落 `agent_op_logs`（seq=1，stdout `sh: kubectl: not found`）→ 状态回写 `failed` + message「Job has reached the specified backoff limit」；install/upgrade 如裁定留守 queued。**排水 → 派发 → Job 执行 → 日志落库 → 状态回转全链路被现实验证**。
+
+**遗留**：install/upgrade 执行器（§9.9 bootstrap 特性，见裁定 3）；真集群 E2E（exec 全链路，视集群状态执行）；console 侧 agent op 台账 UI / SSE 消费端未做（API 已就绪，属 console 迭代）。
+
 

@@ -160,9 +160,18 @@
 
 ### P6 平台自身部署与升级（二期）—— **2026-09-21 裁决：不走平台，留在平台之外**
 
-> 背景：old/go-devops 是 hub 前身、old/go-devops-ui 是 console 前身，曾由此设想"平台发布平台自己"（当时简称「自举」——**该词随方案撤销一并停用**，全库不再单用「自举」二字，见 [README.md §5.5 术语消歧](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)）。
+> 背景：old/go-devops 是 hub 前身、old/go-devops-ui 是 console 前身，曾由此设想"平台发布平台自己"（当时简称「自举」——**该词随方案撤销一并停用**，全库不再单用「自举」二字，见 [hub/DATA-MODEL.md §9.0 术语消歧](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）。
 >
-> **裁决（2026-09-21，撤销 2026-09-06 的"自升级默认走平台流水线"）**：平台自身的部署与升级**永远在平台之外**——官方通道 = 各仓 `make package` / `pnpm image` 产出的镜像 + chart 交付包，由**外部 helm / CI** 发布。六条理由（hub 四重自指 / 安全边界 / 不可灰度不可回滚 / 观测真空 / 权限主体缺失 / 收益错配）见 [README.md「5.4 平台自身定位与部署形态」](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)。
+> **裁决（2026-09-21，撤销 2026-09-06 的"自升级默认走平台流水线"）**：平台自身的部署与升级**永远在平台之外**——官方通道 = 各仓 `make package` / `pnpm image` 产出的镜像 + chart 交付包，由**外部 helm / CI** 发布。六条理由见下。
+
+**不采纳「自升级」的六条理由**（本节为唯一权威落点；2026-09-23 自 docs/README §5.4 迁入）
+
+1. **hub 是四重自指**：控制面 + 编排存储 + 制品来源 + 制品消费。升级 hub 的编排存在 hub DB 里、chart 由 hub 的制品库供、签名 URL 指向 hub Service——hub 起不来则**升级通道与回滚通道同时消失**，无法自救。
+2. **必须放宽安全边界**：runner 的集群侧权限被刻意限定为"只碰某组件命名空间"；让它 helm-upgrade `sdp-workflow` 是**实质扩权**，且 `pipeline.sdp.io` 的 CRD 是 **cluster-scoped**，schema 变更绕不过集群级权限。
+3. **不可灰度、不可回滚**：CRD 是集群级原子生效；helm rollback **不还原 CRD**（helm 不追踪 CRD 版本）；hub 建表靠启动时 AutoMigrate（只加不删）。新版本一旦把控制面锁死，唯一救生索是手工 `kubectl`。
+4. **观测真空恰好覆盖最关键的那次运行**：hub 重启期间，这次升级的记录 / 日志 / DAG 全在重启中的 hub 里——**最需要看清的运行恰好看不见**。
+5. ~~权限主体在 API 层不存在~~ ✅ **已补（2026-09-22，C-10）**：平台级 RBAC 已有 HTTP 端点，"谁有权批准平台自升级"已可在平台内表达；但「自升级」审批流与到期回收仍未落地。
+6. **收益错配**：平台组件数量固定（hub / console；runner 是接入侧代理不计入）、升级者就是平台运维本人；通用流水线（版本历史 / 参数管理 / 一键回滚 / 审批）在自升级上边际收益低，而这些恰是外部 CI + helm 的强项。
 
 **允许与不允许的分界**
 

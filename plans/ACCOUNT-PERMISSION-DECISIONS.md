@@ -26,7 +26,7 @@
 | --- | --- | --- | --- | --- | --- |
 | **D1** | 「组织」用什么载体？ | **② 组命名约定 `/org:<slug>`**（**自决、可逆**） | 复用**已就绪**的 `groups` 通路（mapper 已挂、`auth.go` 已读），零 realm 开关 ⇒ 无 identity-first 登录流变化；且**组随 realm JSON 可靠导入** ⇒ 真拿到「配置即代码」（这正是 v1 误记给 ① 的那条）；隔离由保留前缀 + 硬规则保障 | **推荐翻转（v3）**：v2 推荐 ①（理由「语义隔离」）—— ② 用**保留前缀**同样隔离，且省掉 ① 的两项成本（开开关改登录流、组织集导入未证实） | **中**（v1 记「高」，**降级**，见 §9） |
 | **D2** | 角色/权限的权威在哪？ | **① 全在 hub RBAC 表** | 不动式②；且「两段式鉴权」的 **a 段吃 token（组织）、b 段吃 hub 表（角色）** 是三条不动式的唯一自洽解释 | 同 | 低 |
-| **D3** | 「不存用户表」的连锁改动 | **实为 5 处（v1 与规范都记 4 处，漏了最大的一处）**；第 4 处取 **(b) 只列已绑定主体 + 允许手输 subject** | 删 `users` 表是全仓主体语义改造 | **处数修正**：规范 §12 D3「4 处」漏掉 `users` 表 + `UserContext` 每请求 provision + `CurrentUserID` 签名（全仓 7 个读取点） | **中高**（删表不可逆；`owner_sub` 回填须显式置空 + 告警） |
+| **D3** | 「不存用户表」的连锁改动 | **实为 5 处（v1 与规范都记 4 处，漏了最大的一处）**；第 4 处取 **(b′) 只列已绑定主体 + 允许手输 subject** | 删 `users` 表是全仓主体语义改造 | **已落地（2026-09-23）**：5 处全部执行完毕，迁移 `0015_d3_drop_users_and_legacy_columns.sql`（先回填 `owner_sub` ← `users.keycloak_id`，映射不到的显式置空 + 告警；再删列删表）。**代码侧不可逆部分已完成；部署侧须手工 psql（AutoMigrate 只加不删）** | **已消解**（原「中高」：删表不可逆，靠 0015 的先回填后删除 + 备份要求兜住） |
 | **D4** | Casbin 是否本期引入 | **延后 + 登记触发条件**（新登记 backlog B-19） | 边界内需求**今天一条都没有**；引入即同时引入策略存储 / 热更新 / 一致性三件事 | 同（增加「登记已落实」） | 低 |
 | **D5** | token 存法 | **维持 localStorage** | **但 v1 的否决理由错了**：BFF 并不必然让 hub 持会话（BFF 可以是独立薄组件）；真正理由是「本期无 XSS 威胁模型，且 BFF = 新部署面/新故障域」 | **理由换** | 低 |
 | **D6** | `aud` 校验方式 | **① 维持现状（不校 `aud`、校 `azp`）** | 单资源服务器；且本 realm 确有第二个 client（`sdp-backend`），`azp` 校验**不是理论问题** | 同（补实测依据） | 低 |
@@ -213,11 +213,11 @@
 
 | # | 位置 | 事实 | 锚点 | 性质 |
 | --- | --- | --- | --- | --- |
-| 1 | `components.owner_user` | `*uuid.UUID`，指向**本地 `users.id`** | `internal/component/models/component.go:25` | ❌ **真需改表** |
-| 2 | `component_role_bindings.user_id` / `role_id` | `*uuid.UUID`，注释写明 **V1 legacy**；**同表已有** `subject_type` / `subject_id`（text） | `internal/permission/models/binding.go:28-31` | ⚠ **比文档描述更轻**：主体列已就位 ⇒ 停写 + 手写 SQL 删列 |
-| 3 | `pipeline_approvals.approver` | 类型**已是 `string`** ✅；**但写入值是本地 `users.id`**：`approver = CurrentUserID(c).String()`（同型问题另有同文件的 `Operator`） | `internal/run/models/pipeline_approval.go:22`；`internal/run/handler/pipeline_run.go:305-310`、`:359` | ❌ **表不用改、写入点要改** |
-| 4 | console 用户列表来源 | `GET /users` → **hub 本地 users 表**（设计文档附 D 的 Permission 行也登记了 `GET /users`） | `console/src/api/permission.ts:55,60`；`console/CONSOLE-UI-DESIGN.md` 附 D | ❓ **来源决策**（见 3.4） |
-| 5 | **`users` 表本身 + `UserContext` + `CurrentUserID`** | `UserContext` **每个请求**调 `GetOrProvisionByKeycloakID(sub, …)` 落一行本地用户，把**本地 `users.id`** 塞进 context；`CurrentUserID(c) (uuid.UUID, bool)` 是**全仓 7 个读取点**（component handler ×1 / config handler ×2 / pipeline handler ×1 / run handler ×2 / rbac ×1） | `internal/middleware/user_context.go:46,61`；读取点见 grep 结果 | ❌ **最大的一块，也是全仓签名改造** |
+| 1 | ~~`components.owner_user`~~ → `components.owner_sub` | ✅ **已改**（2026-09-23）：`*string`，存 token `sub` | `internal/component/models/component.go` | ✅ **已落地（迁移 0015）** |
+| 2 | ~~`component_role_bindings.user_id` / `role_id`~~ | ✅ **已删列**（2026-09-23，迁移 0015）；`subject_type`/`subject_id` 成为唯一主体路径 | `internal/permission/models/binding.go`、`repository/binding.go` | ✅ **已落地**（V1 解析分支同批移除，DryRun 测试加了反向断言） |
+| 3 | `pipeline_approvals.approver` | ✅ **已改**（2026-09-23）：写入值改为 token `sub`（`middleware.CurrentSubject`）；同文件的 `Operator`（rollout 控制）与 `pipeline.CreatedBy` 一并切换 | `internal/run/models/pipeline_approval.go`、`internal/run/handler/pipeline_run.go` | ✅ **已落地**（表不用改，只改写入点） |
+| 4 | console 主体来源 | ✅ **已改**（2026-09-23）：去掉 `permissionApi.users` / `GET /users`；授权表单改为「下拉已绑定主体（绑定表派生）+ 手输 `sub` / 组路径」 | `console/src/api/permission.ts`、`src/utils/permission.ts`、`PlatformAdminView.vue`、`PermissionsTab.vue` | ✅ **已落地**（决策 §3.5 第 4 条 (b′)） |
+| 5 | **`users` 表本身 + `UserContext` + `CurrentUserID`** | ✅ **已执行**（2026-09-23）：`users` 表 / model / repo / service / handler 全部删除；`UserContext` 改为**纯解析**（去掉逐请求 `GetOrProvisionByKeycloakID`）；`CurrentUserID` 删除，7 个读取点全部改用 `CurrentSubject` | `internal/middleware/user_context.go`、`cmd/hub/main.go` | ✅ **已落地（唯一不可逆项：迁移 0015 已写，部署侧手工执行）** |
 
 > **与已改代码的关系**：§10 #14 的修复（B-18）**与 D3 正交** —— 修的是「路径 id 是哪种资源」，没动「主体是本地 id 还是 `sub`」。D3 落地后，`RequirePermission` 里的 `userID uuid.UUID` 会变成 `subject string`（范围可控：`middleware/rbac.go` + `BindingService.HasPermission` 签名）。
 
@@ -240,6 +240,7 @@
 **真正的分歧**：**「授权表单必须能列出『还没被授权过的人』吗？」**
 
 - 必须 ⇒ (a)：要么 Admin API，要么承认需要一个「见过的主体」目录（那就是 users 表的变体，回到 §2.2 的矛盾）。
+  **→ 已裁决（§3.5 第 2、3 条）**：取 (b′)，把「必须」降为「不必」—— 闭环由**手输 `sub`** 补上，不引入 Admin 凭据；(a) 记为本期不做、并写明重估触发条件。
 - 不必（可手输） ⇒ (b) 成立。
 
 **关键变量**：**新用户的第一个绑定由谁录入、怎么录入？** 这是一个**UX + 流程**问题，不是数据模型问题。
@@ -254,10 +255,10 @@
 3. **(a) 明确记为「本期不做」，并写触发条件**：出现「必须展示全量用户目录」的产品要求时重估；届时需同时接受「hub 持有一把 Keycloak 只读管理凭据」的安全面，**独立评审**。
 4. **§2.4.4 的适用范围要写清**（业务请求 vs 管理面），消掉「扩大解释」的歧义（→ §7）。
 5. **落地的 5 处清单**（按依赖顺序）：
-   - 先加 `CurrentSubject(c) string`（新读取点），保留 `CurrentUserID` 直到 1/3 处改完；
-   - 改写入点：`owner_user → owner_sub`、approver/operator → `sub`；
-   - 再删 `users` 表 + `UserContext` 的 provision + `CurrentUserID`（迁移须手写 SQL，AutoMigrate 只加不删）；
-   - console：`GET /users` 换成绑定表派生 + 手输；
+   - ✅ 先加 `CurrentSubject(c) string`（新读取点），保留 `CurrentUserID` 直到 1/3 处改完（2026-09-23 已全部完成，`CurrentUserID` 现已删除）；
+   - ✅ 改写入点：`owner_user → owner_sub`、approver/operator → `sub`（2026-09-23 完成）；
+   - ✅ 再删 `users` 表 + `UserContext` 的 provision + `CurrentUserID`（2026-09-23 完成；迁移 `0015` 手写 SQL —— AutoMigrate 只加不删）；
+   - ✅ console：`GET /users` 换成绑定表派生 + 手输（2026-09-23 完成）；
    - 文档同步：附 D 的 Permission 行去掉 `GET /users`。
 
 ### 3.6 文档修正（→ §7）
@@ -476,7 +477,7 @@ DATA-MODEL §7.6 的 OPA/Casbin 行补 B-19 指针（否则「需求点登记」
 
 | 级别 | 项 | 说明 | 与 v1 的差异 |
 | --- | --- | --- | --- |
-| **中高** | **D3 第 5 处**（删 `users` 表） | 删表不可逆；`owner_sub` 回填依赖「旧 `users.id → sub`」映射，映射不到的**必须显式置空 + 告警** | 同（v1 记为「高」，本版并入「中高」以与 D1 并列比较） |
+| ~~**中高**~~ **已消解** | **D3 第 5 处**（删 `users` 表） | 删表不可逆；`owner_sub` 回填依赖「旧 `users.id → sub`」映射，映射不到的**必须显式置空 + 告警** | ✅ **已落地（2026-09-23）**：`migrations/0015` 严格按「先回填（`users.keycloak_id`）→ 再对映射不到的残留显式置空 + `RAISE WARNING` → 最后删列删表」执行；文档要求已代码化 |
 | **中** | **D1** | **降级**：组织键统一取 alias（slug）字符串且组织不作 RBAC 主体 ⇒ 换载体**不需要数据迁移**，只改中间件解析；仅「org 形主体绑定」这类行需改写，而该形态已被硬约定禁止。默认取 ② 后**更缓**：`groups` 通路已就绪 ⇒ 即便翻盘到 ① 也只是加开一个开关 | **由「高」降为「中」**；v3 默认 ② |
 | 低 | D2 / D4 / D5 / D6 | 都是「本期不引入」或「判定优先级 / 存储位置」，随时可调（D5 甚至有一行改动的折中位） | 同 |
 

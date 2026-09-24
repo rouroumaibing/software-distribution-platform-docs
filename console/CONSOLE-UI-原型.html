@@ -1329,7 +1329,7 @@ function pageAdminTarget(){
     info = `<div class="infobar"><div class="infobar-h">主机目标没有常驻 Agent</div>
       <div class="infobar-b">K8s 集群靠 Runner 心跳维护在线状态；<b>主机不能</b>——平台只在「连接测试」或「发布 / 执行」时才出站连它一次，
       所以状态是<b>上次测试的结果</b>，需要主动测试才刷新。发布形态目前按<b>搬运工模型</b>设计（平台把制品包放到主机 + 执行目标上已有的启停脚本），
-      平台不解释主机上的编排（systemd / docker-compose / Ansible）——该假定待确认，见 docs/README.md §5.6(6)。</div></div>`;
+      平台不解释主机上的编排（systemd / docker-compose / Ansible）——该假定待确认，见 hub/DATA-MODEL.md §9.7 未定项。</div></div>`;
   } else if(tab==='creds'){
     head = '<tr><th>引用名</th><th>名称</th><th>适用目标</th><th>明文归属</th><th>被引用</th><th>最近轮转</th><th></th></tr>';
     rows = CREDS.map(c=>`<tr>
@@ -2412,7 +2412,7 @@ const ARCHIVE_INFO = `<div class="infobar">
     <b>存储</b> 对象存储 MinIO（3 副本 · 跨 AZ 同步），bucket <span class="mono">sdp-artifacts</span>，域名 <span class="mono">artifacts.sdp.local</span>；并镜像至 NFS 归档盘 <span class="mono">/data/artifacts/{org}/{component}/{version}/</span>。<br>
     <b>目录</b> <span class="mono">sdp-artifacts/{org}/{service_tree_path}/{component}/{run_id}/{artifact_name}</span><br>
     <b>备份</b> 每日 02:00 增量快照 · 每周日 03:00 全量；热层（可下载）保留 <b>90 天</b> → 转冷归档 <b>1 年</b>（合规留痕）→ GC 报告 + 人工确认后清理。<br>
-    <b>过期</b> <span class="mono">expires_at</span> 仅标记、不自动删；回收走对账 + 人工确认（见 hub DELETE-CONTRACT §6.5）。
+    <b>过期</b> <span class="mono">expires_at</span> <b>已生效</b>（保留期 GC，<b>默认关闭</b>）：先删对象、后删行；对象删失败的行标记 <span class="mono">pending_deletion</span> 并由下一轮自动重试，且不再出现在制品列表。对账本身仍为「仅报告 + 人工确认」（见 hub DELETE-CONTRACT §6.6-4）。
   </div>
 </div>`;
 const PERMISSION_BINDINGS = {

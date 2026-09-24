@@ -625,7 +625,7 @@ Dashboard「待办」区三段，每段一个 CTA（深链形态与 §7.6 的视
   - **存储**：对象存储 MinIO（3 副本 · 跨 AZ 同步），bucket `sdp-artifacts`，对外域名 `artifacts.sdp.local`；并镜像至 NFS 归档盘 `/data/artifacts/{org}/{component}/{version}/`（断网可取用）。
   - **目录布局**：`sdp-artifacts/{org}/{service_tree_path}/{component}/{run_id}/{artifact_name}`（以 run 为单位归集，便于复现某次构建）。
   - **备份周期**：每日 02:00 增量快照 + 每周日 03:00 全量快照；保留策略为**热层（可下载）90 天 → 转冷归档 1 年（合规留痕）→ GC 报告 + 人工确认后清理**。
-  - **过期**：`expires_at` 仅作标记、不自动删除；真正回收走**对账 + 人工确认**（见 hub `DELETE-CONTRACT.md` §6.5）。
+  - **过期**：`expires_at` **已生效**（2026-09-23，B-16 收口）—— hub 保留期 GC（`ARTIFACT_GC_INTERVAL`，**默认关闭**）按该声明回收，**先删对象、后删行**；对象删失败的行标记 `cleanup_state='pending_deletion'`（**不再出现在本页列表**）并由下一轮自动重试。对账本身仍是**仅报告 + 人工确认**（见 hub `DELETE-CONTRACT.md` §6.5 / §6.6-4）。
 - **删除不可开放给人工**：本页不提供删除 / 上传操作；产物清理由 GC 与过期策略统一处理（与 §7.9 组件级权限一致——`artifact:delete` 在后端保留，但前端不暴露入口）。
 - 端点（附 A · N-x / 旧文 `artifact.ts`）：`GET /components/:componentId/artifacts`、`GET /download`（签名 URL）。（原型已移除 `POST/DELETE` 前端入口；后端契约保留。）
 
@@ -645,7 +645,7 @@ Dashboard「待办」区三段，每段一个 CTA（深链形态与 §7.6 的视
 
 > **起因**：组件详情「环境」Tab 此前只有一个 `target` / `namespace` 自由文本框，「新建环境」也只收名称/目标/命名空间 —— **kubeconfig、kube-apiserver 地址、SSH 主机与凭据无处可填**。本节按 hub 实测代码把这件事补完。
 >
-> **层次前提（2026-09-21 裁定）**：本节讲的是**② 平台怎么够到目标**（目标 = 被纳管集群 / 主机），**不涉及 ③ 平台自身装在哪、怎么升级**。平台自身不进服务树 / 组件 / 环境模型，其部署与升级留在平台之外——三层边界与六条理由见 [README.md「5.4 平台自身定位与部署形态」](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)。另注：**单机版**（平台与目标同集群）下，`targets` 里那一行目标指向的集群同时也是**平台底座所在**；但 **runner 是接入侧代理组件，其身份与部署形态无关**（2026-09-21 二次裁定），故下文凡提"目标"均指**被接入的目标**角色。
+> **层次前提（2026-09-21 裁定）**：本节讲的是**② 平台怎么够到目标**（目标 = 被纳管集群 / 主机），**不涉及 ③ 平台自身装在哪、怎么升级**。平台自身不进服务树 / 组件 / 环境模型，其部署与升级留在平台之外——三层边界见 [README.md「5.4 平台自身定位与部署形态」](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)，不采纳自升级的六条理由见 [E2E-VERIFY-PLAN.md P6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/E2E-VERIFY-PLAN.md)。另注：**单机版**（平台与目标同集群）下，`targets` 里那一行目标指向的集群同时也是**平台底座所在**；但 **runner 是接入侧代理组件，其身份与部署形态无关**（2026-09-21 二次裁定），故下文凡提"目标"均指**被接入的目标**角色。
 >
 > **口径校准（2026-09-21 更正）**：本节早前把 `kubeconfig` / `ssh` 的凭据挂在 **runner 侧 Secret**，并称其"尚未裁决"——**两处都已更正**。用户已澄清：**两条直连通道都由 hub 侧发起连接**（不是给 runner 用），且**发布目标与归档机器都可能是非 K8s 的**，平台须覆盖非容器环境的「连接 / 测试 / 发布 / 执行命令」全链路。跨组件裁定见 [README.md §5.6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md) + `hub/DATA-MODEL.md` §9.5 / §9.7。
 
@@ -1429,7 +1429,7 @@ Dashboard「待办」区三段，每段一个 CTA（深链形态与 §7.6 的视
 | Run | `POST /pipelines/:id/runs/:id/redispatch` | run.ts ✅ |
 | Run | `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision` | run.ts ✅（后端 `h.Approve` 已实现） |
 | Artifact | `GET /components/:componentId/artifacts` `/artifacts/:id` `/download` `/DELETE` | artifact.ts ✅ |
-| Permission | `GET /component-roles`（§7.9 角色选择器数据源）`POST/GET /components/:componentId/role-bindings` `/DELETE /role-bindings/:id` `GET /roles` `GET /users` | permission.ts ✅ |
+| Permission | `GET /component-roles`（§7.9 角色选择器数据源）`POST/GET /components/:componentId/role-bindings` `/DELETE /role-bindings/:id` `GET /roles` | permission.ts ✅（2026-09-23 **去掉 `GET /users`**：hub 不存用户表（D3），主体改为「绑定表派生 + 手输 `sub`」，见 ACCOUNT-PERMISSION-DECISIONS §3.5 (b′)） |
 | Release | `GET /releases`、`POST/GET/PUT/DELETE /releases/:id` | **后端已有**（N-3）；发布视图数据源。`GET /releases?scope=global&state=paused` 待补 |
 | Search | `GET /search?q=&type=&limit=` | **后端已有**（N-8，2026-09-22）；result = `[{type,id,name,path,keyword}]`，`type` ∈ `service,component,pipeline`（逗号分隔、缺省三类全搜） |
 

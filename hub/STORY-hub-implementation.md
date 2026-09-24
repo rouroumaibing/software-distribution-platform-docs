@@ -26,7 +26,7 @@ Hub 此前已写好各 domain 的 handler / service / repository / middleware，
 |---|---|
 | `cmd/hub/main.go` | 入口：装配 DB→repos→services→handlers→认证→gateway，启动 Gin + WS |
 | `internal/config/config.go` | 环境变量配置（`KEYCLOAK_ISSUER` 空即 dev 免认证） |
-| `internal/db/db.go` | `gorm.Open(postgres)` + `AutoMigrate` 全部 26 张表（基础 22 + §7 多 org RBAC 扩展 4 张：`platform_roles` / `platform_role_bindings` / `component_roles` / `pipeline_approvals`） |
+| `internal/db/db.go` | `gorm.Open(postgres)` + `AutoMigrate` 全部 31 张表（含 §7 多 org RBAC 扩展 4 张：`platform_roles` / `platform_role_bindings` / `component_roles` / `pipeline_approvals`） |
 | `internal/gateway/gateway.go` | Hub 侧 WebSocket：鉴权、按集群跟踪连接、下发 spec、回写状态 |
 | `internal/run/service/pipeline_run.go` | `Trigger` 组装 DAG spec 并下发；`ApplyStatus` 回写运行状态 |
 | `internal/run/models/trigger_request.go` | `POST /pipelines/:id/runs` 请求 DTO |
@@ -39,7 +39,7 @@ Hub 此前已写好各 domain 的 handler / service / repository / middleware，
 
 ## 2. 验收标准 (Acceptance Criteria - AC)
 
-- [x] **AC-01 (正常路径 · 启动)**: Given 配置了 `DB_DSN` 的 Postgres, When 执行 `go run ./cmd/hub`, Then 进程启动、Gin 监听 `HUB_ADDR`、`AutoMigrate` 建立全部 26 张表（含 §7 多 org RBAC 扩展）、gateway 路由挂载于 `GATEWAY_PATH`，日志输出 `db: auto-migrate complete`。
+- [x] **AC-01 (正常路径 · 启动)**: Given 配置了 `DB_DSN` 的 Postgres, When 执行 `go run ./cmd/hub`, Then 进程启动、Gin 监听 `HUB_ADDR`、`AutoMigrate` 建立全部 31 张表（含 §7 多 org RBAC 扩展）、gateway 路由挂载于 `GATEWAY_PATH`，日志输出 `db: auto-migrate complete`。
 - [x] **AC-02 (正常路径 · 目标接入)**: Given 一个已在 `targets` 表注册的目标且 `GATEWAY_TOKEN` 匹配, When Runner 携带 `X-Target-Name` + `Authorization: Bearer <token>` 拨入 WS, Then 连接建立、`targets.status` 置 `online`、断开后置 `offline`。
 - [x] **AC-03 (正常路径 · 触发运行)**: Given 至少一个在线集群且目标 pipeline 有 task 模板, When `POST /pipelines/:id/runs`, Then Hub 按当前版本组装 `PipelineRunSpec`（跨 stage 推导 `DependsOn`），落 `pipeline_runs`(Pending)+`task_runs`(Pending)×N，并经 gateway `apply_pipeline_run` 单播到目标集群 Runner。
 - [x] **AC-04 (正常路径 · 状态回写)**: Given 某运行已由 Runner 执行, When Runner 经 WS 回传 `status_update`, Then `pipeline_runs.phase`/`start_time`/`completion_time` 与每个 `task_runs.*` 被同步更新；未知运行（如 Runner 重启后的孤儿消息）被安全忽略。
@@ -55,7 +55,7 @@ Hub 此前已写好各 domain 的 handler / service / repository / middleware，
 > L 级核心链路，全量填写。
 
 - **[x] 资损与网络安全 (Security)**
-  - 敏感数据脱敏: **涉及**。`component_configs.is_secret=true` 的密钥仅存 `secret_ref`、不存明文 `value`；`users.keycloak_id` 标 `json:"-"` 不出 JSON。
+  - 敏感数据脱敏: **涉及**。`component_configs.is_secret=true` 的密钥仅存 `secret_ref`、不存明文 `value`。（`users.keycloak_id` 曾标 `json:"-"` 不出 JSON —— 该表已随 D3 删除，主体一律取 token `sub`。）
   - 核心接口幂等/防重: **部分涉及**。Runner 重连后 `status_update` 按 `cr_name+target_id` 幂等 upsert（重复消息覆盖而非新建）；`Dispatch` 失败仅标记 Failed 不产生重复 run。
 - **[x] 高并发与限流降级 (High Availability)**
   - 核心接口预估 Peak QPS: 普通（内部控制面，非 C 端高并发）；gateway 连接按 `target_id` 单播，连接表 `map[uuid]*websocket.Conn` 加 `sync.RWMutex` 保护。
@@ -106,10 +106,10 @@ Headers: Authorization: Bearer <token>   X-Target-Name: <target-name>
 
 ### 4.2 数据库 / 缓存变动（DDL 设计）
 
-共 **26 张表**，由 `internal/db/db.go` 的 `AutoMigrate` 自动生成（等价于下方 DDL）；其中 V1 的 `roles` + `approvals` 仍保留为迁移窗口兼容（P2 已切到 `pipeline_approvals`），§7 扩展表见 #23–#26。
+共 **31 张表**，由 `internal/db/db.go` 的 `AutoMigrate` 自动生成；其中 V1 的 `roles` + `approvals` 仍保留为迁移窗口兼容（P2 已切到 `pipeline_approvals`）。**表数已于 2026-09-23 用真实 Postgres 核实**（`bash hack/migration-check.sh` 会回显实际建表数）；下方「逐表 DDL」块展开历史 26 个槽位（含已删的 `users` 槽位 #22），另 6 张表的 DDL 见 `DATA-MODEL.md`。
 
 **公共基类**
-- `Base`（软删除，用于 orgs/services/components/pipelines/users）：`id uuid PK default gen_random_uuid()`、`created_at`、`updated_at`、`deleted_at timestamptz`（软删索引）。
+- `Base`（软删除，用于 orgs/services/components/pipelines——`users` 已随 D3 删表）：`id uuid PK default gen_random_uuid()`、`created_at`、`updated_at`、`deleted_at timestamptz`（软删索引）。
 - `BaseNoSoftDelete`（硬删除，用于 targets/environments/pipeline_stages/pipeline_task_templates/全部运行历史）：`id uuid PK`、`created_at`、`updated_at`。
 - 设计取舍：运行历史故意**不用软删除**（审计事实，删即硬删；删组件不级联清运行记录）。
 
@@ -135,9 +135,21 @@ Headers: Authorization: Bearer <token>   X-Target-Name: <target-name>
 | 17 | `rollout_runs` | run.RolloutRun | — | 运行记录 |
 | 18 | `approvals` | run.Approval | — | 审批 |
 | 19 | `dispatch_jobs` | run.DispatchJob | — | 运行记录（Durable 投递队列） |
-| 20 | `roles` | permission.Role | — | 权限 |
-| 21 | `component_role_bindings` | permission.ComponentRoleBinding | — | 权限 |
-| 22 | `users` | permission.User | Base | 认证 |
+| 20 | `roles` | permission.Role | — | 权限（V1；兼容窗口已随 D3 结束，仅剩只读展示） |
+| 21 | `component_role_bindings` | permission.ComponentRoleBinding | — | 权限（V1；`user_id`/`role_id` 已随 D3 删列） |
+| 22 | `platform_roles` | permission.PlatformRole | — | 权限 §7.2 |
+| 23 | `platform_role_bindings` | permission.PlatformRoleBinding | — | 权限 §7.2 |
+| 24 | `component_roles` | permission.ComponentRole | — | 权限 §7.3 |
+| 25 | `pipeline_approvals` | run.PipelineApproval | — | 审批 §7.4 |
+| 26 | `audit_log` | permission.AuditLog | — | 审计 §6 |
+| 27 | `permission_requests` | permission.PermissionRequest | — | 权限申请 §7.2 |
+| 28 | `resource_ownership` | permission.ResourceOwnership | — | 归属权威源 §3 |
+| 29 | `role_api_mappings` | permission.RoleAPIMapping | — | 角色→接口映射 §5.1③ |
+| 30 | `credentials` | credentials.Credential | — | 凭据 |
+| 31 | `environment_groups` | environmentgroup.EnvironmentGroup | — | 环境分组 |
+
+> 表数注：上方清单为**完整 31 张**。`users` 表已随 D3 删除（迁移 `0015`），故本清单不再含它；
+> 下方「逐表 DDL」块的注释编号沿用历史编号（保留已删的 `#22 users` 槽位），与本清单编号**不再一一对应**。
 
 **逐表字段（DDL 等价）**
 
@@ -273,7 +285,9 @@ CREATE TABLE artifacts (
   artifact_type varchar(32) NOT NULL DEFAULT 'generic',  -- image|binary|archive|generic
   storage_key varchar(512) NOT NULL, size_bytes bigint,
   checksum varchar(128), commit_sha varchar(64),
-  expires_at timestamptz, created_at timestamptz
+  expires_at timestamptz,                              -- NULL = 永久；非 NULL 时被保留期 GC 消费（0016 起真正生效）
+  cleanup_state varchar(32) NOT NULL DEFAULT 'active', -- active | pending_deletion（对象待清理，下轮自动重试）
+  created_at timestamptz
 );
 
 -- 14. pipeline_runs (长期事实源，CR 仅短期留存)
@@ -360,23 +374,24 @@ CREATE TABLE roles (
   is_system boolean NOT NULL DEFAULT false, created_at timestamptz
 );
 
--- 21. component_role_bindings (无绑定 = 无权限)
+-- 21. component_role_bindings (无绑定 = 无权限；§7 主体模型)
 CREATE TABLE component_role_bindings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   component_id uuid NOT NULL REFERENCES components(id),
-  user_id uuid NOT NULL REFERENCES users(id),
-  role_id uuid NOT NULL REFERENCES roles(id),
-  granted_by uuid, granted_at timestamptz NOT NULL DEFAULT now()
+  org_id uuid,                                       -- 冗余：组件→服务→服务树→org
+  subject_type varchar(16),                          -- user|group
+  subject_id varchar(128),                           -- user = token `sub` | group = 组路径
+  component_role_id uuid REFERENCES component_roles(id),
+  granted_by varchar(128),                           -- 授权者的 `sub`
+  granted_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz                             -- §7.4 TTL；NULL = 永久
 );
+-- D3（迁移 0015）：V1 的 user_id / role_id 两列已删除，其解析分支同批移除。
 
--- 22. users (Keycloak JIT 自建)
-CREATE TABLE users (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES orgs(id),
-  email varchar(256) NOT NULL, name varchar(128) NOT NULL,
-  keycloak_id varchar(64) UNIQUE,   -- token sub，认证查找主键
-  created_at timestamptz, updated_at timestamptz, deleted_at timestamptz
-);
+-- 22. users —— ❌ **表已删除**（D3，迁移 0015）
+-- hub 不存用户身份（ACCOUNT-PERMISSION-MODEL §2.2）：`UserContext` 不再逐请求开通用户，
+-- 主体一律取 token `sub`。原结构（org_id / email / name / keycloak_id / Base 软删列）见
+-- `migrations/0015_d3_drop_users_and_legacy_columns.sql` 的注释留档。
 
 -- 23. platform_roles (§7.2 平台级角色；OrgID NULL=内置)
 CREATE TABLE platform_roles (
@@ -415,12 +430,12 @@ CREATE TABLE pipeline_approvals (
 );
 ```
 
-> ✅ **权限表已升级为 §7 多 org 两层 RBAC（P1/P2/P3 已落地）**：[hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) 规划的两层 RBAC（`platform_roles` + `platform_role_bindings` + `component_roles` + `subject_type/subject_id` + 组件 `owner_user`/`owner_group` 列 + `pipeline_approvals`）均已建表并实现 Enforcement；V1 的 `roles` + `component_role_bindings(user_id/role_id)` + `approvals` 仅保留为迁移窗口兼容（可空、不新建授权）。新建授权一律走 §7 路径。
+> ✅ **权限表已升级为 §7 多 org 两层 RBAC（P1/P2/P3 已落地）**：[hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) 规划的两层 RBAC（`platform_roles` + `platform_role_bindings` + `component_roles` + `subject_type/subject_id` + 组件 `owner_sub`/`owner_group` 列 + `pipeline_approvals`）均已建表并实现 Enforcement；V1 的 `roles` + `component_role_bindings(user_id/role_id)` + `approvals` 的**兼容窗口已随 D3 结束**（`user_id`/`role_id` 已删列，`roles` 表仅剩只读展示）。新建授权一律走 §7 路径。
 
 **ER 关系概要**
 ```
 orgs ─1:1─ service_trees
-orgs ─1:N─ users / roles(org_id NULL=内置)
+orgs ─1:N─ roles(org_id NULL=内置)
 service_trees ─1:N─ services ─1:N─ components
 components ─1:N─ component_configs ─(审计)→ component_config_history
 components ─1:N─ environments ─N:1─ targets
@@ -440,7 +455,7 @@ components ─1:N─ component_role_bindings ─N:1─ component_roles（§7.3�
 - [x] 3-Corner 澄清通过：AC 由 Dev 与历史主规格（Epic 5/7）对齐，QA 待补。
 - [x] 单元测试覆盖率基线：核心逻辑（`buildSpec`/`selectTarget`/`ApplyStatus`）已实现，单测待补（当前以 `go build`+`go vet` 作为门禁）。
 - [x] 静态代码扫描无 P0/P1：hub 与 runner 两模块 `go vet ./...` 通过；`go mod tidy` 清理完成。
-- [x] 自动化测试/手动验收：两模块 `go build ./...` 均 EXIT=0；本地启动会执行 `AutoMigrate` 建 26 张表（含 §7 多 org RBAC 扩展，手动验收待联调）。
+- [x] 自动化测试/手动验收：两模块 `go build ./...` 均 EXIT=0；本地启动会执行 `AutoMigrate` 建 31 张表（含 §7 多 org RBAC 扩展）；**2026-09-23 已在真实 Postgres 上验收**（`bash hack/migration-check.sh`，两条建库路径全绿）。
 - [ ] 监控告警与降级开关在预发/灰度环境验证：依赖后续 Epic 5 离线告警与 console 灰度监控（**未做**）。
 
 ---

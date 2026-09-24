@@ -80,7 +80,7 @@
 **StatusUpdatePayload**: `{ targetID, pipelineRunName, pipelineRunNamespace, phase, message?, startTime?, completionTime?, tasks: TaskRunStatusSummary[] }`
 
 ### 4.2 数据库/缓存变动 —— Runner 的"表"即 K8s CRD（etcd 持久化）
-> ⚠️ **重要说明**: Runner 是 K8s Operator，**不连接任何关系型数据库**。其全部持久化状态由 3 个自定义资源（CRD）承担，物理存于 K8s 集群的 etcd。这与 Hub 的 Postgres（26 张表，含 §7 多 org RBAC 扩展）是**两套独立的存储**：Hub 存"历史/审计/权限"（SQL），Runner 存"实时执行状态"（CRD/etcd）。二者通过 `CRName`/`CRNamespace` 关联。
+> ⚠️ **重要说明**: Runner 是 K8s Operator，**不连接任何关系型数据库**。其全部持久化状态由 3 个自定义资源（CRD）承担，物理存于 K8s 集群的 etcd。这与 Hub 的 Postgres（31 张表，含 §7 多 org RBAC 扩展）是**两套独立的存储**：Hub 存"历史/审计/权限"（SQL），Runner 存"实时执行状态"（CRD/etcd）。二者通过 `CRName`/`CRNamespace` 关联。
 
 以下为 3 个 CRD 的"建表"（schema）设计，字段类型/枚举均对照 `api/v1alpha1/*_types.go` 核实。
 
@@ -233,7 +233,7 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 - **Runner 只是三条接入通道之一（2026-09-21 补充）**：`kubeconfig` / `ssh` 两条通道**由 hub 侧发起连接**，**不经过 Runner**——Runner 不持有、也不使用目标凭据，本节"Runner 只消费 hub 已鉴权下发的 spec"的边界**不变**。但须知道两点：
   1. **执行底座是隐式的**：`pkg/executor/job_builder.go` 把 `TaskRunSpec` 翻译成**目标集群里的 K8s Job**（`mainContainer` = `sh {ScriptPath}`；`releaseContainer` = `helm upgrade --install` / `kubectl apply`；工作区 = EmptyDir 卷）。Job / 命名空间 / SA / RoleBinding / 卷在物理机与虚拟机上**都不存在** → **非容器目标无法走本路径**，只能走 hub 直连的 `ssh`。
   2. **`TaskRunSpec` 目前只有一种执行实现**（K8s Job），尚无 `executor backend` 抽象；若将来 hub 直连复用同一任务模型，需新增后端判别维度。
-  - 通道能力矩阵与凭据归属见 [README.md §5.6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)；数据侧见 `hub/DATA-MODEL.md` §9.5/§9.7。
+  - 通道能力矩阵与凭据归属见 `hub/DATA-MODEL.md` §9.5（2026-09-23 自 docs/README §5.6 迁入）；数据侧见 §9.7。
 
 ---
 

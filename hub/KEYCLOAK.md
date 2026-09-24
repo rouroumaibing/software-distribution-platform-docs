@@ -217,7 +217,12 @@ realm 由 [`templates/keycloak-realm-configmap.yaml`](https://github.com/rouroum
 | 用户 `admin` | **预置的人类登录账号** | realm `sdp` 下的普通用户：用户名 `admin` / 密码 **`sdp@12345`**（`temporary: false`，不强制改密），带 `default-roles-sdp` + `admin` 两个 realm 角色；console 登录用它 |
 | 用户 `service-account-sdp-backend` | 服务账号 | `sdp-backend` 客户端自动生成的服务账号（**不是**人类登录账号） |
 | protocolMapper `roles` / `groups` | OIDC 映射 | 把 realm 角色、组成员关系写进令牌（hub 当前只消费 `groups`，见 §6） |
-| 组 `/org:<slug>`（**待预置**） | 组织载体（**D1 默认 ②**） | 「组织」维度的落点：**组随 realm JSON 可靠导入**，而 Keycloak Organizations 的**组织集导入未证实**（见 `hub/ACCOUNT-PERMISSION-MODEL.md` §2.1 / §2.3）。**`/org:` 为保留前缀** —— 该类组**不得**作为 `subject_type=group` 的绑定主体（组织不作 RBAC 主体）。**无需**开 realm 的 Organizations 开关（可避免 identity-first 登录流变化） |
+| 组 `/org:<slug>`（**由 hub 运行时自动预置**） | 组织载体（**D1 默认 ②**） | 「组织」维度的落点：组**不再靠静态 realm JSON 预置**，而由 hub `orgsvc` 在 `Create` 后幂等 `EnsureGroup("/org:<slug>")`、启动 `ReconcileGroups` 回填存量（`internal/keycloak` Admin 客户端，依赖 `KEYCLOAK_ADMIN_CLIENT_SECRET`；缺失则 dev 不建组只告警）。Keycloak Organizations 的**组织集导入未证实**，故仍走 ② 路径（见 `hub/ACCOUNT-PERMISSION-MODEL.md` §2.1 / §2.3）。**`/org:` 为保留前缀** —— 该类组**不得**作为 `subject_type=group` 的绑定主体（组织不作 RBAC 主体）。**无需**开 realm 的 Organizations 开关（可避免 identity-first 登录流变化）。**真集群 E2E 已验证（2026-09-23）**：hub 注入 issuer+secret 后 `POST /orgs` 201 → KC 组列表出现 `org:e2e-org2`；还原 env 后 dev 姿态恢复 |
+
+**E2E 揪出的三个 KC26 集成坑（2026-09-23，均已修/规避）**：
+1. **realm JSON 的 `realmRoles` 装不下 realm-management 客户端角色**：`query-groups` / `manage-users` 是 realm-management **client roles**，写在 user 的 `realmRoles` 里会被 `--import-realm` **静默丢弃**（导入不报错），provisioner 调 Admin API 时 403。修复：改用 user 的 **`clientRoles`: {"realm-management": ["query-groups","manage-users"]}**（已改 `build/hub/charts/.../keycloak-realm-configmap.yaml`，仅新 realm 首次导入生效）；存量 realm 用 kcadm 对 `role-mappings/clients/<realm-management-uuid>` POST 角色数组补授（`add-roles` 在此场景报 `Role not found`，须走 REST）。
+2. **issuer 端点形态**：KC 26 实际通告的 issuer 是 `http://hub-keycloak-http/keycloak/realms/sdp`（svc **短名**、默认端口被剥）——hub 的 `KEYCLOAK_ISSUER` 必须与之一字不差，否则 go-oidc 报 issuer mismatch（fatal crash-loop）。
+3. **password grant 报 `Account is not fully set up`**：声明式 user profile 下用户缺 `firstName`/`lastName` 会隐式触发 UPDATE_PROFILE，即使 `requiredActions=[]` 也拒绝发 token——E2E 用户必须带全姓名字段。
 
 **说明**：这里**没有直接采用** `~/Downloads/keycloak/realms-config.json` 那份全量导出（realm 名 `console-account`）——它含华为 CCE 定制 protocolMapper（`org_viewer`/`org_admin`）且引用内置 client / role，全量导入易冲突。本表是**按项目内容手写的聚焦版**；如需保留原导出的额外字段（如自定义认证流），在预置 JSON 中增补即可。
 
@@ -292,11 +297,25 @@ realm 由 [`templates/keycloak-realm-configmap.yaml`](https://github.com/rouroum
 
 **要打开鉴权**（两处需同时改）：
 
-1. **console**：`auth.authDisabled: "false"`，并填 `keycloakIssuerUrl`（本项目即 `https://www.sdpworkflow.com/keycloak/realms/sdp`）、`keycloakClientId: sdp-console`、`keycloakRedirectUri`（如 `https://www.sdpworkflow.com/auth/callback`）。
-2. **hub**：设 `auth.keycloakIssuerUrl`（填 console 用的**同一个** issuer）。模板**已透传**为 `KEYCLOAK_ISSUER` / `KEYCLOAK_CLIENT_ID`（2026-09-21 补齐；此前确为缺口）。
+1. **console**：`auth.authDisabled: "false"`，并填 `keycloakIssuerUrl`、`keycloakClientId: sdp-console`、`keycloakRedirectUri`（本地 = `https://www.sdpworkflow.com:8443/auth/callback`）。
+2. **hub**：设 `auth.keycloakIssuerUrl`（填 console 用的**同一个** issuer）。模板**已透传**为 `KEYCLOAK_ISSUER` / `KEYCLOAK_CLIENT_ID`（2026-09-21 补齐）；另透传 `KEYCLOAK_ADMIN_CLIENT_SECRET`（org 载体组预置，取值 = realm JSON 里 `sdp-backend` 的 secret 字面量）。
 3. **一致性**：console 的 `keycloakClientId` 必须与 hub 的 `KEYCLOAK_CLIENT_ID` 相同（hub 校验令牌 `azp`）。两处键名同名（见 §3），可按同一份 values 下发。
-4. **前置（已完成，2026-09-22）**：keycloak 的 `keycloak.ingress` 已开 —— 同域名 `www.sdpworkflow.com`、前缀 `/keycloak`、TLS 复用 `console-ingress-tls`，issuer 对浏览器与 hub 均可达；`http.relativePath` 已同步为 `/keycloak`，`proxy.mode` 已修为 `xforwarded`（见 §3 坑 4/坑 5）。
-   因此**剩下的只有**：打开上面两个开关。用户侧**已预置**登录账号 `admin` / `sdp@12345`（realm `sdp`，见 §5），可直接用它验证整条链路；更多用户可在控制台新建，或让用户走首次登录自动开户（`keycloak_id=sub`）—— 但用户**必须先在 Keycloak 里存在**。
+4. **前置（已完成，2026-09-22）**：keycloak 的 `keycloak.ingress` 已关，路由走 Envoy Gateway 的 keycloak HTTPRoute（同域名 `www.sdpworkflow.com`、前缀 `/keycloak`、TLS 复用 `console-ingress-tls`）；`http.relativePath` 已同步为 `/keycloak`，`proxy.mode` 已修为 `xforwarded`（见 §3 坑 4/坑 5）。
+
+### 6.5 真对接已落地（2026-09-23，本地 kind 全链 E2E 通过）
+
+由 `deploy-local.sh` 默认开启（`SKIP_AUTH=1` 退回 dev 姿态），**issuer 三方一字不差** = `https://www.sdpworkflow.com:8443/keycloak/realms/sdp`：
+
+| 侧 | 配置 | 关键点 |
+| --- | --- | --- |
+| Keycloak | `keycloak.hostname: "https://www.sdpworkflow.com:8443/keycloak"`（KC_HOSTNAME，完整 URL） | ⚠️ **路径必须带上 `/keycloak`**——实测 KC 不把 `http.relativePath` 追加到 KC_HOSTNAME 后面，不带路径时 issuer 通告成 `.../realms/sdp`，网关 `/keycloak` 前缀路由下不可达 |
+| 网关 | https listener 端口 **8443**（根 `deploy/gateway-sdp.yaml`） | 与浏览器访问端口/issuer 端口三方一致；listener 443 会令 X-Forwarded-Port=443、issuer 丢端口，而 host 443 映射须重建 kind 集群 |
+| hub | `auth.keycloakIssuerUrl`（同 issuer）+ 两个 dev-only 脚手架 | ① hostAliases 指 **envoy svc ClusterIP**（`auth.resolveHostIp`）——**不能指节点 IP**：pod 只能达 nodePort 30k 段，URL 的 `:8443` 对不上；② `auth.trustedCASecret: console-tls` 挂自签 CA + `SSL_CERT_FILE`（Go 系统信任池读该变量） |
+| console | `auth.authDisabled=false` + issuer/clientId/redirectUri | ⚠️ helm `--set xxx=false` 解析成 **bool**，模板 `false \| default "true"` 会被 sprig 当零值顶掉——模板须先 `\| toString`（chart config.yaml 已修） |
+
+E2E 证据（全部经网关 https 或 hub API 实测）：discovery 通告 issuer 与配置一字不差；无 token 调 hub API 401（直连与走网关皆验）；带 token `GET /targets` 200、`POST /orgs` 201 且 KC 自动出现 `/org:e2e-auth` 组（provisioner 经公网 issuer 走 Admin API 全链）；console `config.js` 三键注入正确。
+
+**临时密码强制重置**：realm JSON 预置 admin 的 `credentials[].temporary: true`（存量集群以 `UPDATE_PASSWORD` requiredAction 等价落地——KC26 对临时凭据登录也是加该 action），首次登录被 KC 硬性拦截改密；API 可验证：password grant 返回 `400 invalid_grant "Account is not fully set up"`。
 
 > `sdp-console` 是 public client（SPA 无 secret）；hub **不需要**单独建 client —— 它只是被动验签，用的是同一个 console client ID（详见 hub 仓 `internal/middleware/WIRING.md`）。
 
@@ -307,12 +326,12 @@ realm 由 [`templates/keycloak-realm-configmap.yaml`](https://github.com/rouroum
 | 对象 | 当前值 | 怎么改 |
 | --- | --- | --- |
 | **`admin`（管理控制台，realm `master`）** | `admin` / `sdp@12345`（**dev 默认**） | 首次启动由 `keycloak.extraEnv` 的 `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD` **引导**（仅「master realm 尚无 `admin`」时生效 —— 已用旧口令启动过则改这里无效，须先删该用户或用 `kc.sh bootstrap-admin user` 重置）。<br>① 生产：改成 `valueFrom.secretKeyRef` 引一个 Secret（chart README「Creating a Keycloak Admin User」即此写法）；<br>② 改已有密码：登录控制台 → realm **`master`** → Users → 选中用户 → Credentials → Set password。 |
-| **`admin`（realm `sdp`，console 登录用）** | `admin` / **`sdp@12345`** | 预置在 realm JSON（`templates/keycloak-realm-configmap.yaml`）的 `users[]`。<br>① **改密（推荐）**：控制台 → realm `sdp` → Users → `admin` → Credentials → Set password（改完不必动 chart，重启也不回滚）；<br>② **改预置值**：改 realm JSON 的 `credentials[].value` 后，**删掉 realm `sdp` 再 `helm upgrade`** —— `--import-realm` 对已存在的 realm / 用户不覆盖；<br>③ **加用户**：同样在 `users[]` 增补，或直接在控制台建。 |
+| **`admin`（realm `sdp`，console 登录用）** | `admin` / **`sdp@12345`**（**临时密码**，预置 `temporary: true` / 存量集群以 `UPDATE_PASSWORD` requiredAction 强制首次改密） | 预置在 realm JSON（`templates/keycloak-realm-configmap.yaml`）的 `users[]`。<br>① **改密（推荐）**：控制台 → realm `sdp` → Users → `admin` → Credentials → Set password（改完不必动 chart，重启也不回滚）；<br>② **改预置值**：改 realm JSON 的 `credentials[].value` 后，**删掉 realm `sdp` 再 `helm upgrade`** —— `--import-realm` 对已存在的 realm / 用户不覆盖；<br>③ **加用户**：同样在 `users[]` 增补，或直接在控制台建。 |
 | **realm 普通用户（其他）** | 未预置 | 首次登录**自动开户**（`keycloak_id=sub`），但用户须先在 Keycloak 里存在。手工建用户 / 改密：控制台 `https://www.sdpworkflow.com/keycloak/admin/`（或端口转发后 `http://localhost:8080/keycloak/admin/`）→ realm `sdp` → Users。 |
 | **服务账号 `service-account-sdp-backend`** | 凭 `sdp-backend` 客户端 secret | 控制台 → Clients → `sdp-backend` → Credentials 查看/重置。 |
 | **console 登录** | 无 client secret | public client + PKCE，**不需要** secret。 |
 
-> ⚠️ `admin` / `sdp@12345`（master 与 realm `sdp` 两处）与 realm JSON 里 `sdp-backend` 的 `secret: "**********"` 都是**开发默认值**，生产务必替换为强凭据并经 Secret 注入（至少把 `KEYCLOAK_ADMIN_PASSWORD` 改成 `valueFrom.secretKeyRef`）。
+> ⚠️ `admin` / `sdp@12345`（master 与 realm `sdp` 两处）与 realm JSON 里 `sdp-backend` 的 `secret: "**********"` 都是**开发默认值**，生产务必替换为强凭据并经 Secret 注入（至少把 `KEYCLOAK_ADMIN_PASSWORD` 改成 `valueFrom.secretKeyRef`）。console 登录说明页（`/login-hint`，2026-09-23 落地）会把预置账号批注为「**临时初始密码，仅供首次登录，登录后请立即重置**」并提供 Keycloak 账户控制台（`{issuer}/account`）重置入口；展示值由 console chart values `auth.loginHintUser` / `auth.loginHintPassword`（经 config.js `VITE_LOGIN_HINT_USER/PASSWORD` 注入）提供，**与 realm JSON 同源、改动须两处同步**，生产可置空隐藏凭证块。
 >
 > ⚠️ 两个 `admin` 是**不同 realm 的两个账号**：`master` 的那个能管 Keycloak 本身（管理台），realm `sdp` 的那个只是 console 的业务账号。dev 刻意用同一口令便于记忆，**改密时务必看清当前 realm**，改错 realm 会出现「密码明明改了却登不上」。
 >

@@ -74,7 +74,7 @@ hub **只**从 token 取下列声明，其余一律不信（含请求体里自�
 
 - **不自管密码**：密码只在 Keycloak。
 - **不存用户表**：hub 不维护「用户」实体，绑定主体直接用 token 的 `sub`。
-  - ⚠ 现状**违背**此条（`users` 表 + 首登自动开通），迁移代价见 §10 / §12。
+  - ✅ **已合规（2026-09-23，D3）**：`users` 表已删，`UserContext` 不再逐请求开通用户，主体一律取 token `sub`（见 §10 #4 / §12 D3）。
 - **不因 token 里有角色就放行**：token 里的角色是**输入**，不是结论 —— 判定输入只来自 hub 的绑定表（§5.1①、§5.2）。
   - ⚠ 本 realm 的角色**并不在 `realm_access`**，而在**顶层 `roles` claim**（`sdp-console` 上的 `oidc-usermodel-realm-role-mapper`，`claim.name: roles`）。按 `realm_access` 去 grep 会一无所获、进而误判为「角色根本没进 token」——**核对时请按 `roles`**。
   - 两段式分工（§4）一句话记住：**a 段吃 token（组织 → 资源归属）· b 段吃 hub 表（角色 → 接口）**。
@@ -341,11 +341,11 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 | # | 规范要求 | 现状 | 结论 | 落点 |
 | --- | --- | --- | --- | --- |
 | 1 | Keycloak 不做授权决策 | hub `internal/middleware/auth.go` **刻意不读** `realm_access`（注释写明） | ✅ 方向一致 | — |
-| 2 | token 携带**组织** | realm **无任何 `/org:<slug>` 组**（§2.3 默认载体 ②）；`groups` mapper 已挂且 `full.path=true`，但 **claim 为空**（与第 6 行同因） | ❌ | realm CM（**默认 ②**：只需预置 `/org:<slug>` 组，**无需**开 Organizations） |
+| 2 | token 携带**组织** | realm **无任何 `/org:<slug>` 组**（§2.3 默认载体 ②）；`groups` mapper 已挂且 `full.path=true`，但 **claim 为空**（与第 6 行同因） | ❌ → ✅ **已落地（2026-09-23，Task #4）**：hub `orgsvc` 在 org `Create` 后幂等 `EnsureGroup("/org:<slug>")`、启动 `ReconcileGroups` 回填存量（`internal/keycloak` Admin 客户端 + realm 赋 `sdp-backend` SA `manage-users`/`query-groups` 最小集）；`KEYCLOAK_ADMIN_CLIENT_SECRET` 缺失则 dev 不建组只告警 | hub 代码（`orgsvc` + `internal/keycloak`） |
 | 3 | token 携带**角色** | `sdp-console` 已挂 roles mapper（写**顶层 `roles` claim**，非 `realm_access`），但 hub 不消费 | ✅ **已定**（不作判定输入，仅供对账/展示 —— 由不动式② + §2.1/§2.2 裁定，**非**待拍板；论证见 [plans/ACCOUNT-PERMISSION-DECISIONS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/ACCOUNT-PERMISSION-DECISIONS.md) §2） | §12 D2（已闭） |
-| 4 | hub **不存用户表** | 存在 `users` 表 + 首登**自动开通**（`UserContext` → `GetOrProvisionByKeycloakID`） | ❌ | migration + 代码 |
+| 4 | hub **不存用户表** | ✅ **已落地（2026-09-23，D3）**：`users` 表已删（`migrations/0015`）；`UserContext` 改为**纯解析**（无库、无 provision）；`CurrentUserID` 连同 7 个读取点全部并入 `CurrentSubject`（token `sub`）。⚠ 删表不可逆，部署侧须手工跑 `0015` | ✅ | migration + 代码 |
 | 5 | 绑定主体 = token `sub` | `ListMatching` 两侧已按 **subject（`sub`）** 匹配（component 保留 V1 `user_id` 遗留分支）；`CurrentSubject` 由中间件注入 | ✅ **已落地（2026-09-22）** | repo + middleware |
-| 6 | 组主体格式唯一 | realm 现有 RBAC 组 `/sdp-admin`（预置 `admin` 已加入）⇒ 组 claim **通路已通**；但**组织组 `/org:<slug>` 仍为零** ⇒ 组织维度 claim 仍为空 | ✅ 通路 + 首个 RBAC 组已就位 · ⏳ 组织组待建 | realm CM |
+| 6 | 组主体格式唯一 | realm 现有 RBAC 组 `/sdp-admin`（预置 `admin` 已加入）⇒ 组 claim **通路已通**；组织组 `/org:<slug>` 由 hub 运行时自动预置（见第 2 行） | ✅ 通路 + 首个 RBAC 组已就位 · ✅ 组织组已建（Task #4） | hub 代码（`orgsvc` + `internal/keycloak`） |
 | 7 | 资源归属单表 | **已建表** `resource_ownership`（§3）+ CRUD 端点 + `IsAllowed` 纯逻辑；**✅ 中间件强制点已接（2026-09-22 第十一批）**：`RequireResourceOwnership` 在 RBAC 之前判归属，拒绝语与 RBAC 的 403 区分；对**未登记归属**的资源放行（当前全部资源如此 ⇒ 零回归） | ✅ **已落地（2026-09-22）** | 新表 §3 + middleware |
 | 8 | 角色 → 接口映射落表 | **已建表** `role_api_mappings`（§5.1③）+ CRUD + `SyncFromRoles`；`BindingService` 生效动作集 = 角色 `actions` JSON ∪ 映射表 | ✅ **已落地（2026-09-22）** | 新表 §5.1③ |
 | 9 | Casbin 承担复杂策略 | 无依赖；DATA-MODEL §7.6 标为「不在本期」 | ❌（D4 已定延后，登记 B-19） | §12 D4 |
@@ -374,7 +374,7 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 | 1 | **D1–D6 已闭（0 项阻塞）**：D2 / D3 / D4 / D6 由本文件正文裁定，D1 / D5 按**可逆默认**自决 —— 见 §12 与 [plans/ACCOUNT-PERMISSION-DECISIONS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/ACCOUNT-PERMISSION-DECISIONS.md) §0.1 | 无 —— realm 与表结构**均可定稿**（§2.3 硬约定使 carrier 可换，**不需要**先拍 D1） |
 | 2 | realm 侧（**D1 默认载体 ②**）：预置组织组 `/org:<slug>` + 预置账号；groups mapper **已在**、`full.path=true` ⇒ **无需开 Organizations、无 identity-first 登录流变化** | ① `helm template` 渲染产物解析 realm JSON 通过；② 按 `hub/KEYCLOAK.md` §4 第 5 步的 password-grant curl 取 token，**解码断言 `groups` claim 含 `/org:*`**；③ **仅当**切 ①（federation）时才需实测「组织集能否随 realm JSON 导入」 |
 | 3 | 表结构：**✅ 四表已落（2026-09-22 第八批，`0012`）** —— `resource_ownership` / `role_api_mappings` / `audit_log` / `permission_requests`；**✅ `expires_at` ×2（`0011`）**；**✅ C-10 平台级端点已落** | migration 可在空库 + 存量库双向执行；C-10 端点可用，且已种入 `/sdp-admin` 组绑定 —— D2① 落地后**不会**出现「无人是平台管理员」（见 [plans/ACCOUNT-PERMISSION-DECISIONS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/ACCOUNT-PERMISSION-DECISIONS.md) §2.5） |
-| 4 | 认证/鉴权中间件按 §4 顺序重排：**✅ subject 解析（`CurrentSubject`）+ 鉴权路径按 `sub` 匹配已落（2026-09-22）**；**⏳ D3 删 `users` 表未做**（唯一不可逆，待确认 scope + 备份） | Go 单测 + `go vet/build/test` ✅ |
+| 4 | 认证/鉴权中间件按 §4 顺序重排：**✅ 已全部落地** —— subject 解析（`CurrentSubject`）+ 鉴权路径按 `sub` 匹配（2026-09-22），**D3 删 `users` 表 / `CurrentUserID` / V1 遗留列（2026-09-23，`migrations/0015`）** | Go 单测 + `go vet/build/test` ✅ |
 | 5 | RBAC ① → ③ 落表并成为判定输入：**✅ 映射表已落 + `BindingService` 生效动作集并入（2026-09-22）**；**⏳ 种 `admin` 的 `sub` 平台管理员绑定待 realm 有组后补种** | 判定结果与旧实现逐例对照；`auth.go` 的 `keycloakClaims` **不得**出现 roles 字段（**防回退静态断言**） |
 | 6 | 审计中间件 + `audit.Reporter`：**✅ 已落地（2026-09-22）** —— `middleware/audit.go` 只记写操作 | 写操作有审计行；业务代码零手写（静态检查） |
 | 7 | 审批流独立模块 + 到期回收作业：**✅ 已落地（2026-09-22）** —— `permission_requests` 状态机 + `GrantWriter` + `BindingReaper` | 端到端：申请 → 通过 → 绑定生效 → 到期失效（单测覆盖状态机 + 回收谓词；**未跑真实库**） |
@@ -391,7 +391,7 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 | --- | --- | --- | --- |
 | **D1** | 「组织」用什么载体？ | **② 组命名约定 `/org:<slug>`**（复用已就绪的 `groups` 通路；**组随 realm JSON 可靠导入** ⇒ 保住「配置即代码」；零 realm 开关） | ① Keycloak **Organizations**：**翻盘条件 = 出现「多 IdP / 跨组织 SSO 联邦」需求**；因硬约定（组织键=alias、组织不作主体）**切换无需数据迁移**。① 已知成本：开开关 ⇒ **identity-first 登录流变化**；组织集能否随 realm JSON 导入**未证实**；**scope 形态须选定**（`organization`=ANY / `organization:<alias>`=SPECIFIC / `organization:*`=ALL）。**v2 曾推荐 ①（理由「语义隔离」），本轮下调为 ②** —— ② 用保留前缀等价隔离（硬规则：`/org:` 前缀不得作 `group` 绑定主体）。**不可逆性由「高」降为「中」** |
 | **D2** | 角色/权限的权威在哪？ | **① 全在 hub RBAC 表**（token 角色仅供对账/展示）—— **已由不动式② + §2.1 / §2.2 裁定，无需拍板** | ②（hub 表 + token 角色参与）/ ③（token 角色为准）均与**不动式②「hub 是唯一权限权威」冲突** ⇒ 不做。⚠ 前置 **C-10**（平台级端点/种子）**仍在** —— 否则落地后无人是平台管理员 |
-| **D3** | 「不存用户表」的连锁改动 | **主体键已写死 = token `sub`**（§5.3；`group` 用 claim 逐字）；第 4 处取 **(b′) 只列已绑定主体 + 允许手输 `sub`** ⇒ **无选择空间，属执行清单**（不是选择题） | 无备选：唯一替代「全列用户」被 **§2.4.4 零外呼**排除。改造 **5 处**：➎ `users` 表 + `UserContext` 每请求 provision + `CurrentUserID(c) (uuid.UUID, bool)`（全仓 7 个读取点）；① `components.owner_user`；② `component_role_bindings.user_id`/`role_id`（V1 遗留 ⇒ 停写 + 手写 SQL 删列）；③ `pipeline_approvals.approver`（类型已合规，改**写入值**）；④ console 用户列表来源。**删表不可逆**（见 §9） |
+| **D3** | 「不存用户表」的连锁改动 | **主体键 = token `sub`**（§5.3；`group` 用 claim 逐字）；第 4 处取 **(b′) 只列已绑定主体 + 允许手输 `sub`**。**✅ 5 处全部落地（2026-09-23）** | ➎ **已执行**：`users` 表已删 + `UserContext` 纯解析 + `CurrentUserID` 并入 `CurrentSubject`（原 7 个读取点）；① `components.owner_user` → `owner_sub`（text，回填自 `users.keycloak_id`）；② `user_id` / `role_id` 已删列（V1 解析分支同批移除）；③ approver / operator / createdBy 改取 `sub`；④ console 改「绑定表派生 + 手输」。迁移 `0015`（**不可逆**）—— 代码已落，部署侧须手工 psql |
 | **D4** | Casbin 是否本期引入 | **延后**（`hub/DATA-MODEL.md` §7.6「不在本期」+ §5.2 边界已划）—— **已定** | 引入 = **条件触发**：触发条件与硬约束已登记 **B-19**（[hub/STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md)），非待决 |
 | **D5** | token 存法 | **维持 localStorage**（`console/src/stores/auth.ts` 现状；**本文件对此本就沉默** ⇒ 属实现细节）—— **可逆，自决** | BFF / 后端 Cookie：安全基线升级时再议；纯前端单点改动，**可逆** |
 | **D6** | `aud` 校验方式 | **① 维持：不校 `aud`、校 `azp`**（§2.4 已实现）—— **已定** | ② 加 **audience mapper** + 去 `SkipClientIDCheck` —— **条件触发**（需按 audience 区分多个资源服务器时），非待决 |
