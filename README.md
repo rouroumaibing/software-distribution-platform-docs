@@ -62,9 +62,11 @@ software-distribution-platform-docs/
 │   ├── STORY-runner-implementation.md  # §4.2.3 kubebuilder 安装、§4.3 任务处理与 DAG 推进 + §4.4 授权边界
 │   └── kubebuilder-install.txt         # Kubebuilder / controller-gen 命令记录（CRD / RBAC / deepcopy 生成）
 └── plans/
-    ├── E2E-VERIFY-PLAN.md          # 端到端联调验证计划（跨组件 P0–P6）
-    ├── P0-3-CONSOLE-PIPELINE-LIFECYCLE-PLAN.md  # Console 流水线全生命周期 UI 实施计划（评审稿，待 v3 IA 定稿）
-    ├── UNIMPLEMENTED-MODULES-PLAN.md  # 未落地模块总表 + 执行顺序（Epic A–E；含本轮 Epic A 落地清单与验证 gate）
+    ├── STATUS.md                   # **平台状态总览（唯一状态权威）**：已完成清单 / 未完成清单 / 刻意不做
+    ├── E2E-VERIFY-PLAN.md          # 端到端验证计划（**已执行归档**，仅保留 P6「不采纳自升级」权威裁定）
+    ├── P0-3-CONSOLE-PIPELINE-LIFECYCLE-PLAN.md  # Console 流水线全生命周期 UI 实施计划（评审稿，已落地）
+    ├── UNIMPLEMENTED-MODULES-PLAN.md  # 未落地模块梳理 + 批次执行记录（§3–§18 历史；当前状态看 STATUS.md）
+    ├── PENDING-TASKS-AUDIT-2026-09-23.md  # 文档审计（**已收口归档**，净结论并入 STATUS / UNIMPLEMENTED §16–§18）
     ├── ACCOUNT-PERMISSION-DECISIONS.md  # 账号权限 D1–D6 决策材料 · 双向钢人版（事实 / 钢人 / 假钢人 / 判定 + 文档修正清单 + 决策分级：0 项阻塞）
     └── e2e-smoke.sh                # 按页面真实操作顺序的 API 冒烟脚本（走 console ingress）
 ```
@@ -86,9 +88,11 @@ software-distribution-platform-docs/
 | [hub/KEYCLOAK.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/KEYCLOAK.md) | hub | **认证子系统：keycloakx 子 chart + realm 预置** | §1 来源 / §2 本地共存 / §3 参数透传 / §4 安装步骤 / §5 realm 预置 / §6 与 console·hub 交互 / §7 账号改密 |
 | [hub/ACCOUNT-PERMISSION-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/ACCOUNT-PERMISSION-MODEL.md) | hub | **账号与权限规范（唯一权威边界）** | §0 三条不动式 / §2 token 读什么 / §3 资源归属单表 / §4 请求两件事 / §5 RBAC 引擎与 Casbin 边界 / §6 审计 / §7 权限申请审批与到期回收 / §8 前端只展示 / §10 现状对账 / §12 待拍板 |
 | [runner/STORY-runner-implementation.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md) | runner  | runner 实现 Story     | §4.2.3 kubebuilder 安装、§4.3 任务处理/DAG 推进、§4.4 授权边界                 |
-| [plans/E2E-VERIFY-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/E2E-VERIFY-PLAN.md)                           | 跨组件     | 端到端联调验证计划           | P0 环境→P6 平台自身部署裁决（成功标准 / kind 拓扑 / 各阶段验证）                              |
-| [plans/P0-3-CONSOLE-PIPELINE-LIFECYCLE-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/P0-3-CONSOLE-PIPELINE-LIFECYCLE-PLAN.md) | console | Console 流水线全生命周期 UI 实施计划（评审稿） | §1 目标与验收 Gate / §2 现状事实基线 / §4 逐文件改动清单 / §5 Gate 与验证 |
-| [plans/UNIMPLEMENTED-MODULES-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/UNIMPLEMENTED-MODULES-PLAN.md) | 跨组件 | **未落地模块总表 + 执行顺序（Epic A–E）** | §0 已落地 / §1 未落地总表 / §2 执行顺序 / §3 本期 Epic A（交付清单 + gate + 落地结果 + 明确不做） |
+| [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) | 跨组件 | **平台状态总览（唯一状态权威）**：已完成清单 / 未完成清单 / 刻意不做 | §1 已完成（hub/runner/console/跨组件验证）、§2 未完成（11 项，含性质与前置）、§3 刻意不做 |
+| [plans/E2E-VERIFY-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/E2E-VERIFY-PLAN.md)                           | 跨组件     | 端到端验证计划（**已执行归档**）           | 仅保留 P6「不采纳自升级」六条理由（唯一权威落点）；执行结果并入 UNIMPLEMENTED §16–§18                              |
+| [plans/P0-3-CONSOLE-PIPELINE-LIFECYCLE-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/P0-3-CONSOLE-PIPELINE-LIFECYCLE-PLAN.md) | console | Console 流水线全生命周期 UI 实施计划（已落地） | §1 目标与验收 Gate / §2 现状事实基线 / §4 逐文件改动清单 / §5 Gate 与验证 |
+| [plans/UNIMPLEMENTED-MODULES-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/UNIMPLEMENTED-MODULES-PLAN.md) | 跨组件 | 未落地模块梳理 + 批次执行记录（§3–§18 历史） | §0 已落地 / §1 未落地总表 / §3–§15 批次记录 / §16–§18 收口记录（**当前状态看 STATUS.md**） |
+| [plans/PENDING-TASKS-AUDIT-2026-09-23.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/PENDING-TASKS-AUDIT-2026-09-23.md) | 跨组件 | 文档审计（**已收口归档**） | 净结论并入 STATUS / UNIMPLEMENTED §16–§18 |
 | [plans/ACCOUNT-PERMISSION-DECISIONS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/ACCOUNT-PERMISSION-DECISIONS.md) | hub | 账号权限 **D1–D6 决策材料**（组织载体 / 角色权威 / 不存用户表连锁 / Casbin / token 存法 / `aud`；逐项事实→钢人→假钢人→判定五段 + 决策分级 + 文档修正清单） | §0 一页总览 / §1–§6 逐项 / §7 文档修正 / §9 不可逆性分级 / §10 上游事实置信度 |
 
 ## 5. 跨组件对齐（重点：跨组件概念必须保持一致）
@@ -122,7 +126,7 @@ software-distribution-platform-docs/
 
 ### 5.6 目标接入与执行后端（② 接入层展开）
 
-`targetKind` × `access` 两个正交维度、能力矩阵、三通道互补与凭据风险 → **[hub/DATA-MODEL.md §9.5](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)**；直连扩表形状与凭据加密落库 → §9.7；runner 安装 / 升级编排 → §9.9；版本矩阵 CM → §9.10；直连执行端点的 runner 侧 follow-up → **[plans/UNIMPLEMENTED-MODULES-PLAN.md §16.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/UNIMPLEMENTED-MODULES-PLAN.md)**。
+`targetKind` × `access` 两个正交维度、能力矩阵、三通道互补与凭据风险 → **[hub/DATA-MODEL.md §9.5](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)**；直连扩表形状与凭据加密落库 → §9.7；runner 安装 / 升级编排 → §9.9；版本矩阵 CM → §9.10；agent_ops 直连执行全链路（exec 已落地 / install·upgrade 留守 queued 的裁定）→ **[plans/UNIMPLEMENTED-MODULES-PLAN.md §16.5](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/UNIMPLEMENTED-MODULES-PLAN.md)** 与 **[plans/STATUS.md §2](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md)**。
 
 ## 6. 文档组织
 

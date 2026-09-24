@@ -56,7 +56,7 @@
   - 动态开关: 不涉及（M1）。
 - **[x] 可服务性与监控 (Serviceability)**
   - 核心日志: 全链路带 `target`/`pipelineRunName`/`taskName` 上下文（如 `dispatch: created PipelineRun ... on target %s`、`rollout: scale %s failed`），可经 TraceID 关联。
-  - 监控告警: M1 尚未接入 Prometheus；可观测性依赖 `kubectl get pipelinerun/taskrun/rollout`（status 已含 phase/weight/step 摘要）。⚠️ 指标埋点为后续待办。
+  - 监控告警: ✅ 已接入（2026-09-24）—— `pkg/metrics` Prometheus 计数器/仪表 + 失败告警，经 controller-runtime 内置 metrics server 暴露 `/metrics`（B-09）；降级开关 `SDP_LOG_STREAMING` / `SDP_CANARY_INGRESS` / `SDP_ALERTING`。告警规则与预发/灰度验证属运维环境项（[STATUS](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) #5）。
 
 ---
 
@@ -72,7 +72,7 @@
 | Hub→Runner | `apply_pipeline_run` | `ApplyPipelineRunPayload` | 下发流水线；Name/Namespace 必须 == Hub `pipeline_runs` 的 `CRName`/`CRNamespace` |
 | Hub→Runner | `approve_task` | `ApproveTaskPayload` | 回写审批决策（批准/拒绝） |
 | Runner→Hub | `status_update` | `StatusUpdatePayload` | 每次状态变更上报；`PipelineRunName`==CRName |
-| Runner→Hub | `log_chunk` | `LogChunkPayload` | 实时日志分片（M1 已定义类型，发送侧见后续待办） |
+| Runner→Hub | `log_chunk` | `LogChunkPayload` | 实时日志分片（B-02 已落地：`pkg/logstream` 抓取发送 + hub 落库） |
 | Runner→Hub | `heartbeat` | （空） | 保活，Hub 标记目标在线 |
 
 **ApplyPipelineRunPayload**: `{ name, namespace, spec: PipelineRunSpec }`
@@ -241,8 +241,8 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 - [x] 3-Corner 澄清通过（Hub/Runner 契约已对齐，关键决策已落 `ApplyPipelineRunPayload`）。
 - [x] 静态代码扫描无 P0/P1 级安全漏洞：`go vet ./...` ✅（runner 与 hub 双模块）。
 - [x] 编译通过：`go build ./...` ✅（runner 与 hub 双模块，含 `gofmt -w` 格式化）。
-- [ ] 单元测试覆盖率达到团队基线：canary 引擎为纯函数已具备单测条件（M1 未补用例，待办）。
-- [ ] 自动化测试用例通过 / QA 手动验收通过：M1 以"链路编译+合约闭合"为验收；端到端跑通需 Hub 触发 + 真实集群（见 §6）。
+- [x] 单元测试覆盖率达到团队基线：canary engine（`pkg/canary/engine_test.go`）/ health / logstream / dispatch(快照+重跑) / controller(串行+resync) / 环境模型 均有表驱动单测（B-08）。
+- [x] 自动化测试用例通过 / QA 手动验收通过：端到端已于 2026-09-24 本机 kind 实跑通过（`e2e-smoke.sh` PASS=15 FAIL=0，run `Running→Succeeded`，见 §6）。
 - [x] 监控埋点已接入（2026-09-24）：runner `pkg/metrics` 经 controller-runtime 内置 metrics server 暴露 `/metrics`；hub 侧新增 `internal/metrics`（零依赖 Prometheus 文本导出 + `GET /metrics`）。**告警规则 / 降级开关在预发·灰度的验证仍属运维环境项**（非代码）。
 
 ---
@@ -253,5 +253,5 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 - ✅ **IngressCanary 路由（B-04）**：`internal/controller/rollout_controller.go` + `pkg/canary/engine.go` 已实现金丝雀渐进发布与 IngressCanary 流量切分。
 - ✅ **HTTPProbe / PrometheusQuery 健康检查（B-05）**：`pkg/health/health.go` 的 `HTTPProbe`（真实 GET + 2xx 判定）、`PrometheusQueryOK`（真实 Prometheus 查询 + 阈值）已接入 release 健康判定。
 - ✅ **Rollout 副本数读取真实 Deployment（B-06）**：`rollout_controller.go` 的 `resolveTotalReplicas` 读取线上 stable Deployment 的 `spec.replicas` 作为 total（fallback `RolloutSpec.Replicas` → 默认 2），不再写死 `total=2`。
-- ✅ **端到端验证（B-07）**：**已于 2026-09-24 本机 docker + kind 实跑通过** —— 全栈部署绿、`plans/e2e-smoke.sh` `PASS=15 FAIL=0`、run `Running → Succeeded`。执行中揪出并修复 3 个真 bug（含本 Story 侧的 **runner RBAC 缺 `networking.k8s.io/ingresses`**：`Owns(&Ingress{})` 无对应 list/watch → manager 缓存同步超时 → 任何 run 都不派发）。证据见 `plans/PENDING-TASKS-AUDIT-2026-09-23.md` §5.2。
+- ✅ **端到端验证（B-07）**：**已于 2026-09-24 本机 docker + kind 实跑通过** —— 全栈部署绿、`plans/e2e-smoke.sh` `PASS=15 FAIL=0`、run `Running → Succeeded`。执行中揪出并修复 3 个真 bug（含本 Story 侧的 **runner RBAC 缺 `networking.k8s.io/ingresses`**：`Owns(&Ingress{})` 无对应 list/watch → manager 缓存同步超时 → 任何 run 都不派发）。证据见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §16（原 audit §5.2 已并入）。
 - 关联：`STORY-hub-implementation.md`（控制面）。Console 页面与多环境为更上层 Story。

@@ -4,7 +4,7 @@
 > 目的：把"文档里写了、代码里还没落地"的模块**全部梳理**成一张清单，按优先级给出执行顺序，并标注本期已实现的部分。
 > 本文是**权威待办索引**；具体契约见各自文档（`DELETE-CONTRACT.md` / `DATA-MODEL.md` / `ACCOUNT-PERMISSION-MODEL.md` / `STORY-BACKLOG.md`）。
 >
-> ⚠️ **当前状态以 §17「全量复核收口（2026-09-24）」为准。** §3–§16 是按批次的历史记录，各节末的「仍未做 / 如实标注」列表写于当时，多数已被后续批次消化 —— 例：**B-07 端到端已于 2026-09-24 本机 kind 实跑通过**（`PASS=15 FAIL=0`）；`resource_ownership` / `audit_log` / `permission_request` / 角色↔接口映射表**已落地**；Artifact GC、§6.4 级联软删、run 触发走 service 校验、Serial 调度、console agent-ops UI **均已落地**。读历史节时请对照 §17.2 / §17.3 判定当前真伪。
+> ⚠️ **当前状态以 [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 为唯一权威**（已完成清单 / 未完成清单 / 刻意不做，2026-09-24 收口）。本文 §3–§18 是按批次的历史执行记录，各节末的「仍未做 / 如实标注」列表写于当时，多数已被后续批次消化 —— 例：**B-07 端到端已于 2026-09-24 本机 kind 实跑通过**（`PASS=15 FAIL=0`）；`resource_ownership` / `audit_log` / `permission_request` / 角色↔接口映射表**已落地**；Artifact GC、§6.4 级联软删、run 触发走 service 校验、Serial 调度、console agent-ops UI、agent_ops exec 全链路、取消运行、单任务重跑**均已落地**。读历史节时请对照 STATUS 判定当前真伪。
 
 ---
 
