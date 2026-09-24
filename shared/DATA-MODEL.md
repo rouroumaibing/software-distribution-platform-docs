@@ -313,7 +313,7 @@ hub 在 API 网关/中间件层统一鉴权：
 | 组件级细粒度 + 组映射 | **Keycloak** group/role（仅作身份+组，不做 UMA 资源授权） | KC 组 → hub 角色映射 |
 | 默认审批人 = owner | **Backstage** ownership 驱动权限 | 所有权是 app 数据，驱动默认审批 |
 | 选谁审 / 通过拒绝 / 防自审 | **GitHub Environments / GitLab Protected Environments / Spinnaker Manual Judgment** | 审批=独立门禁节点；required reviewers + 防自审 + wait timer |
-| 动态策略（可选） | **OPA / Casbin** | 未来"仅工作时间可发布生产"等用策略引擎，**不在本期**（D4 判定 = 「延后 + 登记」；触发条件与引入时的硬约束见 [hub/STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md) **B-19**，边界见 [hub/ACCOUNT-PERMISSION-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/ACCOUNT-PERMISSION-MODEL.md) §5.2） |
+| 动态策略（可选） | **OPA / Casbin** | 未来"仅工作时间可发布生产"等用策略引擎，**不在本期**（D4 判定 = 「延后 + 登记」；触发条件与引入时的硬约束见 [hub/STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md) **B-19**，边界见 [shared/ACCOUNT-PERMISSION-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCOUNT-PERMISSION-MODEL.md) §5.2） |
 
 ### 7.7 表结构（DDL，与 AutoMigrate 同步已实现）
 
@@ -542,7 +542,7 @@ targets ──1:N──▶ environments   (environments.target_id，NOT NULL)
 ```
 
 - `environments.target_id` 是 **NOT NULL FK**（0001 §6）→ **没有目标行就建不了环境**；"注册目标"是纳管目标的前置步骤，不是可选装饰。
-- **目标删除**：本表 `BaseNoSoftDelete`（硬删）+ `references targets(id)` **无 `ON DELETE`** → 删被环境引用的目标会 **FK 报错（500）**，而不是优雅 `409`。这是 [DELETE-CONTRACT.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DELETE-CONTRACT.md) §6 已登记的缺口（"硬删撞 NO CASCADE 外键 → 500"），**未修**。
+- **目标删除**：本表 `BaseNoSoftDelete`（硬删）+ `references targets(id)` **无 `ON DELETE`** → 删被环境引用的目标会 **FK 报错（500）**，而不是优雅 `409`。这是 [DELETE-CONTRACT.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md) §6 已登记的缺口（"硬删撞 NO CASCADE 外键 → 500"），**未修**。
 - `targets` 与 `environments` **同属硬删表**（均无 `deleted_at`）→ 级联须服务层显式处理，不能指望 DB。
 
 ### 9.3 「单机版」：目标恰好是平台自身所在集群（**runner 身份不随之改变**）

@@ -92,7 +92,7 @@
 | `metadata.labels[sdp.io/target]` | string | 索引 | 标记归属目标 |
 | **Spec** | | | |
 | `spec.pipelineRef` | string | 可选 | 可复用流水线定义名（仅展示/审计，Runner 不拉取） |
-| `spec.tasks[]` | PipelineTaskSpec | MinItems=1 | 已完全解析的 DAG 定义（含跨阶段 + 阶段内 Serial 的 `DependsOn`，由 hub `buildSpec` 推导；见 §4.3 / [hub 数据模型 §6.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)） |
+| `spec.tasks[]` | PipelineTaskSpec | MinItems=1 | 已完全解析的 DAG 定义（含跨阶段 + 阶段内 Serial 的 `DependsOn`，由 hub `buildSpec` 推导；见 §4.3 / [hub 数据模型 §6.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)） |
 | `spec.repo` | *RepoSource | 可选 | 默认 checkout 源（任务可覆盖） |
 | `spec.params[]` | Param{name,value} | — | 参数，下发前已由 Hub 注入命令/env |
 | `spec.tenantID/projectID/environmentID` | string | — | 多租户上下文，避免回 Hub 往返 |
@@ -195,7 +195,7 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 
 ### 4.3 任务处理与 DAG 推进逻辑（Runner 侧；推送模型，已确认）
 
-> Runner **不轮询 hub DB**、**不直连 Postgres**（已确认保留推送模型，见 [hub 数据模型 §6.2](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）。Runner 只消费 hub 经 WS 推送下来的 `ApplyPipelineRunPayload{Name, Namespace, Spec}`，在集群内把 spec 落地为 CRD 并推进。
+> Runner **不轮询 hub DB**、**不直连 Postgres**（已确认保留推送模型，见 [hub 数据模型 §6.2](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)）。Runner 只消费 hub 经 WS 推送下来的 `ApplyPipelineRunPayload{Name, Namespace, Spec}`，在集群内把 spec 落地为 CRD 并推进。
 
 **1. 接收与落地**
 - `ApplyHandler` 收到 payload → 创建/更新 `PipelineRun` CR（`metadata.name==payload.Name`，`namespace==payload.Namespace`）；若已存在则更新 Spec（**幂等重投安全**，离线集群重连补投不重复建）。
@@ -216,7 +216,7 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 
 **4. 状态回流（进展记在哪）**
 - 每次 TaskRun/Stage/PipelineRun 状态变更，`conn.Send(MessageStatusUpdate, StatusUpdatePayload{PipelineRunName, tasks[]})` 经 WS 上报 Hub。
-- Hub `ApplyStatus` 据 `CRName` 写回 `task_runs` / `pipeline_runs`（**这是进展的系统记录**）。**阶段进展由 hub 侧 `task_runs` 派生聚合**（确认不建 `stage_runs`，用户决策，见 [hub 数据模型 §6.3](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)），Runner 不维护阶段级中间表。
+- Hub `ApplyStatus` 据 `CRName` 写回 `task_runs` / `pipeline_runs`（**这是进展的系统记录**）。**阶段进展由 hub 侧 `task_runs` 派生聚合**（确认不建 `stage_runs`，用户决策，见 [hub 数据模型 §6.3](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)），Runner 不维护阶段级中间表。
 
 **5. 异常与跳过**
 - 某 task `Failed` 且不可重试 → DAG 中依赖它的下游 task 标 `Skipped`（不调度）；整条 `PipelineRun` 跟随 `Failed`。
@@ -224,16 +224,16 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 
 ### 4.4 授权边界（Runner 侧；不持有授权逻辑）
 
-> 完整授权模型见 [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)，前端交互见 [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md)。本小节只界定 Runner 在授权链路中的边界。
+> 完整授权模型见 [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)，前端交互见 [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md)。本小节只界定 Runner 在授权链路中的边界。
 
 - **Runner 只消费 hub 已鉴权下发的 spec**：`ApplyPipelineRunPayload` 由 hub 在通过 §7.5 Enforcement 后下发，Runner 不解析用户身份、不判断"谁有权触发/修改"。
-- **审批决策不在 Runner**：Approval 子任务的通过/拒绝由 Hub 经 `approve_task` 帧（§4.1）下发；Runner 仅据此解除挂起或终止，不判断"谁有权审批"（防自审等规则在 [hub 数据模型 §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) 落实）。
-- **集群侧权限由 k8s RBAC 约束（已用）**：Hub 为每个"组件 × 环境"签发 `RoleBinding`，Runner 所用 SA 只可触碰该组件命名空间；这是 runner↔集群的部署边界闸，与"用户对组件"的业务授权（[hub 数据模型 §7.2/§7.3](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）解耦。
+- **审批决策不在 Runner**：Approval 子任务的通过/拒绝由 Hub 经 `approve_task` 帧（§4.1）下发；Runner 仅据此解除挂起或终止，不判断"谁有权审批"（防自审等规则在 [hub 数据模型 §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) 落实）。
+- **集群侧权限由 k8s RBAC 约束（已用）**：Hub 为每个"组件 × 环境"签发 `RoleBinding`，Runner 所用 SA 只可触碰该组件命名空间；这是 runner↔集群的部署边界闸，与"用户对组件"的业务授权（[hub 数据模型 §7.2/§7.3](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)）解耦。
 - **结论**：Runner 信任 hub 下发的 spec，自身无授权逻辑、不连接 Keycloak/业务 RBAC 表；业务鉴权与审批审计全部落在 hub + console。
 - **Runner 只是三条接入通道之一（2026-09-21 补充）**：`kubeconfig` / `ssh` 两条通道**由 hub 侧发起连接**，**不经过 Runner**——Runner 不持有、也不使用目标凭据，本节"Runner 只消费 hub 已鉴权下发的 spec"的边界**不变**。但须知道两点：
   1. **执行底座是隐式的**：`pkg/executor/job_builder.go` 把 `TaskRunSpec` 翻译成**目标集群里的 K8s Job**（`mainContainer` = `sh {ScriptPath}`；`releaseContainer` = `helm upgrade --install` / `kubectl apply`；工作区 = EmptyDir 卷）。Job / 命名空间 / SA / RoleBinding / 卷在物理机与虚拟机上**都不存在** → **非容器目标无法走本路径**，只能走 hub 直连的 `ssh`。
   2. **`TaskRunSpec` 目前只有一种执行实现**（K8s Job），尚无 `executor backend` 抽象；若将来 hub 直连复用同一任务模型，需新增后端判别维度。
-  - 通道能力矩阵与凭据归属见 `hub/DATA-MODEL.md` §9.5（2026-09-23 自 docs/README §5.6 迁入）；数据侧见 §9.7。
+  - 通道能力矩阵与凭据归属见 `shared/DATA-MODEL.md` §9.5（2026-09-23 自 docs/README §5.6 迁入）；数据侧见 §9.7。
 
 ---
 
@@ -248,7 +248,7 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 ---
 
 ## 6. 后续待办（非本 Story 范围 / 已注明 TODO）
-- ✅ **Hub 审批下发路径**：Hub 侧已实现 `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision`（经 `gateway.Approve` → `MessageApproveTask` 下发），与 Runner 的 `ApproveTask` handler 形成完整审批闭环（见 SDP-HUB-001 本轮补充）。**P2 起 Hub 额外落 `pipeline_approvals` 审计记录并实施防自审（`requested_by == approver` 直接拒绝），Runner 仅据此解除挂起/终止（[hub 数据模型 §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）。**
+- ✅ **Hub 审批下发路径**：Hub 侧已实现 `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision`（经 `gateway.Approve` → `MessageApproveTask` 下发），与 Runner 的 `ApproveTask` handler 形成完整审批闭环（见 SDP-HUB-001 本轮补充）。**P2 起 Hub 额外落 `pipeline_approvals` 审计记录并实施防自审（`requested_by == approver` 直接拒绝），Runner 仅据此解除挂起/终止（[hub 数据模型 §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)）。**
 - ✅ **实时日志（B-02）**：`pkg/logstream` 已实现 Pod 日志抓取并经 `MessageLogChunk`/`LogChunkPayload` 经 WS 回流 Hub 落库（与 `UNIMPLEMENTED-MODULES-PLAN.md §1 Epic D` 对齐）。
 - ✅ **IngressCanary 路由（B-04）**：`internal/controller/rollout_controller.go` + `pkg/canary/engine.go` 已实现金丝雀渐进发布与 IngressCanary 流量切分。
 - ✅ **HTTPProbe / PrometheusQuery 健康检查（B-05）**：`pkg/health/health.go` 的 `HTTPProbe`（真实 GET + 2xx 判定）、`PrometheusQueryOK`（真实 Prometheus 查询 + 阈值）已接入 release 健康判定。

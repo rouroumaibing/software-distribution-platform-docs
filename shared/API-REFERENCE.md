@@ -2,7 +2,7 @@
 
 > **权威端点清单（单一真相源）**。本文档由直接读取 `software-distribution-platform-hub/cmd/hub/main.go` 与各 `internal/*/handler/*.go` 的 `RegisterRoutes` 得出（非推测，核对日期 2026-09-22）。
 > Swagger（`hub/docs/docs.go` / `swagger.json` / `swagger.yaml`）是同一清单的自动生成产物，不在此重复。
-> 关联文档：`hub/DATA-MODEL.md`（数据模型）、`hub/DELETE-CONTRACT.md`（删除契约）、`console/CONSOLE-UI-DESIGN.md`（前端 IA / 运行中心）、`runner/STORY-runner-implementation.md`（WS 线协议）。
+> 关联文档：`shared/DATA-MODEL.md`（数据模型）、`shared/DELETE-CONTRACT.md`（删除契约）、`console/CONSOLE-UI-DESIGN.md`（前端 IA / 运行中心）、`runner/STORY-runner-implementation.md`（WS 线协议）。
 
 ---
 
@@ -245,7 +245,7 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 
 ## 4. 删除端点契约（与 `DELETE-CONTRACT.md` 对齐）
 
-- **服务树节点删除**：现 hub **无 `DELETE /api/servicetree/:id`**（该路由不存在）。树节点 ∈ {Service, Component}，对应 `DELETE /services/:id`（service 节点，级联其 components）、`DELETE /components/:id`（叶子）。级联校验 + `409 + {reasons}` 模式不变（详见 `hub/DELETE-CONTRACT.md`）。
+- **服务树节点删除**：现 hub **无 `DELETE /api/servicetree/:id`**（该路由不存在）。树节点 ∈ {Service, Component}，对应 `DELETE /services/:id`（service 节点，级联其 components）、`DELETE /components/:id`（叶子）。级联校验 + `409 + {reasons}` 模式不变（详见 `shared/DELETE-CONTRACT.md`）。
 - **流水线删除**：`DELETE /pipelines/:id`（级联校验待落地，同契约）。
 
 ---

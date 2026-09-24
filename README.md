@@ -31,11 +31,11 @@
 常用文档的 GitHub 链接：
 
 - console 设计文档：<https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md>
-- hub 数据模型：<https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md>
+- hub 数据模型：<https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md>
 - runner 实现 Story：<https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md>
 - hub 控制面 Story：<https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-hub-implementation.md>
 - hub Backlog：<https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md>
-- hub 下发队列 ADR：<https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/ADR-dispatch-durable-queue.md>
+- hub 下发队列 ADR：<https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-dispatch-durable-queue.md>
 - 平台状态总览（唯一状态权威）：<https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md>
 
 ## 3. 目录结构
@@ -62,24 +62,25 @@ software-distribution-platform-docs/
 │   └── plans/                     # 活跃计划（只收带实施路径与 Gate 的进行中项）
 │       └── PIPELINE-LIFECYCLE-PLAN.md         # 流水线全生命周期 UI 迭代（STATUS §2 #18）
 ├── hub/
-│   ├── index.md                   # hub 域文档索引（入口）
-│   ├── DATA-MODEL.md              # 领域模型 + §6 下发与进展回收 + §7 授权模型（两层 RBAC + 审批表）
-│   ├── API-REFERENCE.md           # REST API 权威端点清单 + old→new 映射 + 设计钢人论证
-│   ├── DELETE-CONTRACT.md         # 删除契约：级联校验 + 409 verdict（hub 删除端点行为规格）
+│   ├── index.md                   # hub 域文档索引（入口；横切文档已迁 shared/）
 │   ├── STORY-hub-implementation.md
 │   ├── STORY-BACKLOG.md
 │   ├── STORY-TEMPLATE.md
-│   ├── ADR-dispatch-durable-queue.md
 │   ├── user-stories.md
-│   ├── KEYCLOAK.md                # 认证子系统：keycloakx 子 chart + realm 预置 + 与 console/hub 交互
-│   ├── ACCOUNT-PERMISSION-MODEL.md # 账号与权限规范：三条不动式（KC 只做身份 / hub 唯一权限权威 / 前端只展示）+ 鉴权两段式 + 审计 + 权限申请审批 + 现状对账
 │   └── assets/                    # 架构图源（png + 流水线.pptx，当前未被 md 引用，属独立图源）
 ├── runner/
 │   ├── index.md                   # runner 域文档索引（入口）
 │   ├── STORY-runner-implementation.md  # §4.2.3 kubebuilder 安装、§4.3 任务处理与 DAG 推进 + §4.4 授权边界
 │   └── kubebuilder-install.txt         # Kubebuilder / controller-gen 命令记录（CRD / RBAC / deepcopy 生成）
 ├── shared/
-│   └── README.md                  # 无单一权威的全局文档（入住门槛三条，当前住户：无）
+│   ├── README.md                  # **跨组件文档目录**（入住判据：横跨 ≥2 组件整体迁入，不拆分、不设主从）
+│   ├── CROSS-COMPONENT-ALIGNMENT.md  # 跨组件对齐总览（北极星/授权/执行模型/三层边界/术语/接入）
+│   ├── DATA-MODEL.md              # 领域模型 + §6 下发与进展回收 + §7 授权模型（两层 RBAC + 审批表）
+│   ├── API-REFERENCE.md           # REST API 权威端点清单 + old→new 映射 + 设计钢人论证
+│   ├── DELETE-CONTRACT.md         # 删除契约：级联校验 + 409 verdict（hub 删除端点行为规格）
+│   ├── ACCOUNT-PERMISSION-MODEL.md # 账号与权限规范：三条不动式（KC 只做身份 / hub 唯一权限权威 / 前端只展示）+ 鉴权两段式 + 审计 + 权限申请审批 + 现状对账
+│   ├── KEYCLOAK.md                # 认证子系统：keycloakx 子 chart + realm 预置 + 与 console/hub 交互
+│   └── ADR-dispatch-durable-queue.md # 下发持久队列 ADR（hub↔runner 线协议）
 └── plans/
     ├── STATUS.md                   # **平台状态总览（唯一状态权威 + 全局总索引）**：已完成清单（§1）/ 未完成清单（§2，18 项）/ 刻意不做（§3）
     ├── e2e-smoke.sh                # 按页面真实操作顺序的 API 冒烟脚本（走 console ingress）
@@ -96,21 +97,22 @@ software-distribution-platform-docs/
 | [console/CONSOLE-UI-DESIGN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) | console | **前端设计唯一事实源（索引 stub）**：§0 修订史索引 + §0.4 章节→文件映射 | §1 目标/4 类流水线模式 → `features/ui-01`、§5 IA → `ui-03`、§6 执行模型 → `ui-04`、§7.9 权限 UX → `ui-05`、§8.2 四态 → `ui-06`、§10.2/§10.3 验收 → `ui-08` |
 | [console/CONSOLE-UI-原型.html](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-原型.html)                           | console | IA v3 可交互原型         | ——                                                               |
 | [console/plans/PIPELINE-LIFECYCLE-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/plans/PIPELINE-LIFECYCLE-PLAN.md) | console | 流水线全生命周期 UI 迭代计划（**活跃**：A 节待实施、B 节 hold；登记 STATUS §2 #18） | §1 目标与验收 Gate / §2 现状事实基线 / §4 逐文件改动清单 / §5 Gate 与验证 |
-| [hub/index.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/index.md) | hub | **hub 域入口索引**（域级权威参考 + Story + 按需建立 features/plans 的约定） | —— |
-| [hub/DATA-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)                                         | hub     | 领域关系链 + 执行/授权模型（被三端消费，**变更权威在 hub**）     | §6 下发与进展回收（含 §6.6 取消/重跑裁定）、§7 授权模型、§9 接入拓扑（§9.11 平台自身升级裁决） |
-| [hub/API-REFERENCE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/API-REFERENCE.md) | hub     | **REST API 权威端点清单** + old→new 映射 + 设计钢人论证 | 全部 hub 端点（按资源分组）、old 接口组成、合理性论证 |
-| [hub/DELETE-CONTRACT.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DELETE-CONTRACT.md) | hub | **删除端点行为契约：级联校验 + `409 + {reasons}` verdict** | §0 总则 / §1 服务树节点删除（N-15）/ §2 流水线删除（N-5）/ §3 验证 gate / §4 后端实现计划 / §6 双向钢人 + 拍板决策（含 §6.6-5 GC 裁定） |
+| [hub/index.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/index.md) | hub | **hub 域入口索引**（自有 Story + 消费的 shared 住户清单 + 按需建立 features/plans 的约定） | —— |
+| [shared/DATA-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)                                         | 跨组件 | 领域关系链 + 执行/授权模型（hub 写 / runner 写 / console 读）     | §6 下发与进展回收（含 §6.6 取消/重跑裁定）、§7 授权模型、§9 接入拓扑（§9.11 平台自身升级裁决） |
+| [shared/API-REFERENCE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/API-REFERENCE.md) | 跨组件 | **REST API 权威端点清单** + old→new 映射 + 设计钢人论证 | 全部 hub 端点（按资源分组）、old 接口组成、合理性论证 |
+| [shared/DELETE-CONTRACT.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md) | 跨组件 | **删除端点行为契约：级联校验 + `409 + {reasons}` verdict** | §0 总则 / §1 服务树节点删除（N-15）/ §2 流水线删除（N-5）/ §3 验证 gate / §4 后端实现计划 / §6 双向钢人 + 拍板决策（含 §6.6-5 GC 裁定） |
+| [shared/ACCOUNT-PERMISSION-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCOUNT-PERMISSION-MODEL.md) | 跨组件 | **账号与权限规范（治理三端）** | §0 三条不动式 / §2 token 读什么 / §3 资源归属单表 / §5 RBAC 引擎与 Casbin 边界 / §7 审批与到期回收 / §10 现状对账 / §12 决策状态 + §12.1 实施裁定归档 |
+| [shared/KEYCLOAK.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/KEYCLOAK.md) | 跨组件 | **认证子系统：keycloakx 子 chart + realm 预置** | §1 来源 / §2 本地共存 / §3 参数透传 / §4 安装步骤 / §5 realm 预置 / §6 与 console·hub 交互 / §7 账号改密 |
+| [shared/ADR-dispatch-durable-queue.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-dispatch-durable-queue.md)         | 跨组件 | 下发持久队列 ADR（hub↔runner 线协议）          | ——                                                               |
+| [shared/CROSS-COMPONENT-ALIGNMENT.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/CROSS-COMPONENT-ALIGNMENT.md) | 跨组件 | **跨组件对齐总览**（北极星 / 授权 G7 / 执行模型 / 三层边界 / 术语 / 接入） | 六块对齐内容 + 逐条权威落点 + 同步纪律 |
 | [hub/STORY-hub-implementation.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-hub-implementation.md)             | hub     | hub 控制面实现 Story     | ——                                                               |
 | [hub/STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md)                                   | hub     | 实现 Backlog（B-01~B-19 + 补充 C-01~C-13） | ——                                                               |
 | [hub/STORY-TEMPLATE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-TEMPLATE.md)                                 | hub     | Story 模板            | ——                                                               |
-| [hub/ADR-dispatch-durable-queue.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/ADR-dispatch-durable-queue.md)         | hub     | 下发持久队列 ADR          | ——                                                               |
 | [hub/user-stories.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/user-stories.md)                                     | hub     | 用户故事                | ——                                                               |
-| [hub/KEYCLOAK.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/KEYCLOAK.md) | hub | **认证子系统：keycloakx 子 chart + realm 预置** | §1 来源 / §2 本地共存 / §3 参数透传 / §4 安装步骤 / §5 realm 预置 / §6 与 console·hub 交互 / §7 账号改密 |
-| [hub/ACCOUNT-PERMISSION-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/ACCOUNT-PERMISSION-MODEL.md) | hub | **账号与权限规范（唯一权威边界）** | §0 三条不动式 / §2 token 读什么 / §3 资源归属单表 / §5 RBAC 引擎与 Casbin 边界 / §7 审批与到期回收 / §10 现状对账 / §12 决策状态 + §12.1 实施裁定归档 |
 | [runner/index.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/index.md) | runner  | **runner 域入口索引** | —— |
 | [runner/STORY-runner-implementation.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md) | runner  | runner 实现 Story     | §4.2.3 kubebuilder 安装、§4.3 任务处理/DAG 推进、§4.4 授权边界                 |
-| [shared/README.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/README.md) | 全局 | **无单一权威的全局文档目录**（入住门槛三条；当前住户：无） | 入住门槛 / 反例表 / 候选住户 / 迁移纪律 |
-| [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) | 跨组件 | **平台状态总览（唯一状态权威）**：已完成清单 / 未完成清单 / 刻意不做 | §1 已完成（hub/runner/console/跨组件验证）、§2 未完成（17 项，含性质与前置）、§3 刻意不做 |
+| [shared/README.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/README.md) | 跨组件 | **跨组件文档目录**（判据：横跨 ≥2 组件整体迁入，不拆分、不设主从；住户 7） | 住户清单 / 维护纪律 / 不入住说明 |
+| [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) | 跨组件 | **平台状态总览（唯一状态权威）**：已完成清单 / 未完成清单 / 刻意不做 | §1 已完成（hub/runner/console/跨组件验证）、§2 未完成（18 项，含性质与前置）、§3 刻意不做 |
 
 ## 5. 跨组件对齐（重点：跨组件概念必须保持一致）
 
@@ -134,13 +136,14 @@ software-distribution-platform-docs/
 | feature | `<域>/features/` | 已完成/既成事实的设计文档，**一主题一文件** | 各自**只追加**，禁止改写历史段落 |
 | 活跃计划 | `<域>/plans/` | 只收**带实质设计内容的进行中计划**（有实施路径与验收 Gate） | 收口后归档/删除，结论迁 feature 文件 |
 | 裸待办 | 仅 STATUS §2 | 无设计内容的待办条目 | **禁止**为待办建文档；开工且产生设计内容后才建 plans/ 文件 |
-| 真全局文档 | `shared/` | 横跨 ≥2 组件且**无单一变更权威**的文档 | 入住门槛三条见 `shared/README.md`；当前住户：无 |
+| 真全局文档 | `shared/` | 横跨 ≥2 组件的跨组件文档（整体迁入，不拆分、不设主从） | 判据与住户清单见 `shared/README.md`；当前住户 7 |
 
-### 6.2 归属原则：权威优先，范围靠交叉引用补充
+### 6.2 归属原则：范围优先（2026-09-24 第二次修订）
 
-- 目录树按**代码权威归属**组织：文档放在"变更从哪个组件的代码发起"的域目录。横切消费（如 console/runner 读 `hub/DATA-MODEL.md`）**不是**迁移理由，靠各域 `index.md` 交叉引用并标注「**权威在 hub**」解决发现性。
-- 只有真正"无单一权威"的全局文档（总体架构、跨组件词汇表等）才进 `shared/`——门槛与反例见 [shared/README.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/README.md)。
-- 每域 `index.md` 是该域唯一入口页：收录本域全部文档（含类型标注）+ 跨域引用。域内文档增删必须同步 index。
+- **判据 = 治理范围**：内容横跨 ≥2 个组件（hub / console / runner / 身份基础设施）的文档，**整体迁入 `shared/`**，不以"变更权威在谁"为由留在某组件目录下，也**不做契约/实现拆分、不设主从**。
+- 旧判据「无单一变更权威才入住」已废止：权限 / 删除 / 数据模型等虽由 hub 代码先行变更，但治理的是三端行为，按范围判据归 shared/。
+- 各概念的**行为权威仍在实现它的代码**（权限强制点在 hub、schema SSOT=AutoMigrate 等）——文档内的「权威实现在 hub」标注是事实陈述，不是归属主张。
+- 每域 `index.md` 是该域唯一入口页：收录本域自有文档 + 本域消费的 shared 住户交叉引用。域内文档增删必须同步 index。
 
 ### 6.3 大文件拆分先例（CONSOLE-UI-DESIGN，2026-09-24）
 

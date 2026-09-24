@@ -272,14 +272,14 @@
 
 ### C.7 落地契约与级联规则
 
-> hub 端点的**行为规格**（端点 / `409` body / 级联递归规则 / 实现态）已迁出至 [`hub/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DELETE-CONTRACT.md)（§1 服务树、§2 流水线）。本决策记录只保留**前端行为**与"前后端分工"结论。
+> hub 端点的**行为规格**（端点 / `409` body / 级联递归规则 / 实现态）已迁出至 [`shared/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md)（§1 服务树、§2 流水线）。本决策记录只保留**前端行为**与"前后端分工"结论。
 
 | 项 | 规定 |
 | --- | --- |
 | 裁决结论 | **后端权威 + 前端纯触发**：删前级联校验判定权唯一在后端，前端零业务判断 |
 | 前端行为（服务树） | `delDetail(id,label)`：强确认弹窗（输入节点名）→ `DELETE` → 成功 `toast`；`409` 把 `reasons` 渲染进"无法删除"弹窗 + 清理顺序提示（组件 → 流水线/环境 → 服务 → 组件 … → Org）。**不持有任何业务判断** |
 | 前端行为（流水线） | `delPipeline(name)`：强确认弹窗（输入名称）→ `DELETE` → 成功 `toast`（历史运行日志保留）；`409` 渲染 reasons。原型 `mockDeletePipeline` 为同语义后端模拟占位 |
-| 级联规则（后端） | 组件需**流水线 + 环境清零**；服务需其下**组件清零**；Org 需其下**服务清零**；递归向上。详见 [`hub/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DELETE-CONTRACT.md) |
+| 级联规则（后端） | 组件需**流水线 + 环境清零**；服务需其下**组件清零**；Org 需其下**服务清零**；递归向上。详见 [`shared/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md) |
 
 ### C.8 验证方式（gate）
 

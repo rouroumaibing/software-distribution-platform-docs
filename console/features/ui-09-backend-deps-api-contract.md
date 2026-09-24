@@ -12,7 +12,7 @@
 | N-2 | 待我审批端点 | 【后端依赖】 | 建议 `GET /runs?filter=awaiting_me` 或在 N-1 内加 `assignee=me&phase=WaitingApproval`。当前只能筛到 `phase=WaitingApproval`（"待我"这层身份过滤未实现）——**因此运行视图的「待我审批」筛选项目前名不符实** |
 | N-3 | 跨组件发布列表 + 全局流水线端点 | **部分落地 / 部分消解** | hub 现已暴露全局 `GET /pipelines`（列表）与完整 `/releases` CRUD（`POST`/`GET`/`GET/:id`/`PUT`/`DELETE`）。**v4.4 后"全局流水线列表"不再有消费面**（流水线列表归组件「交付」）；发布视图在**设计层面**可直接走后端全局端点，不再依赖前端聚合兜底（**实现版仍走扫描 + kind 聚合** —— console 侧尚无 `releaseApi` 封装，见 附 B B.10「刻意不做」①）。另：**「已暂停」筛选需要 `GET /releases?scope=global&state=paused`**（`Paused` 属 Rollout 任务级状态，见 §7.6），未提供前实现版需逐 run 拉 tasks（N+1） |
 | N-4 | `/pipelines` CRUD 端点存在性 | **已核对（2026-09-15）后端有** | `internal/pipeline/handler/pipeline.go` 显式注册了 `POST /pipelines`、`GET/PUT/DELETE /pipelines/:id`、`GET /components/:id/pipelines`（注释里写明"exposes the pipeline CRUD surface consumed by the console's createCrud('/pipelines')"）。**旧文 附 A.1「后端无 GET/POST/PUT/DELETE `/pipelines/:id`」的说法作废** |
-| N-5 | 流水线删除语义 + 级联校验契约 | 【待确认 + 后端依赖】 | 行为契约（残留判定 + `409 + {reasons}` 规格 + 实现态）已迁出至 [`hub/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DELETE-CONTRACT.md) §2，与服务树删除同模式（附 C / N-15）；前端零判断、只渲染 verdict。原型 `delPipeline` 已改为后端 verdict 模式（见 §6.1 D1 / §7.4） |
+| N-5 | 流水线删除语义 + 级联校验契约 | 【待确认 + 后端依赖】 | 行为契约（残留判定 + `409 + {reasons}` 规格 + 实现态）已迁出至 [`shared/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md) §2，与服务树删除同模式（附 C / N-15）；前端零判断、只渲染 verdict。原型 `delPipeline` 已改为后端 verdict 模式（见 §6.1 D1 / §7.4） |
 | N-6 | 流水线 `version` 递增策略 | 【待确认】 | 更新后是否 `version+1`；无历史表时仅作展示 |
 | N-7 | 编排 `kind` 限制 | 【待确认】 | 现编辑器仅 `kind==='build'` 可编排；release/custom 是否放开 |
 | N-8 | 全局搜索端点 | ✅ **已落地（2026-09-22）** | 建议 `GET /search?q=&type=component,pipeline,service&limit=20`，返回 `{type,name,path,id}`。**R-7 全局搜索依赖此端点**；无则退化为前端在已加载资源内搜索（不覆盖未展开的深层节点）。**2026-09-22 现状**：console 走的正是这条降级路径 —— `useResourceMap.buildResourceIndex()` 一次遍历服务树摊平 Service/组件/流水线建索引，`utils/search.ts` 客户端打分排序；已能跨层直达（不依赖树展开），代价是索引在**首次 ⌘K 时**全量拉取（M1 百级请求可接受，且启动 0 次树请求的 S5 不变量不受影响）。落地记录见 附 G。**2026-09-22 落地**：hub 侧新增 `GET /search`（`internal/search`：三类各取 `limit` 条、`ILIKE` + LIKE 元字符转义、精确命中 > 前缀 > 包含 的排序；响应 `[{type,id,name,path,keyword}]`）。console 的 ⌘K 改为**服务端优先、客户端索引兜底**，降级时浮层明示（不静默）；客户端索引保留为空查询的"头部视图"来源（§5.3 要求）。见 附 I |
@@ -22,13 +22,13 @@
 | N-12 | 目标 KPI 与接入管理页的关系 | 【待确认】 | Dashboard「在线目标 3/4」是否直接复用 `/admin/targets` 的聚合（避免两处口径不一致） |
 | N-13 | 运行中心视图的路由形态 | **已裁决（A）** | 取 `?view=runs\|releases`（query），**不**用嵌套子路由。双向钢人论证 + 5 条硬约束见 **附 B**。**真实 console 已于 2026-09-19 同步为两视图**（`src/constants/runCenter.ts` + `router` redirect + `pnpm test:runcenter` 断言 + §10.2 用例一次原子改，落地记录见 附 B B.10） |
 | N-14 | 全局视图的状态筛选是否需要后端参数 | **部分落地** | 运行视图的 `phase` 已下推服务端（`GET /runs?phase=`）；发布视图因走前端聚合，筛选只能在已拉取的窗口内生效——数据被截断时表格上方会显式提示"按最近 N 条运行聚合，全局聚合端点待补"，不静默给错数字 |
-| N-15 | 服务树节点删除的级联校验端点 | 【后端依赖】**未落地** | hub 端点的**行为契约（级联规则 + `409 + {reasons}` 规格 + 实现态）已迁出至 [`hub/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DELETE-CONTRACT.md) §1**；console 侧仅负责"强确认 → `DELETE` → 渲染 409 verdict"，论证与契约见 **附 C**。清理顺序提示：组件 → 流水线/环境 → 服务 → 组件 … → Org |
+| N-15 | 服务树节点删除的级联校验端点 | 【后端依赖】**未落地** | hub 端点的**行为契约（级联规则 + `409 + {reasons}` 规格 + 实现态）已迁出至 [`shared/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md) §1**；console 侧仅负责"强确认 → `DELETE` → 渲染 409 verdict"，论证与契约见 **附 C**。清理顺序提示：组件 → 流水线/环境 → 服务 → 组件 … → Org |
 
 ---
 
 ## 附 D：API 契约与三层数据模型（console 侧事实来源）
 
-> **边界**：本附录只保留 **console 侧的消费状态**（哪个桩接了哪个端点）。**请求体 / 响应 / 字段名的权威定义在** [`hub/API-REFERENCE.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/API-REFERENCE.md)；**删除语义**在 [`hub/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DELETE-CONTRACT.md)；**数据模型**在 [`hub/DATA-MODEL.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)。
+> **边界**：本附录只保留 **console 侧的消费状态**（哪个桩接了哪个端点）。**请求体 / 响应 / 字段名的权威定义在** [`shared/API-REFERENCE.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/API-REFERENCE.md)；**删除语义**在 [`shared/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md)；**数据模型**在 [`shared/DATA-MODEL.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)。
 
 ### D.1 hub `/api/v1` 端点契约（console 桩状态）
 
@@ -83,7 +83,7 @@
 
 ### D.4 编排请求体（console → hub）
 
-编排完成「保存」时 console 生成的请求体结构（原型 `buildPipelineRequest()`；字段映射以 [`hub/API-REFERENCE.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/API-REFERENCE.md) 为准）：
+编排完成「保存」时 console 生成的请求体结构（原型 `buildPipelineRequest()`；字段映射以 [`shared/API-REFERENCE.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/API-REFERENCE.md) 为准）：
 
 ```
 { componentId, name, kind, description,

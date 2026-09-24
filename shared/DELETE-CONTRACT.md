@@ -8,7 +8,7 @@
 - **判定权威唯一在后端**：前端只触发 `DELETE` + 渲染 `409 + {reasons}` verdict，不持有任何数据判断。
 - 级联校验在 `DELETE` 事务内**原子**完成。
 - 适用端点：`DELETE /services/:id`（服务树中的服务节点）、`DELETE /components/:id`（组件叶子）、`DELETE /pipelines/:id`（流水线）。
-  > ⚠️ 旧文写 `DELETE /api/servicetree/:id`，但现 hub **无该路由**：服务树在现模型 = Org 1:1 树 + `services` 子资源 + `components` 叶子（见 `hub/API-REFERENCE.md` §3/§4）。节点删除落到 `services`/`components` 资源，不再有独立的 servicetree 删除端点。
+  > ⚠️ 旧文写 `DELETE /api/servicetree/:id`，但现 hub **无该路由**：服务树在现模型 = Org 1:1 树 + `services` 子资源 + `components` 叶子（见 `shared/API-REFERENCE.md` §3/§4）。节点删除落到 `services`/`components` 资源，不再有独立的 servicetree 删除端点。
 
 ## 1. 服务树节点删除（N-15）
 
@@ -105,8 +105,8 @@
 ## 5. 关联文档
 - console 设计决策（前后端分工 + 钢人论证）：[`console/CONSOLE-UI-DESIGN.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) 附 C
 - console 后端依赖索引：同上 附 A（N-15 / N-5）
-- hub API 参考：`hub/API-REFERENCE.md` §3/§4
-- 数据模型（环境分组落库）：`hub/DATA-MODEL.md` §8
+- hub API 参考：`shared/API-REFERENCE.md` §3/§4
+- 数据模型（环境分组落库）：`shared/DATA-MODEL.md` §8
 - hub 待办汇总：`hub/STORY-BACKLOG.md`（B-12 ~ B-16）
 - 未落地模块总表与执行顺序：[`plans/STATUS.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md)（§3 为 Epic A 的交付清单 / gate / 落地结果）
 

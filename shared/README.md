@@ -1,33 +1,29 @@
-# shared/ — 无单一权威的全局文档
+# shared/ — 跨组件文档（横跨 ≥2 组件的整体性内容）
 
-> 本目录收留**描述范围横跨 ≥2 个组件、且不存在单一变更权威**的真全局文档。
+> **入住判据（2026-09-24 第二次修订，范围优先）**：内容横跨 ≥2 个组件（hub / console / runner / 身份基础设施）即入住，**整体迁入、不拆分、不设主从**——不以"变更权威在谁"为由留在某组件目录下。
+> 旧判据「无单一变更权威才入住」已废止（hub 为变更源的横切文档同样入住）；但各概念的**行为权威仍在实现它的代码**，文档内保留的「权威实现在 hub」等标注是事实陈述，不是归属主张。
 
-## 当前住户
+## 当前住户（7）
 
-| 文件 | 资格说明 |
+| 文件 | 横跨范围 |
 | --- | --- |
-| [CROSS-COMPONENT-ALIGNMENT.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/CROSS-COMPONENT-ALIGNMENT.md) | 跨组件对齐总览（北极星 / 授权模型 / 执行模型 / 三层边界 / 术语消歧 / 接入层）：横跨三组件、变更不由单一组件发起（2026-09-24 自根 README §5 迁入） |
-
-## 入住门槛（三条同时满足，缺一不可）
-
-1. **范围**：文档描述的内容横跨 ≥2 个组件（hub / console / runner / 部署拓扑）。
-2. **无单一权威**：变更不由任何一个组件的代码单独发起——即不存在"谁改代码谁改文档"的天然落点。
-3. **不可归位**：无法在保持"文档位置镜像代码权威结构"的前提下放进某个域目录。
-
-## 反例（不入住，留在权威域 + 交叉引用）
-
-| 文档 | 为什么不入住 |
-| --- | --- |
-| `hub/ACCOUNT-PERMISSION-MODEL.md` | 被三端消费，但权限唯一权威是 hub → 留 hub/ |
-| `hub/DELETE-CONTRACT.md` | console 有入口，但删除判定权威在后端 → 留 hub/ |
-| `hub/DATA-MODEL.md` | console/runner 读，但 schema SSOT=AutoMigrate 在 hub → 留 hub/ |
-| `hub/KEYCLOAK.md` | 身份层贯穿三端，但 KC 由 hub chart 托管 → 留 hub/ |
-
-## 候选住户（未来可能产生）
-
-- 部署拓扑总览（kind / 网关 / 三服务互联，横跨 deploy 与三仓的独立成篇版）
+| [CROSS-COMPONENT-ALIGNMENT.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/CROSS-COMPONENT-ALIGNMENT.md) | 北极星 / 授权 / 执行模型 / 三层边界 / 术语 / 接入层，三端对齐视图 |
+| [ACCOUNT-PERMISSION-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCOUNT-PERMISSION-MODEL.md) | 权限与审批：三条不动式（KC 身份 / hub 强制 / console 展示）+ runner 消费边界，治理三端 |
+| [DELETE-CONTRACT.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md) | 删除契约：console 入口 + hub 级联校验执行（`409 + {reasons}`） |
+| [DATA-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) | 领域/数据模型：hub 写、runner 写、console 读；含下发/授权/接入拓扑 |
+| [API-REFERENCE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/API-REFERENCE.md) | REST 端点契约：hub 实现、console 消费 |
+| [KEYCLOAK.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/KEYCLOAK.md) | 认证子系统：keycloakx 部署（hub chart）+ console/hub 交互 + 账号改密 |
+| [ADR-dispatch-durable-queue.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-dispatch-durable-queue.md) | hub↔runner WS 线协议决策：变更需两端同步 |
 
 ## 维护纪律
 
-- 新文件入住前，先在其**来源域**的 index.md 交叉引用处标注「已迁 shared/」，再删除原位文件（git mv），避免死链。
-- 发现某个住户已能被单一权威覆盖时，**迁回该域**并在本 README 记录一笔。
+- 住户文件**整体维护**：修改时直接改 shared/ 下的文件，禁止为"某组件视角"另拆副本（单组件视角的内容写进该组件自己的 STORY/feature 文档并互链）。
+- 各域 `index.md` 必须交叉引用被本域消费的住户文件。
+- 状态判断一律以 [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 为准；住户文件不自持状态标记。
+- 若某住户日后收敛为单组件内容（横跨不再成立），迁回该域并在本 README 记录一笔。
+
+## 不入住（单组件内容）
+
+- `hub/STORY-*` / `user-stories.md`：hub 实现叙事。
+- `console/features/*`：前端既成设计事实。
+- `runner/STORY-*`：runner 实现叙事。

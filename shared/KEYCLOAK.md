@@ -217,7 +217,7 @@ realm 由 [`templates/keycloak-realm-configmap.yaml`](https://github.com/rouroum
 | 用户 `admin` | **预置的人类登录账号** | realm `sdp` 下的普通用户：用户名 `admin` / 密码 **`sdp@12345`**（`temporary: false`，不强制改密），带 `default-roles-sdp` + `admin` 两个 realm 角色；console 登录用它 |
 | 用户 `service-account-sdp-backend` | 服务账号 | `sdp-backend` 客户端自动生成的服务账号（**不是**人类登录账号） |
 | protocolMapper `roles` / `groups` | OIDC 映射 | 把 realm 角色、组成员关系写进令牌（hub 当前只消费 `groups`，见 §6） |
-| 组 `/org:<slug>`（**由 hub 运行时自动预置**） | 组织载体（**D1 默认 ②**） | 「组织」维度的落点：组**不再靠静态 realm JSON 预置**，而由 hub `orgsvc` 在 `Create` 后幂等 `EnsureGroup("/org:<slug>")`、启动 `ReconcileGroups` 回填存量（`internal/keycloak` Admin 客户端，依赖 `KEYCLOAK_ADMIN_CLIENT_SECRET`；缺失则 dev 不建组只告警）。Keycloak Organizations 的**组织集导入未证实**，故仍走 ② 路径（见 `hub/ACCOUNT-PERMISSION-MODEL.md` §2.1 / §2.3）。**`/org:` 为保留前缀** —— 该类组**不得**作为 `subject_type=group` 的绑定主体（组织不作 RBAC 主体）。**无需**开 realm 的 Organizations 开关（可避免 identity-first 登录流变化）。**真集群 E2E 已验证（2026-09-23）**：hub 注入 issuer+secret 后 `POST /orgs` 201 → KC 组列表出现 `org:e2e-org2`；还原 env 后 dev 姿态恢复 |
+| 组 `/org:<slug>`（**由 hub 运行时自动预置**） | 组织载体（**D1 默认 ②**） | 「组织」维度的落点：组**不再靠静态 realm JSON 预置**，而由 hub `orgsvc` 在 `Create` 后幂等 `EnsureGroup("/org:<slug>")`、启动 `ReconcileGroups` 回填存量（`internal/keycloak` Admin 客户端，依赖 `KEYCLOAK_ADMIN_CLIENT_SECRET`；缺失则 dev 不建组只告警）。Keycloak Organizations 的**组织集导入未证实**，故仍走 ② 路径（见 `shared/ACCOUNT-PERMISSION-MODEL.md` §2.1 / §2.3）。**`/org:` 为保留前缀** —— 该类组**不得**作为 `subject_type=group` 的绑定主体（组织不作 RBAC 主体）。**无需**开 realm 的 Organizations 开关（可避免 identity-first 登录流变化）。**真集群 E2E 已验证（2026-09-23）**：hub 注入 issuer+secret 后 `POST /orgs` 201 → KC 组列表出现 `org:e2e-org2`；还原 env 后 dev 姿态恢复 |
 
 **E2E 揪出的三个 KC26 集成坑（2026-09-23，均已修/规避）**：
 1. **realm JSON 的 `realmRoles` 装不下 realm-management 客户端角色**：`query-groups` / `manage-users` 是 realm-management **client roles**，写在 user 的 `realmRoles` 里会被 `--import-realm` **静默丢弃**（导入不报错），provisioner 调 Admin API 时 403。修复：改用 user 的 **`clientRoles`: {"realm-management": ["query-groups","manage-users"]}**（已改 `build/hub/charts/.../keycloak-realm-configmap.yaml`，仅新 realm 首次导入生效）；存量 realm 用 kcadm 对 `role-mappings/clients/<realm-management-uuid>` POST 角色数组补授（`add-roles` 在此场景报 `Role not found`，须走 REST）。
@@ -236,7 +236,7 @@ realm 由 [`templates/keycloak-realm-configmap.yaml`](https://github.com/rouroum
 
 由此推出两条**容易误解**的实际结论（预置 `admin` 账号尤其要留意）：
 
-1. **realm 角色不参与授权**：[`internal/middleware/auth.go`](https://github.com/rouroumaibing/software-distribution-platform-hub/blob/main/internal/middleware/auth.go) 只读 `sub` / `preferred_username` / `email` / `groups` / `azp`，**刻意不读角色**（本 realm 的角色实际写在**顶层 `roles` claim** —— `sdp-console` 上挂的是 `oidc-usermodel-realm-role-mapper`、`claim.name: roles`，**不是** Keycloak 默认的 `realm_access.roles`；按 `realm_access` 去查会误判为「角色没进 token」）。所以给用户加 realm 角色 `admin` 只是 Keycloak 侧的标注，**不会**让它在 hub 里有管理员权限。依据见 [hub/ACCOUNT-PERMISSION-MODEL.md §2.2](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/ACCOUNT-PERMISSION-MODEL.md)。
+1. **realm 角色不参与授权**：[`internal/middleware/auth.go`](https://github.com/rouroumaibing/software-distribution-platform-hub/blob/main/internal/middleware/auth.go) 只读 `sub` / `preferred_username` / `email` / `groups` / `azp`，**刻意不读角色**（本 realm 的角色实际写在**顶层 `roles` claim** —— `sdp-console` 上挂的是 `oidc-usermodel-realm-role-mapper`、`claim.name: roles`，**不是** Keycloak 默认的 `realm_access.roles`；按 `realm_access` 去查会误判为「角色没进 token」）。所以给用户加 realm 角色 `admin` 只是 Keycloak 侧的标注，**不会**让它在 hub 里有管理员权限。依据见 [shared/ACCOUNT-PERMISSION-MODEL.md §2.2](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCOUNT-PERMISSION-MODEL.md)。
 2. **授权 = hub DB 里的绑定行**：判定走 `platform_role_bindings` / `component_role_bindings`（`subject_type` 支持 `user` 或 `group`）。用 `group` 时匹配的是令牌里的 `groups` claim（由 `sdp-console` 的 `groups` mapper 写入），但**绑定行本身仍要落在 hub DB**。2026-09-22 起有两条变化：① **平台级绑定已有 API**（`/platform-role-bindings`，C-10）；② seed 里**已种一条组绑定** `/sdp-admin` → `sdp-admin`（`cmd/hub/conf/09_rbac_multiorg.sql`）—— **该种子要生效，realm 必须先存在组 `/sdp-admin`**，而当前 realm **无任何组**（claim 为空，见 §5.3），故实际仍需先在 Keycloak 侧建组。组件级绑定仍只能经 API 创建。
 
 > 落到预置 `admin`：它登录后**能看到整个 console 界面**（console 路由守卫只校验「已登录」，见 [`console/src/router/index.ts`](https://github.com/rouroumaibing/software-distribution-platform-console/blob/main/src/router/index.ts)），但**组件级写操作会 403** —— hub 只对少数组件级路由挂 `RequirePermission`（触发流水线 / 审批 / 重派发 / 列出流水线运行），且当前**没有**给任何主体建绑定。要给 `admin` 完整能力，二选一：① 把它设为组件 owner（owner 天然持有 `component-admin`，见 hub DATA-MODEL §7.4）；② 在 console「组件权限」页给它绑 `component-admin`（或建 group 绑定）。
@@ -280,7 +280,7 @@ realm 由 [`templates/keycloak-realm-configmap.yaml`](https://github.com/rouroum
 
 | 环节 | 位置 | 一句话 |
 | --- | --- | --- |
-| hub 令牌校验中间件 | [`internal/middleware/auth.go`](https://github.com/rouroumaibing/software-distribution-platform-hub/blob/main/internal/middleware/auth.go) | 走 **OIDC 标准流程**（discovery → JWKS → 验签）+ 校验 `azp == KEYCLOAK_CLIENT_ID`；读取 `sub`/`preferred_username`/`email`/`groups`。**协议细节（hub = Resource Server、校验清单、fail-fast、不调 introspection/userinfo）见 [hub/ACCOUNT-PERMISSION-MODEL.md §2.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/ACCOUNT-PERMISSION-MODEL.md)** |
+| hub 令牌校验中间件 | [`internal/middleware/auth.go`](https://github.com/rouroumaibing/software-distribution-platform-hub/blob/main/internal/middleware/auth.go) | 走 **OIDC 标准流程**（discovery → JWKS → 验签）+ 校验 `azp == KEYCLOAK_CLIENT_ID`；读取 `sub`/`preferred_username`/`email`/`groups`。**协议细节（hub = Resource Server、校验清单、fail-fast、不调 introspection/userinfo）见 [shared/ACCOUNT-PERMISSION-MODEL.md §2.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCOUNT-PERMISSION-MODEL.md)** |
 | hub 用户上下文 | [`internal/middleware/user_context.go`](https://github.com/rouroumaibing/software-distribution-platform-hub/blob/main/internal/middleware/user_context.go) | 首次登录按 `keycloak_id` 自动建本地 `users` 行（无手工开户步骤） |
 | hub 接线 | [`cmd/hub/main.go`](https://github.com/rouroumaibing/software-distribution-platform-hub/blob/main/cmd/hub/main.go) | `AuthDisabled()` 为假才挂 `auth.Middleware()`；组件级路由包 `RequirePermission` |
 | hub 配置 | [`internal/config/config.go`](https://github.com/rouroumaibing/software-distribution-platform-hub/blob/main/internal/config/config.go) | `KEYCLOAK_ISSUER`（空=关闭鉴权）、`KEYCLOAK_CLIENT_ID`（默认 `sdp-console`） |
@@ -335,14 +335,14 @@ E2E 证据（全部经网关 https 或 hub API 实测）：discovery 通告 issu
 >
 > ⚠️ 两个 `admin` 是**不同 realm 的两个账号**：`master` 的那个能管 Keycloak 本身（管理台），realm `sdp` 的那个只是 console 的业务账号。dev 刻意用同一口令便于记忆，**改密时务必看清当前 realm**，改错 realm 会出现「密码明明改了却登不上」。
 >
-> ⚠️ **在 Keycloak 侧删用户 / 改角色，不会回收 hub 侧的绑定行**：hub 的授权是 `platform_role_bindings` / `component_role_bindings` 里的**独立数据**（不动式②：hub 是唯一权限权威），Keycloak 的身份变化**不会**同步过去。人员离职 / 换岗时须**两侧都处理**（Keycloak 停用账号 **+** hub 侧解绑），否则会留下「身份已失效、绑定仍生效」的行。绑定的**到期回收**由 hub 负责（见 [hub/ACCOUNT-PERMISSION-MODEL.md §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/ACCOUNT-PERMISSION-MODEL.md)）。
+> ⚠️ **在 Keycloak 侧删用户 / 改角色，不会回收 hub 侧的绑定行**：hub 的授权是 `platform_role_bindings` / `component_role_bindings` 里的**独立数据**（不动式②：hub 是唯一权限权威），Keycloak 的身份变化**不会**同步过去。人员离职 / 换岗时须**两侧都处理**（Keycloak 停用账号 **+** hub 侧解绑），否则会留下「身份已失效、绑定仍生效」的行。绑定的**到期回收**由 hub 负责（见 [shared/ACCOUNT-PERMISSION-MODEL.md §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCOUNT-PERMISSION-MODEL.md)）。
 
 ---
 
 ## 8. 相关文档
 
-- [hub ACCOUNT-PERMISSION-MODEL](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/ACCOUNT-PERMISSION-MODEL.md) —— **下游规范**：账号与权限（三条不动式、鉴权两段式、RBAC 引擎、审计、权限申请审批）。**本文只讲「认证子系统如何部署」；「权限如何判定」以该文为准。**
-- [hub API-REFERENCE](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/API-REFERENCE.md) —— API 端点与鉴权约定。
-- [hub DATA-MODEL](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) —— `users` / 授权模型（§7 授权模型）。
+- [hub ACCOUNT-PERMISSION-MODEL](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCOUNT-PERMISSION-MODEL.md) —— **下游规范**：账号与权限（三条不动式、鉴权两段式、RBAC 引擎、审计、权限申请审批）。**本文只讲「认证子系统如何部署」；「权限如何判定」以该文为准。**
+- [hub API-REFERENCE](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/API-REFERENCE.md) —— API 端点与鉴权约定。
+- [hub DATA-MODEL](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) —— `users` / 授权模型（§7 授权模型）。
 - [README §5.2 授权模型（G7）](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md) —— Keycloak（身份+组）/ k8s RBAC / hub 业务授权三者的边界。
 - 上游：[codecentric/helm-charts · keycloakx](https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx) · [Keycloak 官方](https://github.com/keycloak/keycloak)。

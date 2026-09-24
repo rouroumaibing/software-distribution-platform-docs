@@ -6,8 +6,8 @@
 > **范围**：登录账号（Keycloak 账户）+ 前端访问 + 后端鉴权。
 > **不在范围**：TLS 证书、数据库口令、gateway token —— 其当前分布已判定正确，不纳入本轮。
 >
-> 数据模型的下位细节（DDL、字段级设计）见 [hub/DATA-MODEL.md §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)；本文不复制 DDL，只做**权威边界与契约**的裁定。
-> 认证子系统的部署与 realm 预置见 [hub/KEYCLOAK.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/KEYCLOAK.md)。
+> 数据模型的下位细节（DDL、字段级设计）见 [shared/DATA-MODEL.md §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)；本文不复制 DDL，只做**权威边界与契约**的裁定。
+> 认证子系统的部署与 realm 预置见 [shared/KEYCLOAK.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/KEYCLOAK.md)。
 
 ---
 
@@ -130,7 +130,7 @@ OIDC 里有两个相关角色，本项目**分别落在两端**：
 | ② | **取 JWKS** | `GET {jwks_uri}`（本项目即 `/keycloak/realms/sdp/protocol/openid-connect/certs`）→ 公钥集 | 首次验签；**遇未知 `kid` 自动重取** ⇒ Keycloak 轮换签名密钥时 hub **无需重启** |
 | ③ | **验签 + 校验声明** | RS256 **非对称**验签（hub 只需公钥；**不接触私钥、不需要 client secret**） | **每个请求** |
 
-`{issuer}` = `https://www.sdpworkflow.com/keycloak/realms/sdp` —— **含 `/keycloak` 相对路径**。issuer 与 chart 的 `http.relativePath` 不一致会让 discovery 直接 404（[hub/KEYCLOAK.md §3](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/KEYCLOAK.md)「坑 4」）。
+`{issuer}` = `https://www.sdpworkflow.com/keycloak/realms/sdp` —— **含 `/keycloak` 相对路径**。issuer 与 chart 的 `http.relativePath` 不一致会让 discovery 直接 404（[shared/KEYCLOAK.md §3](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/KEYCLOAK.md)「坑 4」）。
 
 #### 2.4.3 校验清单（顺序即失败顺序，任一不过 = `401`）
 
@@ -330,7 +330,7 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 | 角色 → 接口映射表 | **本文件 §5.1③** | ✅ **已落地** —— `internal/permission/handler/role_api_mapping.go`（`RoleAPIMappingHandler`） |
 | `audit_log` | **本文件 §6** | ✅ **已落地** —— 由 `middleware.AuditMiddleware` 唯一写入（`internal/middleware/audit*.go` + `audit_test.go`） |
 | `permission_request` | **本文件 §7.2** | ✅ **已落地** —— `internal/permission/{models,repository,service,handler}/permission_request*.go` + `PermissionRequestHandler` |
-| realm（账户 / 客户端 / 角色 / 组 / Organizations） | [hub/KEYCLOAK.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/KEYCLOAK.md) | Keycloak 侧 |
+| realm（账户 / 客户端 / 角色 / 组 / Organizations） | [shared/KEYCLOAK.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/KEYCLOAK.md) | Keycloak 侧 |
 
 ---
 
@@ -372,7 +372,7 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 | # | 步骤 | 门禁 |
 | --- | --- | --- |
 | 1 | **D1–D6 已闭（0 项阻塞）**：D2 / D3 / D4 / D6 由本文件正文裁定，D1 / D5 按**可逆默认**自决 —— 见 §12 与 git 历史中的 plans/ACCOUNT-PERMISSION-DECISIONS.md（已删档，结论以本文件 §12 为准） §0.1 | 无 —— realm 与表结构**均可定稿**（§2.3 硬约定使 carrier 可换，**不需要**先拍 D1） |
-| 2 | realm 侧（**D1 默认载体 ②**）：预置组织组 `/org:<slug>` + 预置账号；groups mapper **已在**、`full.path=true` ⇒ **无需开 Organizations、无 identity-first 登录流变化** | ① `helm template` 渲染产物解析 realm JSON 通过；② 按 `hub/KEYCLOAK.md` §4 第 5 步的 password-grant curl 取 token，**解码断言 `groups` claim 含 `/org:*`**；③ **仅当**切 ①（federation）时才需实测「组织集能否随 realm JSON 导入」 |
+| 2 | realm 侧（**D1 默认载体 ②**）：预置组织组 `/org:<slug>` + 预置账号；groups mapper **已在**、`full.path=true` ⇒ **无需开 Organizations、无 identity-first 登录流变化** | ① `helm template` 渲染产物解析 realm JSON 通过；② 按 `shared/KEYCLOAK.md` §4 第 5 步的 password-grant curl 取 token，**解码断言 `groups` claim 含 `/org:*`**；③ **仅当**切 ①（federation）时才需实测「组织集能否随 realm JSON 导入」 |
 | 3 | 表结构：**✅ 四表已落（2026-09-22 第八批，`0012`）** —— `resource_ownership` / `role_api_mappings` / `audit_log` / `permission_requests`；**✅ `expires_at` ×2（`0011`）**；**✅ C-10 平台级端点已落** | migration 可在空库 + 存量库双向执行；C-10 端点可用，且已种入 `/sdp-admin` 组绑定 —— D2① 落地后**不会**出现「无人是平台管理员」（见 git 历史中的 plans/ACCOUNT-PERMISSION-DECISIONS.md（已删档，结论以本文件 §12 为准） §2.5） |
 | 4 | 认证/鉴权中间件按 §4 顺序重排：**✅ 已全部落地** —— subject 解析（`CurrentSubject`）+ 鉴权路径按 `sub` 匹配（2026-09-22），**D3 删 `users` 表 / `CurrentUserID` / V1 遗留列（2026-09-23，`migrations/0015`）** | Go 单测 + `go vet/build/test` ✅ |
 | 5 | RBAC ① → ③ 落表并成为判定输入：**✅ 映射表已落 + `BindingService` 生效动作集并入（2026-09-22）**；**⏳ 种 `admin` 的 `sub` 平台管理员绑定待 realm 有组后补种** | 判定结果与旧实现逐例对照；`auth.go` 的 `keycloakClaims` **不得**出现 roles 字段（**防回退静态断言**） |
@@ -392,7 +392,7 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 | **D1** | 「组织」用什么载体？ | **② 组命名约定 `/org:<slug>`**（复用已就绪的 `groups` 通路；**组随 realm JSON 可靠导入** ⇒ 保住「配置即代码」；零 realm 开关） | ① Keycloak **Organizations**：**翻盘条件 = 出现「多 IdP / 跨组织 SSO 联邦」需求**；因硬约定（组织键=alias、组织不作主体）**切换无需数据迁移**。① 已知成本：开开关 ⇒ **identity-first 登录流变化**；组织集能否随 realm JSON 导入**未证实**；**scope 形态须选定**（`organization`=ANY / `organization:<alias>`=SPECIFIC / `organization:*`=ALL）。**v2 曾推荐 ①（理由「语义隔离」），本轮下调为 ②** —— ② 用保留前缀等价隔离（硬规则：`/org:` 前缀不得作 `group` 绑定主体）。**不可逆性由「高」降为「中」** |
 | **D2** | 角色/权限的权威在哪？ | **① 全在 hub RBAC 表**（token 角色仅供对账/展示）—— **已由不动式② + §2.1 / §2.2 裁定，无需拍板** | ②（hub 表 + token 角色参与）/ ③（token 角色为准）均与**不动式②「hub 是唯一权限权威」冲突** ⇒ 不做。⚠ 前置 **C-10**（平台级端点/种子）**仍在** —— 否则落地后无人是平台管理员 |
 | **D3** | 「不存用户表」的连锁改动 | **主体键 = token `sub`**（§5.3；`group` 用 claim 逐字）；第 4 处取 **(b′) 只列已绑定主体 + 允许手输 `sub`**。**✅ 5 处全部落地（2026-09-23）** | ➎ **已执行**：`users` 表已删 + `UserContext` 纯解析 + `CurrentUserID` 并入 `CurrentSubject`（原 7 个读取点）；① `components.owner_user` → `owner_sub`（text，回填自 `users.keycloak_id`）；② `user_id` / `role_id` 已删列（V1 解析分支同批移除）；③ approver / operator / createdBy 改取 `sub`；④ console 改「绑定表派生 + 手输」。迁移 `0015`（**不可逆**）—— 代码已落，部署侧须手工 psql |
-| **D4** | Casbin 是否本期引入 | **延后**（`hub/DATA-MODEL.md` §7.6「不在本期」+ §5.2 边界已划）—— **已定** | 引入 = **条件触发**：触发条件与硬约束已登记 **B-19**（[hub/STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md)），非待决 |
+| **D4** | Casbin 是否本期引入 | **延后**（`shared/DATA-MODEL.md` §7.6「不在本期」+ §5.2 边界已划）—— **已定** | 引入 = **条件触发**：触发条件与硬约束已登记 **B-19**（[hub/STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md)），非待决 |
 | **D5** | token 存法 | **维持 localStorage**（`console/src/stores/auth.ts` 现状；**本文件对此本就沉默** ⇒ 属实现细节）—— **可逆，自决** | BFF / 后端 Cookie：安全基线升级时再议；纯前端单点改动，**可逆** |
 | **D6** | `aud` 校验方式 | **① 维持：不校 `aud`、校 `azp`**（§2.4 已实现）—— **已定** | ② 加 **audience mapper** + 去 `SkipClientIDCheck` —— **条件触发**（需按 audience 区分多个资源服务器时），非待决 |
 
@@ -421,9 +421,9 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 
 | 文档 | 关系 |
 | --- | --- |
-| [hub/KEYCLOAK.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/KEYCLOAK.md) | 上游：认证子系统部署、realm 预置、账号改密 |
-| [hub/DATA-MODEL.md §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) | 下位：两层 RBAC 与审批表的字段级 DDL |
-| [hub/API-REFERENCE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/API-REFERENCE.md) | 端点权威清单（`/api/userinfo` ✅ **已补入** —— `GET /userinfo`，`internal/permission/handler/userinfo.go`，`cmd/hub/main.go` 注册于裸 `api`） |
+| [shared/KEYCLOAK.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/KEYCLOAK.md) | 上游：认证子系统部署、realm 预置、账号改密 |
+| [shared/DATA-MODEL.md §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) | 下位：两层 RBAC 与审批表的字段级 DDL |
+| [shared/API-REFERENCE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/API-REFERENCE.md) | 端点权威清单（`/api/userinfo` ✅ **已补入** —— `GET /userinfo`，`internal/permission/handler/userinfo.go`，`cmd/hub/main.go` 注册于裸 `api`） |
 | [hub/STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md) | C-10（平台级 RBAC 端点缺失） |
 | [console/CONSOLE-UI-DESIGN.md §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) | 前端权限与审批 UX |
 | [runner/STORY-runner-implementation.md §4.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md) | 下游：runner 侧 k8s RBAC 授权边界 |

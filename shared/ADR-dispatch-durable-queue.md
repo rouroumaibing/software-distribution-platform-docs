@@ -3,7 +3,7 @@
 - **状态**：Accepted
 - **日期**：2026-08-26
 - **决策者**：平台 owner（经多轮双向钢人论证确认）
-- **相关文档**：[DATA-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)（服务树/组件/三表/快照关系）、[STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md)
+- **相关文档**：[DATA-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)（服务树/组件/三表/快照关系）、[STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md)
 
 ---
 
@@ -59,7 +59,7 @@ owner 明确：
 
 ## 4. 依赖的上游不变式（Upstream invariants）
 
-本 ADR 建立在已确认的上游决策之上（详见 [DATA-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）：
+本 ADR 建立在已确认的上游决策之上（详见 [DATA-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)）：
 
 1. **流水线锁死单个 component**：pipeline 永远锚定一个 Component，阶段/子任务协同只在单组件内。故"多环境扇出"是同一 pipeline 对不同 target 的多次下发，不涉跨组件编排。
 2. **三表规范化拆分正确**：`Pipeline / PipelineStage / PipelineTaskTemplate` + `pipeline_versions` 快照。执行期进度按 `(pipeline_run_id, stage_name, status)` 细粒度、索引化、部分读取；故前端轮询走轻量进度端点，不返回整份定义。

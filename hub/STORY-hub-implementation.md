@@ -430,7 +430,7 @@ CREATE TABLE pipeline_approvals (
 );
 ```
 
-> ✅ **权限表已升级为 §7 多 org 两层 RBAC（P1/P2/P3 已落地）**：[hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) 规划的两层 RBAC（`platform_roles` + `platform_role_bindings` + `component_roles` + `subject_type/subject_id` + 组件 `owner_sub`/`owner_group` 列 + `pipeline_approvals`）均已建表并实现 Enforcement；V1 的 `roles` + `component_role_bindings(user_id/role_id)` + `approvals` 的**兼容窗口已随 D3 结束**（`user_id`/`role_id` 已删列，`roles` 表仅剩只读展示）。新建授权一律走 §7 路径。
+> ✅ **权限表已升级为 §7 多 org 两层 RBAC（P1/P2/P3 已落地）**：[hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) 规划的两层 RBAC（`platform_roles` + `platform_role_bindings` + `component_roles` + `subject_type/subject_id` + 组件 `owner_sub`/`owner_group` 列 + `pipeline_approvals`）均已建表并实现 Enforcement；V1 的 `roles` + `component_role_bindings(user_id/role_id)` + `approvals` 的**兼容窗口已随 D3 结束**（`user_id`/`role_id` 已删列，`roles` 表仅剩只读展示）。新建授权一律走 §7 路径。
 
 **ER 关系概要**
 ```

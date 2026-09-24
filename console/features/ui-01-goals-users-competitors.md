@@ -42,13 +42,13 @@
 | **转测流水线** | 版本包获取(Consumes 归档产物) → 发布到转测环境(Release→转测 env) | 消费版本归档产物，发布到转测环境 |
 | **生产流水线** | 版本包获取 → 审批(Approval) → 多环境发布(Release→多 env) | 经审批门禁后，向多套环境依次/并行发布 |
 
-> 注：「版本包获取」对应任务间的 `Produces/Consumes` 产物依赖（[hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）；「多环境发布」在同一组件下多环境目标内完成（Pipeline 锚定单 Component 不变式）。
+> 注：「版本包获取」对应任务间的 `Produces/Consumes` 产物依赖（[hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)）；「多环境发布」在同一组件下多环境目标内完成（Pipeline 锚定单 Component 不变式）。
 > 原型中的 JSON 映射：这 4 类对应 `PIPELINE_GRAPHS` 的 `日常流水线` / `版本归档` / `转测流水线` / `生产发布`；**阶段内任务的 `type` 由配置派生**（填了发布目标 → `Release`，填了审批人 → `Approval`，否则 `Build`），编辑器只显示产品语言，不露三态原词（见 §7.4）。
 
 ### 1.2 落地顺序（基本功能优先，权限紧随）
 
 1. **先完成基本功能**：服务树 → 组件 → 环境 → 配置 → 流水线创建/编排/运行 → 多环境发布全链路贯通（console MOD-0~MOD-10 + hub G1–G6 + runner R1–R3）。
-2. **权限管控已落地**：基本功能可用后实现的权限体系——平台级用户/角色（`platform_roles`/`platform_role_bindings`）+ 组件级 role-bindings（`component_roles`/`component_role_bindings`，subject 支持 user/group）+ 审批子系统（`pipeline_approvals`，含防自审）——已于 P1/P2/P3 整体落地（见 [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）。G7（service 层 §7 Enforcement）已在 P3a 完成。
+2. **权限管控已落地**：基本功能可用后实现的权限体系——平台级用户/角色（`platform_roles`/`platform_role_bindings`）+ 组件级 role-bindings（`component_roles`/`component_role_bindings`，subject 支持 user/group）+ 审批子系统（`pipeline_approvals`，含防自审）——已于 P1/P2/P3 整体落地（见 [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)）。G7（service 层 §7 Enforcement）已在 P3a 完成。
 
 ---
 

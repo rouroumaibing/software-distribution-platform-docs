@@ -2,7 +2,7 @@
 
 > **事实源声明（2026-09-19 合并）**：本文是 console 前端设计的**唯一事实源**。
 > - **IA / 页面 / 交互 / 视觉以可交互原型 [`CONSOLE-UI-原型.html`](./CONSOLE-UI-原型.html) 为准**；文档与原型不一致时，以原型渲染结果为准，并回头修文档（本轮的修订依据）。
-> - **后端接口契约**（请求体 / 响应 / 字段名 / 端点 / DAG 映射）→ [`hub/API-REFERENCE.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/API-REFERENCE.md)；**删除语义** → [`hub/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DELETE-CONTRACT.md)；**数据模型 / RBAC 表** → [`hub/DATA-MODEL.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)。本文不重复这些契约，只写 console 侧的消费方式。
+> - **后端接口契约**（请求体 / 响应 / 字段名 / 端点 / DAG 映射）→ [`shared/API-REFERENCE.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/API-REFERENCE.md)；**删除语义** → [`shared/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md)；**数据模型 / RBAC 表** → [`shared/DATA-MODEL.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)。本文不重复这些契约，只写 console 侧的消费方式。
 > - 本文由两份文档合并而成：`CONSOLE-UI重设计文档.md`（IA v3 重设计）+ `CONSOLE-UI设计文档.md`（IA v2 合并版，2026-09-09）。**原两份文件已删除**；其中仍具权威性的章节（执行模型、异常分支、权限与审批 UX、四态、验收、流水线 4 类模式、API 桩状态）已按**原章节号**迁入本文，以保证 `hub/`、`runner/`、`README.md` 中的既有引用继续有效（见文末「章节号稳定性约定」）。
 > - 标注约定：`【假设】`= 据上下文推导，需确认；`【待确认】`= 存在歧义 / 待拍板；`【后端依赖】`= 需 hub 补端点或核对；`【原型未展开】`= 原型中为占位页，只有结构没有内容。
 

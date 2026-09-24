@@ -62,7 +62,7 @@
 - §10.3（API 组合测试）= 工程视角：**各阶段组合的编排/执行逻辑是否正确**；穷举组合、可重复、CI 可跑。两者互补，不互相替代。
 
 **测试对象与入口（直连 hub API，不经 UI）**
-- 复用 hub 的契约（`POST /pipelines` 编排、`POST /pipelines/:id/runs` 触发、`GET /runs/:id/progress` + `GET /runs/:id/stage-progress` 查进展，详见 附 D 与 [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) §6.5）。
+- 复用 hub 的契约（`POST /pipelines` 编排、`POST /pipelines/:id/runs` 触发、`GET /runs/:id/progress` + `GET /runs/:id/stage-progress` 查进展，详见 附 D 与 [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) §6.5）。
 - 绕开 console 前端，直接构造 pipeline spec（stages + tasks + `ExecutionMode` + task 类型），调 hub 触发，断言 `task_runs`/`pipeline_runs` 的最终态与阶段进展聚合符合 §6.0 执行模型。
 
 **组合维度（穷举的"各阶段组合"指这些）**
@@ -74,7 +74,7 @@
 
 **落地形态（计划，非本报告交付物）**
 - 独立的自动化测试项目，按上述维度参数化用例；CI 中对接一套最小 runner（或 stub executor）跑通真实 stage/子任务调度逻辑。
-- 断言基准 = [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) §6 的执行模型 + 进展回收契约；用例即契约的活文档。
+- 断言基准 = [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) §6 的执行模型 + 进展回收契约；用例即契约的活文档。
 
 ### 10.4 关注信号
 

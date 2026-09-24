@@ -10,7 +10,7 @@
 
 | ID | 项 | 影响 | 快照时状态 | 后续 |
 | --- | --- | --- | --- | --- |
-| **G7** | service 层权限校验多处 TODO | 安全债（非功能阻断） | 🟢 已完成 | 设计已落（[hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) 两层 RBAC + 审批表 / 本文 §7.9 UX）；**P3a 已实现**：路由级 `HasPermission` 改用 §7 action、`component.go` 等接入 §7.5 Enforcement、Keycloak `groups` 经 `UserContext` 注入；console 权限页 P3c 支持 user/group 主体 + §7 角色选择器 + 自审提示 |
+| **G7** | service 层权限校验多处 TODO | 安全债（非功能阻断） | 🟢 已完成 | 设计已落（[hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) 两层 RBAC + 审批表 / 本文 §7.9 UX）；**P3a 已实现**：路由级 `HasPermission` 改用 §7 action、`component.go` 等接入 §7.5 Enforcement、Keycloak `groups` 经 `UserContext` 注入；console 权限页 P3c 支持 user/group 主体 + §7 角色选择器 + 自审提示 |
 | **R1** | chart/manifest 施加生产化 | runner 发布链路 | 🟡 | chart 仓库鉴权接入；values `--set` 注入端到端验证 |
 | **R2** | 日志持久化读路径 | 运行日志 | 🟡 | 已由 G2 hub DB 读路径解决，runner 侧归档可走 G5 upload-url |
 | **R3** | 镜像与默认参数固化 | runner 生产镜像 | 🟡 | git/artifact/helm 镜像替换为 pinned 生产镜像；常量配置化（registry 确定后定值） |

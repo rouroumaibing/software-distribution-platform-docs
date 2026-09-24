@@ -139,9 +139,9 @@
 
 权限 = 「筛选栏 + 表格 + 分页 + 行内操作」标准布局；**环境不是列表页** = 左侧环境树 + 右侧**对接配置面板**（见 §7.12）；制品库为**只读版本包清单**（仅 3 列 + 顶部归档说明，无筛选栏 / 行内操作，见 §7.10）。
 
-### 7.9 权限与审批 UX（对应 [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）
+### 7.9 权限与审批 UX（对应 [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)）
 
-> 授权分层与后端表设计见 [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md) §7：**Keycloak 管身份、k8s 管 runner 部署边界、hub 内两层 RBAC + 审批表**。前端只消费 hub 鉴权结果。钢人论证结论：组件级权限以"管理员/组映射为主" → 不引入 Keycloak UMA；默认审批人 = 组件 owner/管理员。
+> 授权分层与后端表设计见 [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) §7：**Keycloak 管身份、k8s 管 runner 部署边界、hub 内两层 RBAC + 审批表**。前端只消费 hub 鉴权结果。钢人论证结论：组件级权限以"管理员/组映射为主" → 不引入 Keycloak UMA；默认审批人 = 组件 owner/管理员。
 
 **授权分层（前端视角）**
 
@@ -181,9 +181,9 @@
 | 修改成员角色 | 行内下拉 | `component:update` |
 | 移除成员 | 行内删除（确认） | `component:update` |
 
-- 四种组件角色（hub `component_roles` 预置，[hub 数据模型 §7.3](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）：`component-viewer`（只读）/ `component-editor`（读写+触发+配置）/ `component-approver`（+`approval:approve`）/ `component-admin`（全部组件动作 + `component:manage`）。
+- 四种组件角色（hub `component_roles` 预置，[hub 数据模型 §7.3](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)）：`component-viewer`（只读）/ `component-editor`（读写+触发+配置）/ `component-approver`（+`approval:approve`）/ `component-admin`（全部组件动作 + `component:manage`）。
 - 主体支持 **user 或 group**（`subject_type`/`subject_id`）：组名当前由用户在 console 手填（hub 暂未暴露 Keycloak 组目录，待补 `/groups` 接口）；角色选择器枚举来自 hub `GET /component-roles`（P3c 新增）。
-- **默认成员（创建组件时自动生成，满足"默认审批人=owner/admin"）**：组件 owner（user 或 group）**自动绑 `component-admin`**（P3b，含 `approval:approve` + 全量管理动作，非致命失败）；因此 owner 天然是默认审批人（[hub 数据模型 §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）。
+- **默认成员（创建组件时自动生成，满足"默认审批人=owner/admin"）**：组件 owner（user 或 group）**自动绑 `component-admin`**（P3b，含 `approval:approve` + 全量管理动作，非致命失败）；因此 owner 天然是默认审批人（[hub 数据模型 §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)）。
 - V1 旧绑定行（`userId`/`roleId`）在界面回显兼容，新建/修改一律走 §7 字段。
 - 权限实时生效；无权限按钮在界面禁用/隐藏，而非仅报错。
 
@@ -239,9 +239,9 @@
 
 > **起因**：组件详情「环境」Tab 此前只有一个 `target` / `namespace` 自由文本框，「新建环境」也只收名称/目标/命名空间 —— **kubeconfig、kube-apiserver 地址、SSH 主机与凭据无处可填**。本节按 hub 实测代码把这件事补完。
 >
-> **层次前提（2026-09-21 裁定）**：本节讲的是**② 平台怎么够到目标**（目标 = 被纳管集群 / 主机），**不涉及 ③ 平台自身装在哪、怎么升级**。平台自身不进服务树 / 组件 / 环境模型，其部署与升级留在平台之外——三层边界见 [README.md「5.4 平台自身定位与部署形态」](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)，不采纳自升级的六条理由见 [hub/DATA-MODEL.md §9.11](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)（原 E2E-VERIFY-PLAN P6，已删档归位）。另注：**单机版**（平台与目标同集群）下，`targets` 里那一行目标指向的集群同时也是**平台底座所在**；但 **runner 是接入侧代理组件，其身份与部署形态无关**（2026-09-21 二次裁定），故下文凡提"目标"均指**被接入的目标**角色。
+> **层次前提（2026-09-21 裁定）**：本节讲的是**② 平台怎么够到目标**（目标 = 被纳管集群 / 主机），**不涉及 ③ 平台自身装在哪、怎么升级**。平台自身不进服务树 / 组件 / 环境模型，其部署与升级留在平台之外——三层边界见 [README.md「5.4 平台自身定位与部署形态」](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)，不采纳自升级的六条理由见 [shared/DATA-MODEL.md §9.11](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)（原 E2E-VERIFY-PLAN P6，已删档归位）。另注：**单机版**（平台与目标同集群）下，`targets` 里那一行目标指向的集群同时也是**平台底座所在**；但 **runner 是接入侧代理组件，其身份与部署形态无关**（2026-09-21 二次裁定），故下文凡提"目标"均指**被接入的目标**角色。
 >
-> **口径校准（2026-09-21 更正）**：本节早前把 `kubeconfig` / `ssh` 的凭据挂在 **runner 侧 Secret**，并称其"尚未裁决"——**两处都已更正**。用户已澄清：**两条直连通道都由 hub 侧发起连接**（不是给 runner 用），且**发布目标与归档机器都可能是非 K8s 的**，平台须覆盖非容器环境的「连接 / 测试 / 发布 / 执行命令」全链路。跨组件裁定见 [README.md §5.6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md) + `hub/DATA-MODEL.md` §9.5 / §9.7。
+> **口径校准（2026-09-21 更正）**：本节早前把 `kubeconfig` / `ssh` 的凭据挂在 **runner 侧 Secret**，并称其"尚未裁决"——**两处都已更正**。用户已澄清：**两条直连通道都由 hub 侧发起连接**（不是给 runner 用），且**发布目标与归档机器都可能是非 K8s 的**，平台须覆盖非容器环境的「连接 / 测试 / 发布 / 执行命令」全链路。跨组件裁定见 [README.md §5.6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md) + `shared/DATA-MODEL.md` §9.5 / §9.7。
 
 #### 7.12.1 接入方式：三条通道，凭据归属不同
 
@@ -250,7 +250,7 @@
 | 事实 | 代码依据 | 对设计的影响 |
 | --- | --- | --- |
 | `targets` 表只有 `name / vendor / region / status / agent_version / last_heartbeat_at` | `target.go` | 本表**只描述 `agent` 通道的目标**，不含任何凭据列 |
-| `environments` = `component_id` + `key` + `name` + **`target_id`**(NOT NULL) + `env_type` + `namespace` | `environment.go` / `0001_init_schema.sql` L89 | `agent` 通道的"接入" = 引用目标 + 命名空间；**但 NOT NULL 的 `target_id` 表达不出非容器目标**（`hub/DATA-MODEL.md` §9.7） |
+| `environments` = `component_id` + `key` + `name` + **`target_id`**(NOT NULL) + `env_type` + `namespace` | `environment.go` / `0001_init_schema.sql` L89 | `agent` 通道的"接入" = 引用目标 + 命名空间；**但 NOT NULL 的 `target_id` 表达不出非容器目标**（`shared/DATA-MODEL.md` §9.7） |
 | `env_type` 只有 `test` / `production` | `environment.go` 常量 | 环境类型选择器只给这两项（审批策略看它，§7.9） |
 | 既有凭据惯例是**存引用不落明文**：`components.repo_secret_ref` · `component_configs.secret_ref` | `component.go` L18 / `config.go` L21 + DDL L61/L74 | 直连通道**沿用同一惯例**（只落 `credentialRef`），但**凭据的物理位置从"目标侧"变为"hub 侧"**——这是与旧注释的**结构性**差异 |
 | runner 把任务翻译成**目标集群里的一个 K8s Job**（`sh {ScriptPath}` / `helm upgrade` / `kubectl apply`；工作区 EmptyDir 卷） | `runner/pkg/executor/job_builder.go` | Job / ns / SA / RoleBinding / 卷在物理机上都不存在 → **非容器目标无法走 Runner**，只能 hub 直连 `ssh` |
@@ -336,11 +336,11 @@
 > ⚠️ **2026-09-21 更正**：直连通道的凭据**由 hub 持有**（hub 侧发起连接），**不是 runner 侧**。本节第一版按"目标侧 Secret"写，已改正。
 
 1. **记录只存引用名**：环境 / 目标记录只落 `credentialRef`，**与 `repo_secret_ref` / `secret_ref` 同一套铁律**；hub **不新增"凭据明文列"**。
-2. **凭据物理位置——未定**：候选 ① **hub 自身运行环境的 K8s Secret**（与 hub 的 Postgres DSN / 对象存储 key 同级托管）、② hub DB 加密列、③ 外部 Vault / KMS。注意本库 P0 拓扑**没有**独立 secret manager，故 ① 与 ② 的实际隔离差异比直觉小——**这条需单独拍板**（`hub/DATA-MODEL.md` §9.7 已登记）。
+2. **凭据物理位置——未定**：候选 ① **hub 自身运行环境的 K8s Secret**（与 hub 的 Postgres DSN / 对象存储 key 同级托管）、② hub DB 加密列、③ 外部 Vault / KMS。注意本库 P0 拓扑**没有**独立 secret manager，故 ① 与 ② 的实际隔离差异比直觉小——**这条需单独拍板**（`shared/DATA-MODEL.md` §9.7 已登记）。
 3. **敏感字段单向**：接口回显 `xxxSet: true` 布尔，**永不返回明文**；原型用 `••••••••` 掩码 + 「已配置」chip + 「重新设置」。
 4. **输入即丢弃**：认证材料输入后立刻从内存态清空（原型在 `input` 监听里置 `credSet=true` 并清 `token/cert/password`），后续渲染只出掩码。
 5. **权限**：看环境 = `config:read`（能看到"已配置"，看不到明文）；改凭据 = `config:update`（沿用 §7.9 的"环境与分组同属接入准备"）。
-6. **审计**：凭据的新增 / 更新 / 引用变更写审计（谁在何时换了哪台集群或主机的凭据）；⚠️ **`ssh` / `kubeconfig` 直连执行的逐条命令证据链无现成表**（`hub/DATA-MODEL.md` §9.7 未定项）。
+6. **审计**：凭据的新增 / 更新 / 引用变更写审计（谁在何时换了哪台集群或主机的凭据）；⚠️ **`ssh` / `kubeconfig` 直连执行的逐条命令证据链无现成表**（`shared/DATA-MODEL.md` §9.7 未定项）。
 
 #### 7.12.5 连接测试 = 逐项 checklist，不是笼统一句"成功"
 
@@ -376,15 +376,15 @@
 | 目标下拉 | `GET /api/v1/targets` | ✅ 已有（`RegisterCRUD`） |
 | 环境 CRUD | `POST/GET/PUT/DELETE /api/v1/environments`、`GET /components/:id/environments` | ✅ 已有 |
 | 环境创建 | `POST /api/v1/environments` | ⚠️ 请求体需扩 `access` / `kubeconfigSecretRef?` / `sshTargets?` / `sshSecretRef?`（现仅 `targetId` / `namespace` / `envType`） |
-| 环境分组 | `environment_groups` + `environments.group_id` | ⚠️ 见 [hub 数据模型 §8](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)（DDL 已拟，未落库） |
+| 环境分组 | `environment_groups` + `environments.group_id` | ⚠️ 见 [hub 数据模型 §8](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)（DDL 已拟，未落库） |
 | 连接测试 | `POST /api/v1/environments/:id/test` → 逐项 checklist | ✅ **已落地** —— `EnvironmentService.Test` / `TestReport`（配置完整性结构校验；连通性项如实返回 `skip`，hub 无出站能力），结果持久化到 env |
 | 凭据库 | `GET/POST/PUT/DELETE /api/v1/credentials`（只回 `valueSet`，不返明文） | ✅ **已落地（2026-09-23）** —— `internal/credentials`（AES-GCM 信封加密落库，列前缀 `enc:v1:`；API 仅回 `valueSet`）+ console `CredentialsView.vue`（平台管理第 3 个 Tab） |
 | kubeconfig 解析 | `POST /api/v1/credentials/parse-kubeconfig` | ✅ **已落地** —— 结构化回显 `server`/`caPresent`/`insecureSkipTLS`/`authMethod`/`currentContext`/`defaultNamespace` + `errors`（**拒绝 `exec:` 插件**） |
 | 目标注册 token | `POST /api/v1/targets/:id/enroll-token`（一次性） | ✅ **端点已落地** —— `TargetHandler.EnrollToken` / `TargetService.GenerateEnrollToken`（一次性 + 过期）。⚠️ 网关仍用全局共享 `GATEWAY_TOKEN`，per-target 身份约束（`agent_version` 上报 + 凭据流转）属 `§9.9` 引导特性 |
 
-> **SSH 属净新增能力**：hub 全仓无 `ssh` 命中、hub 亦无 `client-go`（**零出站能力**）；`sshTargets` / `sshSecretRef` / `POST /environments/:id/test` / `POST /environments/:id/exec` 均需新建。按层分写约定，列定义应落 `docs/hub/DATA-MODEL.md`、请求体与响应落 `docs/hub/API-REFERENCE.md`；本节只给 console 侧的消费形状。**凭据由 hub 侧持有**（§7.12.4）。
+> **SSH 属净新增能力**：hub 全仓无 `ssh` 命中、hub 亦无 `client-go`（**零出站能力**）；`sshTargets` / `sshSecretRef` / `POST /environments/:id/test` / `POST /environments/:id/exec` 均需新建。按层分写约定，列定义应落 `docs/shared/DATA-MODEL.md`、请求体与响应落 `docs/shared/API-REFERENCE.md`；本节只给 console 侧的消费形状。**凭据由 hub 侧持有**（§7.12.4）。
 
-> ⚠️ **`targets` 只覆盖 `agent` 通道**：`environments.target_id` 是 **NOT NULL FK**，**表达不出非容器目标**；非容器目标需给 `targets` **扩表**（`targetKind` + 直连凭据列，`hub/DATA-MODEL.md` §9.7）。本节的 `ssh.targets[]` 只是**环境内**的主机清单，**不等于**跨环境复用的目标注册表。
+> ⚠️ **`targets` 只覆盖 `agent` 通道**：`environments.target_id` 是 **NOT NULL FK**，**表达不出非容器目标**；非容器目标需给 `targets` **扩表**（`targetKind` + 直连凭据列，`shared/DATA-MODEL.md` §9.7）。本节的 `ssh.targets[]` 只是**环境内**的主机清单，**不等于**跨环境复用的目标注册表。
 
 #### 7.12.8 「执行命令」的两条路径（**别混用**）
 
@@ -399,7 +399,7 @@
 | 走哪条通道 | 全部（`agent` / `kubeconfig` / `ssh` 按环境 `access` 分流） | 仅**直连通道**（`kubeconfig` / `ssh`）；`agent` 通道无此入口 |
 | 输出 | 落 `GET /runs/:id/tasks/:name/log` | **流式回显在弹窗内**，不落运行记录 |
 
-**任务侧的执行后端（未立项，仅登记形状）**：现 `TaskRunSpec` 只有一种执行实现（目标集群里的 K8s Job，`runner/pkg/executor/job_builder.go`）。`ssh` 目标没有 Job / 命名空间 / 卷，其任务语义须改为**「制品分发到主机 + 在主机上执行脚本」**，工作区是**目标主机上的临时目录**。这需要一个 `executor backend` 判别维度（`README.md` §5.6 / `hub/DATA-MODEL.md` §9.7 未定项）。
+**任务侧的执行后端（未立项，仅登记形状）**：现 `TaskRunSpec` 只有一种执行实现（目标集群里的 K8s Job，`runner/pkg/executor/job_builder.go`）。`ssh` 目标没有 Job / 命名空间 / 卷，其任务语义须改为**「制品分发到主机 + 在主机上执行脚本」**，工作区是**目标主机上的临时目录**。这需要一个 `executor backend` 判别维度（`README.md` §5.6 / `shared/DATA-MODEL.md` §9.7 未定项）。
 
 > 原型现状：**② 已做出**（kubeconfig 面板与 SSH 面板各有「▷ 远程执行（诊断）」，mock 输出）；**① 的任务类型扩展尚未设计**（属编排页任务模型改造，需连同 `TaskRunSpec` 一起立项）。
 
