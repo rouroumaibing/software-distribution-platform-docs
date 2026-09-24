@@ -1,7 +1,7 @@
 # 平台状态总览（STATUS）— 已完成 / 未完成 / 刻意不做
 
 > **本文件是全平台唯一的完成状态权威。** 其余任何文档（STORY / BACKLOG / 计划 / 设计文档）里的 ⬜ / 待补 / follow-up 标记，凡与本清单冲突，**以本清单为准**；文档各自只维护「行为规格」，不再维护状态判断。
-> 来源：三轮 source-grounded 复核（2026-09-23 审计 → 2026-09-24 第二轮全量复核 → 2026-09-24 第三轮收口），全部结论均有 `文件:行号` 级代码证据或真集群 E2E 记录（历史过程见 `UNIMPLEMENTED-MODULES-PLAN.md` §16–§18）。
+> 来源：三轮 source-grounded 复核（2026-09-23 审计 → 2026-09-24 第二轮全量复核 → 2026-09-24 第三轮收口），全部结论均有 `文件:行号` 级代码证据或真集群 E2E 记录（历史过程见 git 历史中的 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §16–§18 等已删档文档——**旧引用中的 §x.y 编号均指删档文档章节**，当前状态一律以本文件为准）。
 > 最后核验：2026-09-24。
 
 ---
@@ -83,6 +83,7 @@
 | 15 | **「待我审批」身份下推（N-2 `assignee=me`）+ 运行时间窗过滤** | 登记 | 现退化为全部待审批（CONSOLE-UI-DESIGN 附 A N-1/N-2） |
 | 16 | **TaskRun 产物/结果落库**（`ResultRef`/`ArtifactRefs`） | 登记 | 跨模块：TaskRun 字段 + 协议 payload 扩展 + runner 补发（ADR-dispatch-durable-queue §6 D 项） |
 | 17 | **权限对账脚本化**（`ACCOUNT-PERMISSION-MODEL` §10 门禁） | 工具项 | 对账表当前已全 ✅；脚本化为持续门禁 |
+| 18 | **console 流水线全生命周期 A 节**（下线前端聚合 stopgap，接 `GET /pipelines`） | 待实施 | 实施计划 = [console/PIPELINE-LIFECYCLE-PLAN.md](../console/PIPELINE-LIFECYCLE-PLAN.md)（B 节「新建入口」hold 等 v3 IA 定稿）；C（kind 闸）/D（行内删除）已实施 |
 
 ## 3. 刻意不做 / 裁定保留
 

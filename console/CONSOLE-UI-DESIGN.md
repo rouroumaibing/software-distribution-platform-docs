@@ -1474,7 +1474,7 @@ Dashboard「待办」区三段，每段一个 CTA（深链形态与 §7.6 的视
 
 ## 附 E：历史未完成项快照（2026-09-09，仅供追溯）
 
-> ⚠️ **本表是历史快照，不是当前状态**。G1–G6 已于 2026-09-06 全部落地。**当前进度请查** [`hub/STORY-BACKLOG.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md)（另有 [`plans/E2E-VERIFY-PLAN.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/E2E-VERIFY-PLAN.md) 跟踪 E2E 门禁）。
+> ⚠️ **本表是历史快照，不是当前状态**。G1–G6 已于 2026-09-06 全部落地。**当前进度请查** [`hub/STORY-BACKLOG.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md)（另有 [`plans/STATUS.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 跟踪当前状态与未完成项）。
 
 | ID | 项 | 影响 | 快照时状态 | 后续 |
 | --- | --- | --- | --- | --- |

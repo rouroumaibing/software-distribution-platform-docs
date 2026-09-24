@@ -92,17 +92,17 @@ Keycloak ≥ 26 **原生支持 Organizations**，可作为「组织」维度的�
   | `organization:<alias>` | SPECIFIC —— 指定某一个组织 | 别名不存在或用户非其成员 ⇒ 请求被拒 |
   | `organization:*` | ALL —— 用户**全部**归属 | 非交互、结果确定，但**语义是「全部组织」**，不是「有组织」 |
 
-  ⚠ **`organization:*` 不是「唯一能拿到 claim 的形态」**：请求内置的 `organization` scope 本身即生效。两者的差别是**语义** —— ALL 会把用户的**全部**归属都放进 token。选哪种取决于 §3 的归属判定式要的是「当前组织上下文」还是「全部成员关系」（论证见 [plans/ACCOUNT-PERMISSION-DECISIONS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/ACCOUNT-PERMISSION-DECISIONS.md) §1）。
+  ⚠ **`organization:*` 不是「唯一能拿到 claim 的形态」**：请求内置的 `organization` scope 本身即生效。两者的差别是**语义** —— ALL 会把用户的**全部**归属都放进 token。选哪种取决于 §3 的归属判定式要的是「当前组织上下文」还是「全部成员关系」（论证见 git 历史中的 plans/ACCOUNT-PERMISSION-DECISIONS.md（已删档，结论以本文件 §12 为准） §1）。
 - **claim 形态有两种，Go 侧类型必须兼容**：纯别名时是字符串数组 `"organization": ["acme-corp"]`；**开启 `addOrganizationId` / `addOrganizationAttributes`，或使用 Organization Groups** 时变为富 JSON（`{"organization":{"acme-corp":{"id":"…","groups":["/Engineering/Backend"]}}}`）。
 - 26.6+ 另有 **Organization Groups**（每个组织独立的组层级），组路径出现在 `organization` claim 内；**本环境 Keycloak 26.7.4 ⇒ 已具备**。
 - **启用 Organizations 会把浏览器登录流改为 identity-first**（先识别用户、再要凭据）—— 这是**用户可见**的行为变化，会影响 console 登录路径与既有预置账号的登录体验。
 - **组织集合能否随 realm JSON 一起导入，尚未证实**：`RealmRepresentation` 同时有 `organizationsEnabled`（Boolean）与 `organizations`（`List<OrganizationRepresentation>`）两个字段，但社区证据（26.3.1 时期）称 realm 导入**不带** organizations、官方推荐用 Admin REST API 在 realm 创建后再建组织。⇒ **落地时必须实测**（gate 见 §11 步骤 2）；在结论出来之前，**不要**把「组织集随 realm JSON 进 git」当既定事实。**（2026-09-24 澄清：D1 已裁定 = ② 组命名约定 `/org:<slug>`（§12），realm JSON 只导组、不开 Organizations ⇒ 本条实测**仅在翻盘切 ①（federation）时才触发**，当前主路径无此依赖——组预置走 provisioner REST，已在真集群 E2E 验证。）
-- **落地硬约定（压降不可逆性）**：**不论选用哪个载体**，hub 侧持久化的**组织键一律取组织 alias 字符串**，且组织**不得**作为 RBAC 主体出现在 `subject_id` —— 于是换载体只改中间件解析、**不需要数据迁移**（论证见 [plans/ACCOUNT-PERMISSION-DECISIONS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/ACCOUNT-PERMISSION-DECISIONS.md) §1.5）。
+- **落地硬约定（压降不可逆性）**：**不论选用哪个载体**，hub 侧持久化的**组织键一律取组织 alias 字符串**，且组织**不得**作为 RBAC 主体出现在 `subject_id` —— 于是换载体只改中间件解析、**不需要数据迁移**（论证见 git 历史中的 plans/ACCOUNT-PERMISSION-DECISIONS.md（已删档，结论以本文件 §12 为准） §1.5）。
 - **Keycloak 的角色/组映射没有原生成效机制**（其生命周期概念是 token/session 的 lifespan，不是授权时效）⇒ **权限到期回收必须由 hub 实现**（§7.4）。
 
 > **载体不阻塞任何落地项**：§2.1 / §3 的判定式、§12 的表结构，写的都是**组织 alias 字符串**（见下「落地硬约定」）⇒ 换载体只改中间件解析。**默认取「组命名约定」`/org:<slug>`**（复用**已就绪**的 `groups` 通路：`sdp-console` 已挂 groups mapper 且 `full.path=true`、`auth.go` 已读 `groups`；且**组是 realm JSON 的可靠组成部分** ⇒ 真正满足「配置即代码」，而这恰是 Organizations 的**未证实**项）。**Keycloak Organizations 降为条件触发位**：出现「多 IdP / 跨组织 SSO 联邦」需求时再切（因硬约定**无需数据迁移**）；① 的已知成本 = 需开 realm 开关 ⇒ **identity-first 登录流变化**。
 >
-> **保留命名空间（防语义串味）**：`/org:` 是**保留前缀** —— 该前缀的组**不得**作为 `subject_type=group` 的绑定主体（须在 `BindingService` 校验 + 单测），以守住「组织不作 RBAC 主体」的硬约定。论证见 [plans/ACCOUNT-PERMISSION-DECISIONS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/ACCOUNT-PERMISSION-DECISIONS.md) §1。
+> **保留命名空间（防语义串味）**：`/org:` 是**保留前缀** —— 该前缀的组**不得**作为 `subject_type=group` 的绑定主体（须在 `BindingService` 校验 + 单测），以守住「组织不作 RBAC 主体」的硬约定。论证见 git 历史中的 plans/ACCOUNT-PERMISSION-DECISIONS.md（已删档，结论以本文件 §12 为准） §1。
 
 ### 2.4 对接协议：OIDC 标准流程（hub = Resource Server）
 
@@ -156,7 +156,7 @@ OIDC 里有两个相关角色，本项目**分别落在两端**：
 
 ⇒ **每个业务请求对 Keycloak 零外呼**。副作用是好的：Keycloak 短时不可用**不影响**已签发 token 的校验（只有启动时的 discovery 与密钥轮换需要联通）。
 
-> **适用范围（勿扩大解释）**：本节约束的是 **hub 的业务请求路径**（每个请求都要验签）。**管理面**（如 console「用户列表」这类一次性读）**不在**本禁令之内 —— 它属于 §12 D3 第 4 处的**来源决策**，两个选项的取舍与推荐见 [plans/ACCOUNT-PERMISSION-DECISIONS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/ACCOUNT-PERMISSION-DECISIONS.md) §3。
+> **适用范围（勿扩大解释）**：本节约束的是 **hub 的业务请求路径**（每个请求都要验签）。**管理面**（如 console「用户列表」这类一次性读）**不在**本禁令之内 —— 它属于 §12 D3 第 4 处的**来源决策**，两个选项的取舍与推荐见 git 历史中的 plans/ACCOUNT-PERMISSION-DECISIONS.md（已删档，结论以本文件 §12 为准） §3。
 
 #### 2.4.5 启动即失败（fail-fast），不降级
 
@@ -342,7 +342,7 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 | --- | --- | --- | --- | --- |
 | 1 | Keycloak 不做授权决策 | hub `internal/middleware/auth.go` **刻意不读** `realm_access`（注释写明） | ✅ 方向一致 | — |
 | 2 | token 携带**组织** | realm **无任何 `/org:<slug>` 组**（§2.3 默认载体 ②）；`groups` mapper 已挂且 `full.path=true`，但 **claim 为空**（与第 6 行同因） | ❌ → ✅ **已落地（2026-09-23，Task #4）**：hub `orgsvc` 在 org `Create` 后幂等 `EnsureGroup("/org:<slug>")`、启动 `ReconcileGroups` 回填存量（`internal/keycloak` Admin 客户端 + realm 赋 `sdp-backend` SA `manage-users`/`query-groups` 最小集）；`KEYCLOAK_ADMIN_CLIENT_SECRET` 缺失则 dev 不建组只告警 | hub 代码（`orgsvc` + `internal/keycloak`） |
-| 3 | token 携带**角色** | `sdp-console` 已挂 roles mapper（写**顶层 `roles` claim**，非 `realm_access`），但 hub 不消费 | ✅ **已定**（不作判定输入，仅供对账/展示 —— 由不动式② + §2.1/§2.2 裁定，**非**待拍板；论证见 [plans/ACCOUNT-PERMISSION-DECISIONS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/ACCOUNT-PERMISSION-DECISIONS.md) §2） | §12 D2（已闭） |
+| 3 | token 携带**角色** | `sdp-console` 已挂 roles mapper（写**顶层 `roles` claim**，非 `realm_access`），但 hub 不消费 | ✅ **已定**（不作判定输入，仅供对账/展示 —— 由不动式② + §2.1/§2.2 裁定，**非**待拍板；论证见 git 历史中的 plans/ACCOUNT-PERMISSION-DECISIONS.md（已删档，结论以本文件 §12 为准） §2） | §12 D2（已闭） |
 | 4 | hub **不存用户表** | ✅ **已落地（2026-09-23，D3）**：`users` 表已删（`migrations/0015`）；`UserContext` 改为**纯解析**（无库、无 provision）；`CurrentUserID` 连同 7 个读取点全部并入 `CurrentSubject`（token `sub`）。⚠ 删表不可逆，部署侧须手工跑 `0015` | ✅ | migration + 代码 |
 | 5 | 绑定主体 = token `sub` | `ListMatching` 两侧已按 **subject（`sub`）** 匹配（component 保留 V1 `user_id` 遗留分支）；`CurrentSubject` 由中间件注入 | ✅ **已落地（2026-09-22）** | repo + middleware |
 | 6 | 组主体格式唯一 | realm 现有 RBAC 组 `/sdp-admin`（预置 `admin` 已加入）⇒ 组 claim **通路已通**；组织组 `/org:<slug>` 由 hub 运行时自动预置（见第 2 行） | ✅ 通路 + 首个 RBAC 组已就位 · ✅ 组织组已建（Task #4） | hub 代码（`orgsvc` + `internal/keycloak`） |
@@ -371,21 +371,21 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 
 | # | 步骤 | 门禁 |
 | --- | --- | --- |
-| 1 | **D1–D6 已闭（0 项阻塞）**：D2 / D3 / D4 / D6 由本文件正文裁定，D1 / D5 按**可逆默认**自决 —— 见 §12 与 [plans/ACCOUNT-PERMISSION-DECISIONS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/ACCOUNT-PERMISSION-DECISIONS.md) §0.1 | 无 —— realm 与表结构**均可定稿**（§2.3 硬约定使 carrier 可换，**不需要**先拍 D1） |
+| 1 | **D1–D6 已闭（0 项阻塞）**：D2 / D3 / D4 / D6 由本文件正文裁定，D1 / D5 按**可逆默认**自决 —— 见 §12 与 git 历史中的 plans/ACCOUNT-PERMISSION-DECISIONS.md（已删档，结论以本文件 §12 为准） §0.1 | 无 —— realm 与表结构**均可定稿**（§2.3 硬约定使 carrier 可换，**不需要**先拍 D1） |
 | 2 | realm 侧（**D1 默认载体 ②**）：预置组织组 `/org:<slug>` + 预置账号；groups mapper **已在**、`full.path=true` ⇒ **无需开 Organizations、无 identity-first 登录流变化** | ① `helm template` 渲染产物解析 realm JSON 通过；② 按 `hub/KEYCLOAK.md` §4 第 5 步的 password-grant curl 取 token，**解码断言 `groups` claim 含 `/org:*`**；③ **仅当**切 ①（federation）时才需实测「组织集能否随 realm JSON 导入」 |
-| 3 | 表结构：**✅ 四表已落（2026-09-22 第八批，`0012`）** —— `resource_ownership` / `role_api_mappings` / `audit_log` / `permission_requests`；**✅ `expires_at` ×2（`0011`）**；**✅ C-10 平台级端点已落** | migration 可在空库 + 存量库双向执行；C-10 端点可用，且已种入 `/sdp-admin` 组绑定 —— D2① 落地后**不会**出现「无人是平台管理员」（见 [plans/ACCOUNT-PERMISSION-DECISIONS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/ACCOUNT-PERMISSION-DECISIONS.md) §2.5） |
+| 3 | 表结构：**✅ 四表已落（2026-09-22 第八批，`0012`）** —— `resource_ownership` / `role_api_mappings` / `audit_log` / `permission_requests`；**✅ `expires_at` ×2（`0011`）**；**✅ C-10 平台级端点已落** | migration 可在空库 + 存量库双向执行；C-10 端点可用，且已种入 `/sdp-admin` 组绑定 —— D2① 落地后**不会**出现「无人是平台管理员」（见 git 历史中的 plans/ACCOUNT-PERMISSION-DECISIONS.md（已删档，结论以本文件 §12 为准） §2.5） |
 | 4 | 认证/鉴权中间件按 §4 顺序重排：**✅ 已全部落地** —— subject 解析（`CurrentSubject`）+ 鉴权路径按 `sub` 匹配（2026-09-22），**D3 删 `users` 表 / `CurrentUserID` / V1 遗留列（2026-09-23，`migrations/0015`）** | Go 单测 + `go vet/build/test` ✅ |
 | 5 | RBAC ① → ③ 落表并成为判定输入：**✅ 映射表已落 + `BindingService` 生效动作集并入（2026-09-22）**；**⏳ 种 `admin` 的 `sub` 平台管理员绑定待 realm 有组后补种** | 判定结果与旧实现逐例对照；`auth.go` 的 `keycloakClaims` **不得**出现 roles 字段（**防回退静态断言**） |
 | 6 | 审计中间件 + `audit.Reporter`：**✅ 已落地（2026-09-22）** —— `middleware/audit.go` 只记写操作 | 写操作有审计行；业务代码零手写（静态检查） |
 | 7 | 审批流独立模块 + 到期回收作业：**✅ 已落地（2026-09-22）** —— `permission_requests` 状态机 + `GrantWriter` + `BindingReaper` | 端到端：申请 → 通过 → 绑定生效 → 到期失效（单测覆盖状态机 + 回收谓词；**未跑真实库**） |
 | 8 | `/api/userinfo`：**✅ 已落地（2026-09-22）**；**⏳ console 改造（去 token 解析）未做** | 前端不再引用 token payload（静态检查） |
-| 9 | **最后**才打开两端鉴权开关 | 全链路 E2E（见 [plans/E2E-VERIFY-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/E2E-VERIFY-PLAN.md)） |
+| 9 | **最后**才打开两端鉴权开关 | 全链路 E2E（✅ 已于 2026-09-24 真集群执行，证据见 `plans/STATUS.md` §1.4） |
 
 ---
 
 ## 12. 决策状态（**0 项阻塞**）
 
-> **不再需要拍板**（第二轮复核，2026-09-22）：D1–D6 里 **4 项已由本文件正文裁定**（D2 / D3 / D4 / D6），**2 项按可逆默认自决**（D1 / D5）。下表「结论」列即**当前生效值**，「备选 / 翻盘条件」列保留供追溯 —— 含「为什么钢人论证仍不等于拍板」的分级论证，见 [plans/ACCOUNT-PERMISSION-DECISIONS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/ACCOUNT-PERMISSION-DECISIONS.md) §0.1。
+> **不再需要拍板**（第二轮复核，2026-09-22）：D1–D6 里 **4 项已由本文件正文裁定**（D2 / D3 / D4 / D6），**2 项按可逆默认自决**（D1 / D5）。下表「结论」列即**当前生效值**，「备选 / 翻盘条件」列保留供追溯 —— 含「为什么钢人论证仍不等于拍板」的分级论证，见 git 历史中的 plans/ACCOUNT-PERMISSION-DECISIONS.md（已删档，结论以本文件 §12 为准） §0.1。
 
 | # | 问题 | **结论（生效）** | 备选 / 翻盘条件 |
 | --- | --- | --- | --- |
@@ -395,6 +395,25 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 | **D4** | Casbin 是否本期引入 | **延后**（`hub/DATA-MODEL.md` §7.6「不在本期」+ §5.2 边界已划）—— **已定** | 引入 = **条件触发**：触发条件与硬约束已登记 **B-19**（[hub/STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md)），非待决 |
 | **D5** | token 存法 | **维持 localStorage**（`console/src/stores/auth.ts` 现状；**本文件对此本就沉默** ⇒ 属实现细节）—— **可逆，自决** | BFF / 后端 Cookie：安全基线升级时再议；纯前端单点改动，**可逆** |
 | **D6** | `aud` 校验方式 | **① 维持：不校 `aud`、校 `azp`**（§2.4 已实现）—— **已定** | ② 加 **audience mapper** + 去 `SkipClientIDCheck` —— **条件触发**（需按 audience 区分多个资源服务器时），非待决 |
+
+### 12.1 实施期落地裁定（自实施批次归档，2026-09-22 ~ 09-24）
+
+> 以下裁定在实施中做出，是本模型**设计逻辑的一部分**；原文散于已清理的计划文档，此处为唯一权威落点。
+
+**RBAC 引擎落地七条**（对应 §5 / §7）：
+1. **到期语义落在 `ListMatching`**，不在 API 边界过滤——它是鉴权中间件唯一的绑定解析路径，只在边界过滤则过期绑定仍授权。**过期行不删**（审计须能回答"曾经授过什么"）；管理面 `List` 不过滤，否则管理员无法清理。
+2. **`/org:` 保留前缀禁止作绑定主体**——落实 D1「组织不作 RBAC 主体」，组织载体日后可换而无需数据迁移。
+3. **组主体强制前导斜杠**（realm `groups` mapper `full.path=true`）——写 `sdp-admins` 而 claim 是 `/sdp-admins` 的静默不匹配被变成 `400`，不存永不生效的绑定。
+4. **内置角色不可改删；被引用时拒删（`409+{reasons}`）**——防一次误操作清空 `sdp-admin` 致所有人进不去。
+5. **错误构造用函数**（每次返回新 `*APIError`）——避免包级单例被 `WithError` 并发互踩。
+6. **`isSystem` 服务端强制置 `false`**——调用方无法经 POST 伪造"不可改删"角色。
+7. **重复授予前置校验用 `ExistsActive`**（只看仍生效绑定）——否则一条今天过期的绑定会永久挡住重新授予。
+
+**资源归属空值语义**（双向钢人，唯一真正有争议点）：方案 A（严格 fail-closed）vs 方案 B（无组织即放行）——裁定 = **用「资源是否已登记归属」切开**：未登记 → 放行（上线零回归）；已登记 → 组织不相交或请求不带组织都拒（"登记归属"成为显式收紧动作，无需开关/迁移窗口）。配套：归属拒用独立错误 `errOutOfOrg`，不与 RBAC `errForbidden` 混用（两者修法不同：改归属行 vs 改角色绑定）。归属只在**组件粒度**登记，pipeline/run 经 `permLocator` 继承；dev 模式（auth==nil）两段守卫整体不装。
+
+**D3 删表三裁定**（2026-09-23 第十四批）：①删表后授权闭环由**手输 `sub`** 补（管理员从 Keycloak 复制即可授权新人，不新增 hub 持有 KC 管理凭据的安全面；若出现"必须展示全量用户目录"的产品要求，按决策 §3.5 重估并独立评审）；②旧 `owner_user` 回填失败**留 NULL + `RAISE WARNING`**（owner override 只是绑定被删后的兜底，P3b 创建时的 `component-admin` 绑定不受影响）；③作者类列（approver/operator/createdBy 等 uuid 主体列）**一起切并清掉映射不到的残留**——残留旧 uuid 是"看似主体、实解析不到人"的值，比留白更危险。
+
+**配套实施裁定**：①Keycloak Admin 客户端**自研**（`net/http`+`httptest`，零外部依赖即可单测），不引 SDK；②凭据存储选 **AES-GCM 信封加密**（项目无外部 secret store，"只存引用名"无法落地；明文兼容 legacy 保迁移安全）→ 详见 `DELETE-CONTRACT` §6.6；③**V1 `roles` 表裁定保留**（全仓活引用 + DROP 不可逆，"有引用则停手记录"；真删须先清 model/repo/service/handler/AutoMigrate/seed 全部引用并获用户显式确认）。
 
 ---
 

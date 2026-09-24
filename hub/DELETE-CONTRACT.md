@@ -34,7 +34,7 @@
 - `DELETE /services/:id` —— `internal/catalog/service/service.go` `ServiceService.Delete`：✅ **已落地**。经窄接口 `ActiveRunCounter.CountActiveByService`（下钻 component → pipeline → run）计数，有活跃 phase → `409 + {reasons}`；否则软删。**不**对"有下级 component"拒绝（§6.4 结论 2：改为级联软删；本轮只做"活跃运行"这条硬规则）。
 - `DELETE /components/:id` —— `internal/component/service/component.go` `ComponentService.Delete`：✅ **已落地**。同上，经 `CountActiveByComponent` 计数；有活跃运行 → `409 + {reasons}`；否则软删（`Base.DeletedAt`）。
 - `DELETE /environments/:id` —— `internal/environment/service/environment.go` `EnvironmentService.Delete`：✅ **已落地（审计式，非拒绝）**。删前统计该环境的配置覆盖条数并写审计告警，随后硬删（§6.4 #8）；其审计历史行因 FK 已摘（B-14）而存活。
-- **部分落地（2026-09-23 更新）**：§6.4 的"域内级联软删"中 **service→component 段已实现并真集群验证**——`ServiceService.Delete` 在同一事务内级联软删下级 component、硬删 `component_role_bindings`（实测 DB 侧两表 `deleted_at` 时间戳一致、bindings 零残留）；缺陷登记与后续范围（org→service、制品/对象处理）见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §16.3。
+- **部分落地（2026-09-23 更新）**：§6.4 的"域内级联软删"中 **service→component 段已实现并真集群验证**——`ServiceService.Delete` 在同一事务内级联软删下级 component、硬删 `component_role_bindings`（实测 DB 侧两表 `deleted_at` 时间戳一致、bindings 零残留）；缺陷登记与后续范围（org→service、制品/对象处理）见 `plans/STATUS.md` §16.3。
 - **事务性缺口（§4.2 步骤 5）未做**：校验与删除目前不在同一事务，并发插入理论上可绕过校验（已登记 `plans/STATUS.md` §2 #12）。
 - 新 console（Vue3 重写版）当前**无服务树删除入口**：`ServiceTreeView.vue` 无删除流、`src/api/catalog.ts` 未封装树删除端点；old 前端的 `delDetail`/`mockDeleteNode` 已随重写移除（上述"待切换真端点"表述过时）。后端契约（§1.3，`409+{reasons}`）已就绪，删除 UI 属 console 迭代项（`plans/STATUS.md` §2 #13）。
 
@@ -100,7 +100,7 @@
 
 ### 4.4 关联 backlog
 - `hub/STORY-BACKLOG.md` 新增 **B-12：后端 DELETE 级联校验（N-15 / N-5）落地**（见该文 §1）；本轮另增 B-13~B-16（见 §6.7）。
-- **2026-09-22 状态**：B-12 / B-13 / B-14 / B-15 ✅ 已完成；B-16 🟡 部分（源头已堵）。本轮实现清单、验证 gate 与"明确不做"见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §3。
+- **2026-09-22 状态**：B-12 / B-13 / B-14 / B-15 ✅ 已完成；B-16 🟡 部分（源头已堵）。本轮实现清单、验证 gate 与"明确不做"见 `plans/STATUS.md` §3。
 
 ## 5. 关联文档
 - console 设计决策（前后端分工 + 钢人论证）：[`console/CONSOLE-UI-DESIGN.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) 附 C
@@ -108,7 +108,7 @@
 - hub API 参考：`hub/API-REFERENCE.md` §3/§4
 - 数据模型（环境分组落库）：`hub/DATA-MODEL.md` §8
 - hub 待办汇总：`hub/STORY-BACKLOG.md`（B-12 ~ B-16）
-- 未落地模块总表与执行顺序：[`plans/UNIMPLEMENTED-MODULES-PLAN.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/UNIMPLEMENTED-MODULES-PLAN.md)（§3 为 Epic A 的交付清单 / gate / 落地结果）
+- 未落地模块总表与执行顺序：[`plans/STATUS.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md)（§3 为 Epic A 的交付清单 / gate / 落地结果）
 
 ---
 
@@ -466,4 +466,12 @@
 | B-15 | stages/templates **补 `deleted_at`** + **封父存在性校验** + **修 `pipelines` 唯一约束** | §6.6-3（✅ 后两项 + 模型映射已于 2026-09-16 落地，只剩 `deleted_at`） |
 | B-16 | artifacts **源头治理**（级联 + 清理标记 + `expires_at` 生效）+ **孤儿对账（仅报告）** | §6.6-4 |
 
-> **2026-09-23 状态（第十五批更新）**：B-12 ✅、B-13 ✅（含修掉 §6.4 #11 的 `400 → 409 + {reasons}` 偏差）、B-14 ✅（落地记录见 §6.6-2）、B-15 ✅（`deleted_at` 落地记录见 §6.6-3）、**B-16 ✅（只剩域内级联软删一项，见 §6.4）** —— **源头已堵**（`ArtifactService.Delete` 不再吞错、失败记结构化日志）；**`expires_at` 已生效**（保留期 GC：`artifact/service/gc.go`，`ARTIFACT_GC_INTERVAL` 默认 `0` = 关闭，先删对象后删行）；**`cleanup_state` 清理标记已落**（`migrations/0016`：对象删失败 ⇒ 行**保留** + `pending_deletion` + 下一轮自动重试）；**周期性孤儿对账已落**（仅报告、默认关闭）。**仍未做**：Artifact 的域内级联软删（§6.4）——其中 service→component 段已于 2026-09-23 落地并真集群验证（§1.3），剩余为 org→service 及制品/对象处理。未落地模块总表与执行顺序见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §11.3 与 §15。
+> **2026-09-23 状态（第十五批更新）**：B-12 ✅、B-13 ✅（含修掉 §6.4 #11 的 `400 → 409 + {reasons}` 偏差）、B-14 ✅（落地记录见 §6.6-2）、B-15 ✅（`deleted_at` 落地记录见 §6.6-3）、**B-16 ✅（只剩域内级联软删一项，见 §6.4）** —— **源头已堵**（`ArtifactService.Delete` 不再吞错、失败记结构化日志）；**`expires_at` 已生效**（保留期 GC：`artifact/service/gc.go`，`ARTIFACT_GC_INTERVAL` 默认 `0` = 关闭，先删对象后删行）；**`cleanup_state` 清理标记已落**（`migrations/0016`：对象删失败 ⇒ 行**保留** + `pending_deletion` + 下一轮自动重试）；**周期性孤儿对账已落**（仅报告、默认关闭）。**仍未做**：Artifact 的域内级联软删（§6.4）——其中 service→component 段已于 2026-09-23 落地并真集群验证（§1.3），剩余为 org→service 及制品/对象处理（当前权威登记见 `plans/STATUS.md` §2 #9）。
+
+#### 6.6-5 保留期 GC 的落地裁定（第十五批双向钢人，权威落点）
+
+与上方「少删永远优于多删」（对账决策 4）的关系——**借用结论必须借用前提**：
+
+- **对账（仅报告）与 GC（自动删）看似矛盾，实则一致**：对账的输入（DB 行 vs 对象差集）**有合法歧义**——归档任务刚传完对象、行还没落库的瞬间"有对象无行"完全正常，自动删会抹掉在途制品；GC 的输入（`expires_at < now()`）**无歧义**——不推断任何意图，只执行运维已写下的保留期声明。**危险的是推断，不是执行。**
+- **两条硬约束**（由裁定推出）：①**默认关闭**（`ARTIFACT_GC_INTERVAL=0`）——会删数据的作业不该由一次部署悄悄打开；②**先删对象、后删行**（与 `ArtifactService.Delete` 相反且刻意）——即时删除时元数据是权威记录（先删它，失败剩孤儿由对账兜底）；GC 是回收存储，若先删行，对象删失败就无行可用于重试；先删对象则行还在 → 标记 `pending_deletion` → 下轮重试，**失败自愈**。两个驱动的 `Delete` 对不存在键均幂等（Local 容忍 `IsNotExist`、S3 `RemoveObject` 成功返回），重试安全。
+- **配套实现要点**：`liveForComponent`（列表谓词，排除 `pending_deletion`）与 `expiredQuery`/`FindExpired`（GC 谓词，包含 `pending_deletion`）**必须保持不同**；GC 与对账分开装配；显式处理 typed-nil（`storage.Client(nil)` 转接口得非 nil ⇒ `Delete` panic）。GC 不做对象存储分层（bucket 生命周期规则不在 hub 内）。

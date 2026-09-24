@@ -253,5 +253,5 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 - ✅ **IngressCanary 路由（B-04）**：`internal/controller/rollout_controller.go` + `pkg/canary/engine.go` 已实现金丝雀渐进发布与 IngressCanary 流量切分。
 - ✅ **HTTPProbe / PrometheusQuery 健康检查（B-05）**：`pkg/health/health.go` 的 `HTTPProbe`（真实 GET + 2xx 判定）、`PrometheusQueryOK`（真实 Prometheus 查询 + 阈值）已接入 release 健康判定。
 - ✅ **Rollout 副本数读取真实 Deployment（B-06）**：`rollout_controller.go` 的 `resolveTotalReplicas` 读取线上 stable Deployment 的 `spec.replicas` 作为 total（fallback `RolloutSpec.Replicas` → 默认 2），不再写死 `total=2`。
-- ✅ **端到端验证（B-07）**：**已于 2026-09-24 本机 docker + kind 实跑通过** —— 全栈部署绿、`plans/e2e-smoke.sh` `PASS=15 FAIL=0`、run `Running → Succeeded`。执行中揪出并修复 3 个真 bug（含本 Story 侧的 **runner RBAC 缺 `networking.k8s.io/ingresses`**：`Owns(&Ingress{})` 无对应 list/watch → manager 缓存同步超时 → 任何 run 都不派发）。证据见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §16（原 audit §5.2 已并入）。
+- ✅ **端到端验证（B-07）**：**已于 2026-09-24 本机 docker + kind 实跑通过** —— 全栈部署绿、`plans/e2e-smoke.sh` `PASS=15 FAIL=0`、run `Running → Succeeded`。执行中揪出并修复 3 个真 bug（含本 Story 侧的 **runner RBAC 缺 `networking.k8s.io/ingresses`**：`Owns(&Ingress{})` 无对应 list/watch → manager 缓存同步超时 → 任何 run 都不派发）。证据见 `plans/STATUS.md` §1.4（原 audit §5.2 已并入）。
 - 关联：`STORY-hub-implementation.md`（控制面）。Console 页面与多环境为更上层 Story。

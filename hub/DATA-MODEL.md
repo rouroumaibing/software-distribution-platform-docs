@@ -204,6 +204,18 @@ CREATE TABLE stage_runs (
 | `GET /runs/:id/progress` | `{ run: PipelineRun, tasks: TaskRun[] }` | 现状；高频轮询主入口 |
 | `GET /runs/:id/stage-progress` | `{ run, stages: [{name, sequence, executionMode, status, done, total}] }` | ✅ **已落地（2026-09-23）**（derive-on-read 实现）；后端按 `StageName` 聚合，供 console §7.6 顶部阶段卡；定义漂移（快照名不在定义中）以合成行追加（`sequence=0`） |
 
+### 6.6 运行终态操作：取消与单任务重跑（2026-09-24 落地，实施裁定归档）
+
+> 原载于已清理的计划文档 §18，此处为唯一权威落点。两条裁定的共同背景：**reconciler 是 pipeline_runs/task_runs 相位的唯一 status writer**——任何绕过 reconciler 的直写都会被陈旧副本覆回。
+
+**取消运行中流水线**（`POST /runs/:id/cancel`，hub `CancelRun` 终态 409 `ERR.09409001`）：
+- **协议**：新增 `cancel_pipeline_run` 消息（hub→runner）+ `CancelPipelineRunPayload`；runner `dispatch.CancelHandler` 收到后**只打注解** `sdp.io/cancel-requested`，由 `PipelineRunReconciler.applyCancelIfRequested` 落 `Cancelled` 相位并清在途 TaskRun。
+- **核心裁定：取消必须走注解而非 handler 直写 status**——handler 直写会被 reconciler 的陈旧副本覆回 `Running`；注解让取消进入 reconciler 的事件流，与唯一 status writer 会合。
+
+**单任务重跑**（`POST /runs/:id/tasks/:name/rerun`）：
+- Runner 侧 `RerunHandler` 按 pipeline-run/task 标签定位 TaskRun，清终态并删底层 Job/Rollout 重建，下游 DAG 自动重算。
+- **核心裁定：重跑须把 `Failed` 的 run 拉回 `Running`**——reconciler 对终态相位短路，只复位 TaskRun 会静默无效；`Cancelled` **不复活**（用户显式取消的语义优先）。
+
 ---
 
 ## 7. 授权模型（权限管控 G7；目标态 = 多 org；P1 建表 / P2 审批 / P3 Enforcement 均已落地；**平台级 HTTP 端点 ✅ 已落地（2026-09-22，C-10）**）
@@ -476,11 +488,11 @@ environment_groups ──1:N──▶ environments  (environments.group_id，可
 | --- | --- | --- | --- |
 | ① 能力 | 平台对目标做：构建 / 测试 / 发布 | 产品语义 | console §7 · hub API-REFERENCE · runner STORY |
 | ② 接入 | 平台怎么够到目标：`agent` 回连 / `kubeconfig` / `ssh` | 产品语义 | 本节 §9.5 / §9.7 · console §7.12 |
-| ③ 自身 | 平台自己（**hub / console + 数据库；不含 runner**）装在哪、谁装、怎么升级 | **运维实践，不进产品模型** | [plans/E2E-VERIFY-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/E2E-VERIFY-PLAN.md) P6 |
+| ③ 自身 | 平台自己（**hub / console + 数据库；不含 runner**）装在哪、谁装、怎么升级 | **运维实践，不进产品模型** | 本文件 §9.11（P6 原文已迁入） |
 
 **已裁定事实**（一行结论；完整论证见 §9.1–§9.10 与 P6）：
 
-- **③ 的起点是手工 helm**，Gen0 基线**长期保留** → [E2E-VERIFY-PLAN.md P6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/E2E-VERIFY-PLAN.md)。
+- **③ 的起点是手工 helm**，Gen0 基线**长期保留** → [E2E-VERIFY-PLAN.md P6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md)。
 - **runner 不属「平台自身」**：接入侧代理组件，组件身份与部署形态无关（勿与安装批次混淆）→ §9.3 / §9.4。
 - **② 主路径 = `agent` 回连**：runner 出站回连 hub，`targets` 故意不存 kubeconfig → §9.1。
 - **直连通道（`kubeconfig` / `ssh`）已立项**：由 hub 侧发起、凭据归 hub，覆盖非容器目标 → §9.5 / §9.7。
@@ -535,7 +547,7 @@ targets ──1:N──▶ environments   (environments.target_id，NOT NULL)
 
 ### 9.3 「单机版」：目标恰好是平台自身所在集群（**runner 身份不随之改变**）
 
-平台**允许与环境部署在同一个集群**——console / hub / runner 装进同一 K8s 集群（如 [plans/E2E-VERIFY-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/E2E-VERIFY-PLAN.md) 的 P0 拓扑：kind `sdp-dev` + ns `sdp-workflow`），此时：
+平台**允许与环境部署在同一个集群**——console / hub / runner 装进同一 K8s 集群（如 [plans/E2E-VERIFY-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 的 P0 拓扑：kind `sdp-dev` + ns `sdp-workflow`），此时：
 
 - Runner 对接的就是**本地集群**，流水线任务在本地集群内执行生效；
 - `targets` 里那一行目标指向的集群**恰好也是平台自身所在集群**——这只是**部署位置**上的巧合。
@@ -553,7 +565,7 @@ targets ──1:N──▶ environments   (environments.target_id，NOT NULL)
 平台自身 = **hub / console（+ 其数据库）**，**不含 runner**——runner 是接入侧代理组件（§9.3、§9.9）。平台自身**不进服务树 / 组件 / 环境**模型：
 
 - 它不是 `components` 锚定的资源，故不受 `DELETE /components/:id` 级联约束——避免"删掉平台自己的组件"这类自指契约漏洞；
-- 它的部署与升级**留在平台之外**：各仓 `make package` / `pnpm image` 产出的镜像 + chart 交付包 → **外部 helm / CI** 发布。裁决与六条理由见 [plans/E2E-VERIFY-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/E2E-VERIFY-PLAN.md) P6（2026-09-23 起为唯一权威落点）。
+- 它的部署与升级**留在平台之外**：各仓 `make package` / `pnpm image` 产出的镜像 + chart 交付包 → **外部 helm / CI** 发布。裁决与六条理由见 本文件 §9.11（P6 原文已迁入）（2026-09-23 起为唯一权威落点）。
 - **runner 是例外，且不触红线**：runner 的安装 / 升级由 **hub 承担编排、console 只调 API**（§9.9），属"平台对目标做"（① 能力），**不是"平台升级自己"（③）**，故**不受 §5.4 自升级禁令约束**。平台自身的升级仍以 hub / console 的 helm 升级为准，走 §5.4 的"平台之外"通道。
 
 ### 9.5 与「接入方式」扩展的关系（**2026-09-21 已裁决**）
@@ -597,6 +609,8 @@ targets ──1:N──▶ environments   (environments.target_id，NOT NULL)
 | `agent_op_logs` | runner 流式回传的输出分片（`op_id` / `seq` / `stream` / `chunk`），seq 由 hub 按到达顺序分配。落库使晚连接 / 断线重连的 SSE 订阅者可完整重放——与 run 侧 `TaskRunLog` 同一契约（migration 0018） |
 
 exec 的两条执行路径（runner `internal/agentops`）：`agent` access 用 runner 自身 in-cluster 凭据；`kubeconfig` access 由 hub 在派发时解密 `KubeCredRef` 凭据随 payload 下发——**runner 是直连执行器、合法需要该访问**，信任边界 = 已认证 gateway WS（记录在案；hub 自身仍零 client-go）。执行形态一律为目标集群内 **Job（`sh -c`）**：K8s 原生留痕 + batchv1 超时语义；Job 完成后 TTL 1h 自动回收（持久审计在 hub 侧）。
+
+> **协议裁定（为什么是专用消息）**：`agent_op` / `agent_op_status` / `agent_op_log` 三类消息**不复用** run 侧 `status_update` / `log_chunk`——hub 的两个既有 handler 分别直写 `pipeline_runs` 表、按 `PipelineRunName` 索引落日志，混入 op 语义会污染两条既有管道的状态与索引路径。三类回传与 run 侧**表形状**同构（见上表），但**管道隔离**。
 
 **三处既有结论因此作废**
 
@@ -681,6 +695,44 @@ exec 的两条执行路径（runner `internal/agentops`）：`agent` access 用 
 | 部署形态 | 平台安装 = **一体化**：console / hub / runner + 数据库**同批装齐**，三者版本号由本 CM 对齐 —— 故平台自身集群天然呈"已装 runner"（§9.3 / §9.9） |
 | 事实源 | **hub 仓 `build/hub/versions.yaml`**（**人工填写并维护**的配套清单，构建时渲染进 chart）；它是"当前官方发布版本"的**唯一事实源**。**仓库不参与推断**——三仓各自独立 release、tag 互不知情，"哪个 runner 配哪个 hub"是**人的发布决定**，无法从任何仓的 tag 推导（2026-09-21 用户裁定） |
 | 消费方 | hub 的接入编排（§9.9 取 runner 版本）；console 可经 API 只读展示 |
+
+### 9.11 平台自身的部署与升级（**2026-09-21 裁决**，自 E2E 计划 P6 迁入，唯一权威落点）
+
+> 背景：old/go-devops 是 hub 前身、old/go-devops-ui 是 console 前身，曾由此设想"平台发布平台自己"（当时简称「自举」——**该词随方案撤销一并停用**，全库不再单用「自举」二字，见 §9.0 术语消歧）。
+>
+> **裁决**：平台自身的部署与升级**永远在平台之外**——官方通道 = 各仓 `make package` / `pnpm image` 产出的镜像 + chart 交付包，由**外部 helm / CI** 发布。
+
+**不采纳「自升级」的六条理由**：
+
+1. **hub 是四重自指**：控制面 + 编排存储 + 制品来源 + 制品消费。升级 hub 的编排存在 hub DB 里、chart 由 hub 的制品库供、签名 URL 指向 hub Service——hub 起不来则**升级通道与回滚通道同时消失**，无法自救。
+2. **必须放宽安全边界**：runner 的集群侧权限被刻意限定为"只碰某组件命名空间"；让它 helm-upgrade `sdp-workflow` 是**实质扩权**，且 `pipeline.sdp.io` 的 CRD 是 **cluster-scoped**，schema 变更绕不过集群级权限。
+3. **不可灰度、不可回滚**：CRD 是集群级原子生效；helm rollback **不还原 CRD**（helm 不追踪 CRD 版本）；hub 建表靠启动时 AutoMigrate（只加不删）。新版本一旦把控制面锁死，唯一救生索是手工 `kubectl`。
+4. **观测真空恰好覆盖最关键的那次运行**：hub 重启期间，这次升级的记录 / 日志 / DAG 全在重启中的 hub 里——**最需要看清的运行恰好看不见**。
+5. ~~权限主体在 API 层不存在~~ ✅ **已补（2026-09-22，C-10）**：平台级 RBAC 已有 HTTP 端点，"谁有权批准平台自升级"已可在平台内表达；但「自升级」审批流与到期回收仍未落地（STATUS §2 #3）。
+6. **收益错配**：平台组件数量固定（hub / console；runner 是接入侧代理不计入）、升级者就是平台运维本人；通用流水线（版本历史 / 参数管理 / 一键回滚 / 审批）在自升级上边际收益低，而这些恰是外部 CI + helm 的强项。
+
+**允许与不允许的分界**
+
+| | 内容 | 理由 |
+|---|---|---|
+| ✅ 允许 | **hub / console 与 runner** 的**构建**走平台流水线（编译 hub / runner / console、打镜像、打 chart tgz 并归档进制品库） | 吃狗粮验证 Build 链路；失败可重跑，无自指风险（runner 不属平台自身，但构建同源） |
+| ❌ 不允许 | 平台组件的**发布 / 升级**走平台（`Release` 不发布平台自身） | 见上述六条理由；升级失败时平台无法自救 |
+| ✅ 保留 | **Gen0 手工 helm 基线长期保留**，不是一次性过渡；每次破坏性变更（CRD / DB schema）都回到手工通道 | — |
+
+**"独立升级页面上传组件包升级平台"**：**本期不做**。它不能挂在 console 下（console 本身是被升级对象，它挂了正是最需要该页的时候）；唯一可行形态是**平台之外常驻的 upgrade-controller**（Gen0 手工安装、**永不自升级**，自己服务静态页 + 执行其余三者的 helm 升级）——那是把"平台之外"这条通道产品化，不是把自升级做进平台。若将来要做，作为独立提案重开。
+
+**保留的历史分析**（自升级方向已撤销，但下列机制性结论在将来重开时仍然成立）
+
+- 代际阶梯（解决鸡生蛋）：Gen0 手工（postgres + hub + runner）→ Gen1 平台发布 demo-app（P3/P5）→ ~~Gen2 平台发布自己~~（**2026-09-21 撤销**）。
+- `Build → Approval → Release`：升级自己挂了没人救，人工卡点不可省。
+- hub / runner 必须分两个 Release 任务、按阶段顺序先 hub 后 runner：hub 升级时 runner 断连只重连不退出（存量任务照跑）；runner 自升级时，执行升级的 releaseContainer Job 独立于 runner Pod 存活，旧 runner 把 reconcile 跑完。
+- 上一版 chart / 镜像必须留在制品库：helm 原生 rollback / P4 回滚随时可用。
+- **CRD schema 分级处理**（不是一刀切禁止）：
+  - **兼容变更**（新增可选字段、放宽校验、加枚举值）可自动——但必须是显式前置步骤（pre-upgrade hook Job 或独立的 kubectl apply 任务）。注意 Helm 3 的 `crds/` 目录是 install-only，`helm upgrade` **不会**更新它——靠 chart 直升 CRD 需要放 `templates/`（helm 会接管其生命周期，uninstall 连删，不推荐）或走 hook
+  - **破坏性变更**（加 required、删字段、改类型、引新版本+conversion）必须手工：先备份存量对象（`kubectl get -o yaml`）再 apply
+  - 破坏性变更手工的三个硬理由：① CRD 变更是**集群级原子生效，无法灰度**——Deployment 能金丝雀，schema 不能；② helm rollback **不还原 CRD**（helm 不追踪 CRD 版本），"回滚是安全网"的前提对 schema 失效；③ runner 既是升级执行者又是被升级者——破坏性变更会让旧 runner 写出的对象过不了新校验，**锁死自升级通道本身**，唯一救生索就是手工 kubectl
+  - 判断口诀：**改完后，旧版本 runner 创建的对象还能通过新 schema 校验吗？** 能→兼容可自动；不能→破坏必须手工
+- **前置改造（若将来重开必做）**：制品存储须先从 hub 自带的 `local` driver 解耦为外部对象存储——否则 hub 挂了拉不到 chart（现 P0 拓扑下 `ARTIFACT_STORE_PUBLIC_URL` 指向 hub Service）。
 | 与 ③ 的关系 | CM 的**更新**属平台发布动作，走 §5.4 的"平台之外"通道——**平台不自己改自己** |
 
 **写入点（2026-09-21 落地）** —— 回答"发 release 时，版本写在哪里、由谁检查"
