@@ -16,6 +16,8 @@ git 不跟踪空目录，且按「无内容不建壳」原则：首份内容落�
 
 ## 跨域引用（权威在他域）
 
+- 跨组件对齐总览（北极星 / 授权 / 执行模型 / 术语）：[shared/CROSS-COMPONENT-ALIGNMENT.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/CROSS-COMPONENT-ALIGNMENT.md)
+
 - 执行模型与协议权威：[hub/DATA-MODEL.md §6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)（**权威在 hub**）
 - 授权边界：runner 只消费 hub 已鉴权下发的 spec，自身无授权逻辑（见 Story §4.4；权威模型在 [hub/ACCOUNT-PERMISSION-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/ACCOUNT-PERMISSION-MODEL.md)）
 - console 消费的 4 类流水线模式定义：[console/features/ui-01-goals-users-competitors.md §1.1](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-01-goals-users-competitors.md)

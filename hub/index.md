@@ -31,6 +31,8 @@ git 不跟踪空目录，且按「无内容不建壳」原则：本域 features/
 
 ## 跨域引用
 
+- 跨组件对齐总览（北极星 / 授权 / 执行模型 / 术语）：[shared/CROSS-COMPONENT-ALIGNMENT.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/CROSS-COMPONENT-ALIGNMENT.md)
+
 - 前端消费侧：[console/index.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/index.md)
 - runner 消费侧：[runner/index.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/index.md)
 - 全局状态：[plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md)
