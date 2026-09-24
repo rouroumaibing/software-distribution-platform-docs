@@ -141,7 +141,7 @@ software-distribution-platform-docs/
 ### 6.2 归属原则：范围优先（2026-09-24 第二次修订）
 
 - **判据 = 治理范围**：内容横跨 ≥2 个组件（hub / console / runner / 身份基础设施）的文档，**整体迁入 `shared/`**，不以"变更权威在谁"为由留在某组件目录下，也**不做契约/实现拆分、不设主从**。
-- 旧判据「无单一变更权威才入住」已废止：权限 / 删除 / 数据模型等虽由 hub 代码先行变更，但治理的是三端行为，按范围判据归 shared/。
+- 旧判据「无单一变更权威才入住」已废止：权限 / 删除 / 数据模型等虽由 hub 代码先行变更，但治理的是三端行为，按范围判据归 shared/。裁定全程与代价确认（跨目录耦合被明确接受、判据终局）见 [shared/README.md §判据裁定记录](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/README.md)。
 - 各概念的**行为权威仍在实现它的代码**（权限强制点在 hub、schema SSOT=AutoMigrate 等）——文档内的「权威实现在 hub」标注是事实陈述，不是归属主张。
 - 每域 `index.md` 是该域唯一入口页：收录本域自有文档 + 本域消费的 shared 住户交叉引用。域内文档增删必须同步 index。
 
