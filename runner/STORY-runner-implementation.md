@@ -204,7 +204,7 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 - `PipelineRunReconciler` 纯函数 `findRunnableTasks` / `dependenciesSatisfied`：仅当某 task 的全部 `DependsOn` 前驱 `Succeeded`，才创建其 `TaskRun`。
 - **阶段间串行**：hub `buildSpec` 已为后续阶段的**每个**任务补上"依赖上一阶段**全部**任务"的 `DependsOn`（任务自带依赖时不覆盖）→ 自然形成阶段顺序屏障。
 - **阶段内并行（默认）**：同阶段任务间无 `DependsOn` → 同时可运行。
-- **阶段内串行（`executionMode=Serial`）**：⚠️ **尚未实现**——当前 hub `buildSpec` 只做跨阶段 `DependsOn` 派生，**无 `executionMode` 字段、无同阶段串行 `DependsOn` 链**（`pipeline_stages` 现仅 `(pipeline_id, name, sequence)`）。该能力为已确认的待实现设计，见 [hub 数据模型 §6.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)。
+- **阶段内串行（`executionMode=Serial`）**：✅ **已落地（C-06）**。Hub `internal/pipeline/service/stage.go` 为每个阶段持久化并校验 `executionMode`（`parallel|serial`，大小写/首尾空白归一化，非法值返回 400）；Runner `internal/controller/pipelinerun_controller.go` 的 `serialBlocked()` 在运行时强制「同阶段串行」——同一 `Stage` 且 `executionMode=Serial` 的任务，必须等声明顺序在其之前的所有兄弟任务 `Succeeded` 后才可启动，**无需 hub 合成同阶段 `DependsOn` 链**（与 `UNIMPLEMENTED-MODULES-PLAN.md §1 Epic D` 对齐）。
 - 终态（`Succeeded`/`Failed`/`Skipped`/`Cancelled`）后不再调度新 `TaskRun`。
 
 **3. 单节点执行（TaskRun → 实际命令）**
@@ -249,9 +249,9 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 
 ## 6. 后续待办（非本 Story 范围 / 已注明 TODO）
 - ✅ **Hub 审批下发路径**：Hub 侧已实现 `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision`（经 `gateway.Approve` → `MessageApproveTask` 下发），与 Runner 的 `ApproveTask` handler 形成完整审批闭环（见 SDP-HUB-001 本轮补充）。**P2 起 Hub 额外落 `pipeline_approvals` 审计记录并实施防自审（`requested_by == approver` 直接拒绝），Runner 仅据此解除挂起/终止（[hub 数据模型 §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/DATA-MODEL.md)）。**
-- ⬜ **实时日志**：`MessageLogChunk` / `LogChunkPayload` 类型已定义，Runner 侧 Pod 日志抓取与发送未实现。
-- ⬜ **IngressCanary 路由**：`TrafficRoutingIngressCanary` 已记录但 M1 降级为副本切分；专用 canary Ingress 资源为后续项。
-- ⬜ **HTTPProbe / PrometheusQuery 健康检查**：M1 实际只校验 `PodReady`；`HTTPProbe`/`PrometheusQuery` 引擎分支已留但未接真实探测。
-- ⬜ **Rollout 副本数读取真实 Deployment**：M1 默认 `total=2`，未读线上 Deployment 的 `spec.replicas`。
-- ⬜ **端到端验证**：需 Hub 触发 + 一个真实（或 kind）集群跑通整条 M1 链路；目前仅保证两模块编译/vet 通过。
+- ✅ **实时日志（B-02）**：`pkg/logstream` 已实现 Pod 日志抓取并经 `MessageLogChunk`/`LogChunkPayload` 经 WS 回流 Hub 落库（与 `UNIMPLEMENTED-MODULES-PLAN.md §1 Epic D` 对齐）。
+- ✅ **IngressCanary 路由（B-04）**：`internal/controller/rollout_controller.go` + `pkg/canary/engine.go` 已实现金丝雀渐进发布与 IngressCanary 流量切分。
+- ✅ **HTTPProbe / PrometheusQuery 健康检查（B-05）**：`pkg/health/health.go` 的 `HTTPProbe`（真实 GET + 2xx 判定）、`PrometheusQueryOK`（真实 Prometheus 查询 + 阈值）已接入 release 健康判定。
+- ✅ **Rollout 副本数读取真实 Deployment（B-06）**：`rollout_controller.go` 的 `resolveTotalReplicas` 读取线上 stable Deployment 的 `spec.replicas` 作为 total（fallback `RolloutSpec.Replicas` → 默认 2），不再写死 `total=2`。
+- ⛔ **端到端验证（B-07）**：需 Hub 触发 + 一个真实（或 kind）集群跑通整条 M1 链路；目前仅保证两模块编译/vet/test 通过（2026-09-24 起排期执行，见 `plans/E2E-VERIFY-PLAN.md`）。
 - 关联：`STORY-hub-implementation.md`（控制面）。Console 页面与多环境为更上层 Story。

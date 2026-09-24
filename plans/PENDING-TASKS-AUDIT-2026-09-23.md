@@ -89,3 +89,36 @@
 - **文档不是「整体落后代码一天」，而是「2026-09-23 批次已写进工作树但未提交」，且两篇 STORY 的 §6 与控制台原型 HTML 的「待补」标注与代码/同仓 UNIMPLEMENTED 自相矛盾**——这是本次梳理确定的真遗漏。
 - **代码侧真正未完成的模块**集中在：端到端验证（环境阻塞）、console agent_ops UI、install/upgrade 执行器、DAG/灰度可视化、监控验证；其余 2026-09-23 批次（agent_ops/package-versions/stage-progress/serial/凭据）经代码核对均为真落地。
 - 最高优先：**先 commit 14 个未提交文档**，再按 T-D1~T-D3 修掉自相矛盾的 STORY/原型标注。
+
+---
+
+## 5. 收口复核结论（T-U* 续做 · 2026-09-23 续）
+
+> 本轮在「代码是权威源」原则下，对 §3 的 T-U* 逐项重新核对并补齐/裁定。结论：**多数任务已被代码实际完成（审计时判为「未做」属误判），唯一真缺口是 hub /metrics 已补齐；install/upgrade 执行器与 Casbin 为设计裁定不开发；E2E 为环境门禁未做。**
+
+### 5.1 任务状态总表
+
+| # | 任务 | 结论 | 证据 |
+|---|---|---|---|
+| T-D0 | 提交 14 个文档 | ✅ 已完成（用户提交） | docs 仓已 commit |
+| T-D1~D3 | 修 STORY/原型「待补」标注 | ✅ 已完成（前序会话） | `runner/STORY` §4.3/§6、`hub/STORY` §6、`CONSOLE-UI-原型.html` 已改 |
+| T-U3 | console agent_ops 台账 + SSE 消费端 | ✅ 已完成并验证 | `AgentOpsView.vue` + `api/agentOp.ts` + `utils/agentOp.ts` + `scripts/agent-op-smoke.mjs`（14 检查）；`vue-tsc`/`vite build`/6 套冒烟全绿 |
+| T-U8 | credentials 前端消费端 + 后端 bug 修复 | ✅ 已完成并验证 | `CredentialsView.vue`+`api/credential.ts`+`utils/credential.ts`，接入平台管理第 3 个 Tab；**后端 `credentials.Update` 空值覆盖密文 bug 已修**（read-before-write）；`vue-tsc`/`vite build` 全绿 |
+| T-U5 | 运行 DAG 可视化 + 灰度监控页 | ✅ **审计误判，实际已完成** | `RunMonitorView.vue` 已有「DAG 执行图」（阶段列+相位着色+箭头+图例）；`ReleaseDetailView.vue` 已有金丝雀步骤器(10/50/100)+进度条+暂停/晋升/回滚控制。仅「精确 canary 权重」未从 runner `Rollout.Status.CurrentWeight` 回传（代码注释标为后续增强） |
+| T-U7 | 权限守卫收口复核 | ✅ 已完成并验证 | hub：`RequirePlatformPermission`（`main.go:465`）+ 组件级 `RequirePermission`/`RequireResourceOwnership`（`main.go:499-500`）；console：`router.beforeEach` 全局拦截 + `AUTH_DISABLED` dev 旁路（`stores/auth.ts:20,62`）与 hub `SKIP_AUTH` 部署期联动。鉴权开/关双模均覆盖 |
+| T-U6 | 监控告警 metrics 接入 | ✅ **hub 缺口已补齐** | runner：`pkg/metrics` 已注册，经 controller-runtime 内置 metrics server 暴露 `/metrics`；**hub 此前无 /metrics** → 新增 `internal/metrics`（零依赖 Prometheus 文本导出：`GinMiddleware` 计数 + `GET /metrics` 路由，`main.go` 已挂载）；build/vet/test 全绿 |
+| T-U4 | install/upgrade 执行器（§9.9） | ⛔ **设计裁定不开发** | hub `POST /targets/:id/install|upgrade` 仅落 `agent_ops` 台账并**留守 queued**（`target.go:69,81`：「execution is the Runner's job (§9.9)」）；执行器依赖 enroll-token 凭据流转 + runner 自升级 SA 两项产品级前置未决；且与 E2E 计划 P6「平台自身升级永远在平台之外」裁定一致 → 不反向写 hub 表 |
+| T-U2 | B-19 Casbin 条件触发 | ⛔ **条件触发，无代码** | `go.mod` 无 casbin；`ACCOUNT-PERMISSION-MODEL §5.2` 划界：仅当首条无法用 `resource:action` 表达的策略出现才引入。当前全策略可表达 → 不引入 |
+| T-U1 | B-07 端到端验证（kind） | ⛔ **环境门禁，非代码缺口** | E2E 计划 §3 明确：P0 编排脚本 `hub/deploy/{p0-up.sh,...}` 已于 **2026-09-15 删除且「不随任何仓库分发」**，全量 kind+helm 联调由维护者本机临时脚本完成；本机 `kind` 未安装（docker 可用）。三仓 `go build/vet/test` + console `vue-tsc/build/冒烟` 已全部绿，代码侧验收通过；运行侧验收待环境就绪 |
+
+### 5.2 T-U1 解除阻塞步骤（留给环境就绪时执行）
+
+1. `brew install kind` 安装 kind（本机 docker 已具备）。
+2. 按 `E2E-VERIFY-PLAN.md` §1.2/§3 重建 P0：本地 `registry:2` + kind 集群（containerd 回环 patch）+ postgres:16 + CRD apply + hub/runner 部署（`GATEWAY_TOKEN` 两端一致）。
+3. 用各仓自带交付：`make package` / `pnpm image` 产出镜像 + chart（`output/*.tar.gz`），load/push 进本地 registry；`make start-dev` / `pnpm start:dev` 起本地服务。
+4. 跑 P0–P5（L2-1~L2-8），尤其 P4 金丝雀回滚真把流量拉回 0%、P5 全链路一次触发跑通。
+
+### 5.3 一句话修订
+
+- **§2（代码未完成清单）整体需要重判**：U-3/U-5/U-7/U-8 经代码核对**均为已完成**（审计时的「未做」结论已过时）；U-6 的 hub 缺口已补齐；真正「未做」的只剩 U-1（环境门禁）、U-4/U-2（设计裁定）。
+- 最高优先项 T-D0 已落地；其余 T-D1~D3 已在代码侧核对修正。

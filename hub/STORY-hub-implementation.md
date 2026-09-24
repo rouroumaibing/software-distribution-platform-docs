@@ -463,7 +463,7 @@ components ─1:N─ component_role_bindings ─N:1─ component_roles（§7.3�
 ## 6. 后续待办（不在本 Story 范围）
 
 - ✅ **Runner 端 handler 注册**：`cmd/runner/main.go` 已注册 `MessageApplyPipelineRun`（`applyHandler.Handle`）、`MessageApproveTask`（`approveHandler.Handle`）与 `RolloutReconciler`——见 [STORY-runner-implementation.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md)（SDP-RUNNER-001），本项已在本轮 Runner 实现中完成。
-- ⬜ **Console 页面**：服务树导航、流水线可视化编排、运行 DAG 监控、灰度监控（Epic 2/4/5/6）。
-- ✅ **灰度发布补全**：`runner/pkg/canary/engine.go` 已实现金丝雀渐进发布引擎，`rollout_controller.go` 管理 stable/canary Deployment 并回填状态——见 SDP-RUNNER-001，本项已在本轮 Runner 实现中完成。
-- ⬜ **实时日志流**：`log_chunk` 仅打印未落库（Epic 7 实时日志）。
-- ⬜ **细化项**：审批超时 / 生产强审批 / 产物签名下载 / 版本对比 / 自定义角色等主规格 ⬜ 项。
+- 🟡 **Console 页面**：服务树导航、流水线可视化编排、平台/组件权限页已落地（Epic 2/4 + UNIMPLEMENTED §0）；**仅**「运行 DAG 监控可视化 / 灰度监控可视化」未做（B-01 剩余，见 T-U5）。
+- ✅ **灰度发布补全**：`runner/pkg/canary/engine.go` 已实现金丝雀渐进发布引擎，`rollout_controller.go` 管理 stable/canary Deployment 并回填状态（含 `resolveTotalReplicas` 读取线上 stable Deployment 的 `spec.replicas`，B-06 同步落地）——见 SDP-RUNNER-001，本项已在本轮 Runner 实现中完成。
+- ✅ **实时日志流（B-02）**：`runner/pkg/logstream` 抓取 Pod 日志经 `MessageLogChunk`/`LogChunkPayload` 回流，Hub `TaskRunReconciler` 起 goroutine 落库（Epic 7 实时日志已闭环）。
+- ✅ **细化项（B-11）**：审批超时（`approval_timeout.go`）、生产强审批（`production_guard.go`）、产物签名下载、版本对比（C-09）、自定义角色（`/component-roles` 写端点）均已落地。
