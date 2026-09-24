@@ -1,6 +1,6 @@
 # P0-3 实施计划 — Console 流水线全生命周期 UI（已自 plans/ 迁入 console 域）
 
-> 状态：**A 节待实施、B 节 hold（等 v3 IA 定稿）、C/D 节已实施**（2026-09-24 复核）。当前登记见 [plans/STATUS.md](../plans/STATUS.md) §2 #18。
+> 状态：**A 节待实施、B 节 hold（等 v3 IA 定稿）、C/D 节已实施**（2026-09-24 复核）。当前登记见 [plans/STATUS.md](../../plans/STATUS.md) §2 #18。
 > 依赖前置：P0-1（`/releases` 端点，已落地）、**P0-2（`GET /pipelines` 全局列表，已落地）**。
 > 事实基线全部来自 console 仓实代码（file:line 见下），非文档声称。
 

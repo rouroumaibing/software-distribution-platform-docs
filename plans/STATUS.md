@@ -83,7 +83,7 @@
 | 15 | **「待我审批」身份下推（N-2 `assignee=me`）+ 运行时间窗过滤** | 登记 | 现退化为全部待审批（CONSOLE-UI-DESIGN 附 A N-1/N-2） |
 | 16 | **TaskRun 产物/结果落库**（`ResultRef`/`ArtifactRefs`） | 登记 | 跨模块：TaskRun 字段 + 协议 payload 扩展 + runner 补发（ADR-dispatch-durable-queue §6 D 项） |
 | 17 | **权限对账脚本化**（`ACCOUNT-PERMISSION-MODEL` §10 门禁） | 工具项 | 对账表当前已全 ✅；脚本化为持续门禁 |
-| 18 | **console 流水线全生命周期 A 节**（下线前端聚合 stopgap，接 `GET /pipelines`） | 待实施 | 实施计划 = [console/PIPELINE-LIFECYCLE-PLAN.md](../console/PIPELINE-LIFECYCLE-PLAN.md)（B 节「新建入口」hold 等 v3 IA 定稿）；C（kind 闸）/D（行内删除）已实施 |
+| 18 | **console 流水线全生命周期 A 节**（下线前端聚合 stopgap，接 `GET /pipelines`） | 待实施 | 实施计划 = [console/plans/PIPELINE-LIFECYCLE-PLAN.md](../console/plans/PIPELINE-LIFECYCLE-PLAN.md)（B 节「新建入口」hold 等 v3 IA 定稿）；C（kind 闸）/D（行内删除）已实施 |
 
 ## 3. 刻意不做 / 裁定保留
 
@@ -98,3 +98,4 @@
 ---
 
 > 状态变更纪律：新增/收口任何待办，**先改本清单**，再在对应域文档补行为规格；各文档不再自持状态标记，防止再次出现「正文过时 ⬜」。
+> 指针协议（2026-09-24）：本清单同时是**全局总索引**——已完成项的既成设计落 `<域>/features/`（各自只追加），带实质设计内容的活跃计划落 `<域>/plans/` 并由本清单对应条目指针指向；**裸待办（无设计内容）只准活在本清单，禁止为其建文档**。形态论 / 归属原则 / shared 入住门槛见根 [README §6](../README.md)。

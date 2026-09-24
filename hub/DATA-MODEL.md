@@ -464,7 +464,7 @@ environment_groups ──1:N──▶ environments  (environments.group_id，可
 | 删环境告知（§8.4 第 3 行） | ✅ 删前统计该环境的 `component_configs` 覆盖行数并写审计告警，**不拒绝**（§6.4 #8 判定为"提示、不拒绝"） | `internal/environment/service/environment.go`；`internal/component/repository/config.go` 的 `CountByEnvironment` |
 | 配置历史去 FK（第 8.8 决策 2 / B-14） | ✅ `component_config_history` 摘 `environment_id` FK + 加 `environment_key` 快照列（写入时冗余当时 key，环境删掉后历史仍可读） | `migrations/0008_config_history_env_key.sql`、`internal/component/{models,service}/config.go` |
 | stages/templates 补 `deleted_at`（第 8.8 决策 3 / B-15） | ✅ 两模型 `BaseNoSoftDelete` → `common.Base`；旧唯一约束改 partial unique index（`where deleted_at is null`）；`StageService.Delete` 服务层级联软删模板 | `migrations/0009_stage_template_soft_delete.sql`、`internal/pipeline/models/{stage,task_template}.go`、`internal/pipeline/service/stage.go` |
-| §8.4 第 4 行"删组件 → 分组应随之消失" | ❌ **仍未做**（组件软删不触发 DB cascade，需服务层显式级联 + 跨 repo 事务设计），登记于 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §3.3 | — |
+| §8.4 第 4 行"删组件 → 分组应随之消失" | ❌ **仍未做**（组件软删不触发 DB cascade，需服务层显式级联 + 跨 repo 事务设计），原登记 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §3.3（已删档）；当前状态以 [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 为准 | — |
 
 **§8.7 gate 对照**
 - ✅ 单测：空分组可删 / 非空分组 `409 + {reasons}`（`internal/environmentgroup/service/delete_test.go`）。
@@ -472,7 +472,7 @@ environment_groups ──1:N──▶ environments  (environments.group_id，可
 - ⚠️ **未覆盖**："删环境前统计到配置覆盖行数"目前**没有单测** —— 该行为由 `EnvironmentService.Delete` 内的一次计数 + 审计日志承担，要构造 `component_configs` 行需要真实 DB（本轮 gate 为 build/vet/test，不含 PG）。属已知缺口，未假装通过。
 - **迁移 `0003` 幂等性**：不适用（未生成该迁移文件，见上表第 1 行）。
 
-**未跑**：真实库上的 `migrations/0008` / `0009`（本地无 Postgres / Docker）。前置检查见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §3.4。
+**未跑**：真实库上的 `migrations/0008` / `0009`（本地无 Postgres / Docker）。前置检查原见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §3.4（已删档，当前状态以 [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 为准）。
 
 ---
 
@@ -492,7 +492,7 @@ environment_groups ──1:N──▶ environments  (environments.group_id，可
 
 **已裁定事实**（一行结论；完整论证见 §9.1–§9.10 与 P6）：
 
-- **③ 的起点是手工 helm**，Gen0 基线**长期保留** → [E2E-VERIFY-PLAN.md P6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md)。
+- **③ 的起点是手工 helm**，Gen0 基线**长期保留** → [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md)（原 E2E-VERIFY-PLAN P6，已删档归位 DATA-MODEL §9.11）。
 - **runner 不属「平台自身」**：接入侧代理组件，组件身份与部署形态无关（勿与安装批次混淆）→ §9.3 / §9.4。
 - **② 主路径 = `agent` 回连**：runner 出站回连 hub，`targets` 故意不存 kubeconfig → §9.1。
 - **直连通道（`kubeconfig` / `ssh`）已立项**：由 hub 侧发起、凭据归 hub，覆盖非容器目标 → §9.5 / §9.7。
@@ -547,7 +547,7 @@ targets ──1:N──▶ environments   (environments.target_id，NOT NULL)
 
 ### 9.3 「单机版」：目标恰好是平台自身所在集群（**runner 身份不随之改变**）
 
-平台**允许与环境部署在同一个集群**——console / hub / runner 装进同一 K8s 集群（如 [plans/E2E-VERIFY-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 的 P0 拓扑：kind `sdp-dev` + ns `sdp-workflow`），此时：
+平台**允许与环境部署在同一个集群**——console / hub / runner 装进同一 K8s 集群（如 [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 所记拓扑：kind `sdp-dev` + ns `sdp-workflow`，原 E2E-VERIFY-PLAN P0，已删档），此时：
 
 - Runner 对接的就是**本地集群**，流水线任务在本地集群内执行生效；
 - `targets` 里那一行目标指向的集群**恰好也是平台自身所在集群**——这只是**部署位置**上的巧合。
