@@ -12,6 +12,7 @@
 | `software-distribution-platform-hub`      | <https://github.com/rouroumaibing/software-distribution-platform-hub>     | 控制面 / 领域模型 / 数据模型 / API（Go）                      | 本库 `hub/`     |
 | `software-distribution-platform-runner`   | <https://github.com/rouroumaibing/software-distribution-platform-runner>  | 执行器（接收 hub 下发 → k8s CRD → 任务执行 → 状态回写）           | 本库 `runner/`  |
 | `software-distribution-platform-docs`（本库） | <https://github.com/rouroumaibing/software-distribution-platform-docs>    | 设计文档单一真相源                                        | ——            |
+| `software-distribution-platform-example`   | <https://github.com/rouroumaibing/software-distribution-platform-example> | 案例库（示例软件构建与部署样例；可经平台发布，也可直接 k8s 部署）          | 独立仓库，本库不纳入    |
 
 - **本库只放设计文档**，不放代码。
 - hub 仓库 `docs/` 根下的 `docs.go` / `swagger.json` / `swagger.yaml` 是 swaggo **自动生成的 API 文档，非设计文档**，仍留在 hub 仓库，不纳入本库。
