@@ -1,6 +1,7 @@
 # P0-3 实施计划 — Console 流水线全生命周期 UI（已自 plans/ 迁入 console 域）
 
-> 状态：**A 节待实施、B 节 hold（等 v3 IA 定稿）、C/D 节已实施**（2026-09-24 复核）。当前登记见 [plans/STATUS.md](../../plans/STATUS.md) §2 #18。
+> 状态：**A / C / D / B 节全部实施完成**（2026-09-25 收口：A 节 `listGlobal` 直连 + stopgap 下线落地；B「新建入口」实际落在组件详情 · 交付 · 流水线 Tab 的「＋ 新建流水线」；C kind 闸 / D 行内删除此前已落）。当前登记见 [plans/STATUS.md](../../plans/STATUS.md) §1.3。
+> 注：运行中心「流水线」视图已在 IA v4.4 移除（归属组件详情），故 §4 中 RunCenterView 的行号引用已过时，A 节实际落地位置为 `useResourceMap.buildResourceIndex`（pipelines 分支改单次 `GET /pipelines`）+ `api/pipeline.ts listGlobal`。
 > 依赖前置：P0-1（`/releases` 端点，已落地）、**P0-2（`GET /pipelines` 全局列表，已落地）**。
 > 事实基线全部来自 console 仓实代码（file:line 见下），非文档声称。
 

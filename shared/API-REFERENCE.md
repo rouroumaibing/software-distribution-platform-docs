@@ -173,10 +173,14 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 ### 运行 / 审批 / 回滚
 - `POST /pipelines/:id/runs`（触发）· `GET /pipelines/:id/runs`
 - `GET /runs` · `GET /runs/:id` · `GET /runs/:id/tasks` · `GET /runs/:id/progress` · `GET /runs/:id/stage-progress` · `GET /runs/:id/log` · `GET /runs/:id/tasks/:name/log`
+  - `GET /runs` 支持过滤：`phase`（精确匹配）、`componentId`、`createdAfter`（RFC3339，**2026-09-25 新增**，#15 运行时间窗；非法格式 → 400）。
 - `POST /runs/:id/redispatch` · `POST /runs/:id/tasks/:name/rollout`
 - `POST /runs/:id/cancel`（**取消运行**：Runner 把 PipelineRun 置 `Cancelled` 并清掉在途 TaskRun；仅 `Pending`/`Running`/`WaitingApproval` 可取消，终态 → `409` + `{reasons}` `ERR.09409001`）
 - `POST /runs/:id/tasks/:name/rerun`（**单任务重跑**：只重跑该任务及其下游，不重投整个 run。**会把 `Failed` 的运行拉回 `Running`** —— 否则 reconciler 对终态短路，重跑静默无效；`Cancelled` 的运行不会复活）
 - `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision`（审批）
+
+### 通知中心（2026-09-25 新增，#7）
+- `GET /notifications`（登录态；`internal/notification`）：聚合待审批运行为通知流（`pipeline_approvals.status='Pending'`，oldest first，上限 100、默认 50）。响应 `{ data: [ { id, type:"approval", title, body, link, createdAt } ], total }`；`link` 是 SPA 内路由（`/pipelines/:pid/runs/:runId`）。后续新增通知来源（如集群离线告警）只扩 `notification.Service.List`，前端契约不变。
 
 **触发期策略校验（B-11，均在 `buildSpec` 之后、创建 Run 之前）**
 - **生产强审批**：目标是生产环境时要求该流水线含审批门；不满足 → `409 + {reasons}`（`ERR.08409005`）。**fail-closed** —— 目标环境类型解析不出来时**拒绝触发**，而不是放行（放行等于静默绕过审批）。console `TriggerRunDialog` 把该结构化拒绝**原样渲染**在对话框内，不只弹一句 toast。
@@ -195,6 +199,7 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 
 ### 发布
 - `POST /releases` · `GET /releases`（列表）· `GET /releases/:id` · `PUT /releases/:id` · `DELETE /releases/:id`
+- `GET /releases` 过滤（**2026-09-25 新增**，#14）：`pipelineRunId`（原有）+ `scope=global`（仅取值，其他 → 400）+ `state`（发布视图语义键：`running`→Progressing / `paused`→Paused / `succeeded`→Healthy；非法键 → 400）。`state` 与 Rollout 任务级 Phase 的映射收敛在 `internal/run/service/release.go` 的 `mapReleaseState`。
 
 ### 制品
 - `GET /components/:id/artifacts` · `GET /artifacts/:id` · `GET /artifacts/:id/download` · `POST /artifacts/upload-url` · `DELETE /artifacts/:id`

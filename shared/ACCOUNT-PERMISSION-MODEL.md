@@ -365,6 +365,8 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 
 
 **已修（2026-09-22）**：`middleware/rbac.go` 改为按 `Requirement.Resource`（component / pipeline / run）解析路径 id，`internal/permission/service/locator.go` 负责反查（run 走 run → pipeline → component 两跳）；同时固定拒码语义（401 无身份 / 400 参数非 UUID / 404 反查不到 / 403 确实无权限 / **500 查询本身失败**——故障不再伪装成「没权限」）。单测：`internal/middleware/rbac_test.go`（10 例）+ `internal/permission/service/locator_test.go`（6 例）。**注意**：本次**未动**「主体 = 本地 `users.id` 还是 token `sub`」，那属 §12 D3。
+
+**对账脚本化（2026-09-25，#17 收口）**：上表静态不变量已固化为持续门禁 `internal/middleware/conformance_test.go`（随 `go test ./internal/middleware/...` 运行），断言：① hub 不消费 `realm_access`/`resource_access`（§10 #1/#3，经 AST 检查 claims 结构体 JSON tag 而非子串，避免把「注释里声明不读」误报）；② `AuthConfig` 不得携带任何凭据字段（§10 #16/#17 Resource Server 不变量）；③ 校验 `azp`、跳过 `aud`（§10 #18：`SkipClientIDCheck: true` + `errWrongClient`）；④ 鉴权路径不调用 Keycloak 运行时 introspection/userinfo（§10 #19）；⑤ 三个强制点符号（`RequireResourceOwnership` / `RequirePermission` / `RequirePlatformPermission`）存在且被引用（§10 #7/#14，重构删改即编译失败）。对账表新增行时须同步补断言；断言失败即门禁红，禁止用「文档已说明」豁免。
 ---
 
 ## 11. 落地顺序与门禁

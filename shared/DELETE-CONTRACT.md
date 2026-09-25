@@ -76,7 +76,7 @@
 | `DELETE /services/:id` | `internal/catalog/service/service.go` | ✅ `CountActiveByService` → 活跃运行 `409 + {reasons}`；否则软删 | 无"下属 Component 为空"级联校验（**有意不做**，§6.4 结论 2）；无事务 |
 | `DELETE /components/:id` | `internal/component/service/component.go` | ✅ `CountActiveByComponent` → 同上 | 同左；子资源（pipeline/env）的**级联软删**未做（本轮只做硬规则） |
 | `DELETE /pipelines/:id` | `internal/pipeline/service/pipeline.go` | ✅ `CountActiveByPipeline` → 仅活跃拒绝；409 带 `reasons` | **已对齐契约** |
-| `DELETE /orgs/:id` | `internal/org/service/org.go` | `orgRepo.Delete`（软删） | 无管理员校验（待 Epic C 权限拍板后补） |
+| `DELETE /orgs/:id` | `internal/org/service/org.go` | `orgRepo.Delete`（软删，`common.Base` 含 `gorm.DeletedAt`） | 管理员校验在**路由层**（`RegisterAdminRoutes` 平台管理组，2026-09-25 核实）；**不级联 service**（§6.4 裁定 1：org 删除 = 软禁用，物理清空走独立运维流） |
 | `DELETE /environments/:id` | `internal/environment/service/environment.go` | ✅ 删前统计配置覆盖 + 审计告警；**不拒绝** | 无"关联运行中发布"校验（hub 无该数据源，见 §6.3 ⑦） |
 
 **统一响应体缺口：已闭合** —— `APIError` 已增 `Reasons []string`（json `reasons,omitempty`）与构造器 `DomainErrorWithReasons`；`Envelope` 同步增字段，`AbortWithError` / `Fail` 两条序列化路径都带上。
@@ -89,7 +89,7 @@
    - `ServiceService.Delete`：注入 `ComponentCounter`（或递归收集 component→pipeline/env 汇总），有残留 → `409 + reasons`（逐层含路径）。
    - `OrgService.Delete`：注入 `ServiceCounter`；**决策点**——org 现为软删（保留恢复窗口），软删是否也强制级联校验需产品确认（建议：软删不强制，但标记不可恢复的硬删走校验）。
 4. **对齐 N-5（流水线删除语义）**：`PipelineService.Delete` 从"任意运行历史即拒"改为"仅 running/waiting 拒绝"；新增按 `phase` 计数的查询（如 `CountByPipelineAndPhase(id, phases...)`）；历史运行不阻塞（解除编排关联、日志保留）。
-5. **事务原子性**：级联校验 + 删除置于同一事务（`db.Transaction(func(tx *gorm.DB) error { … })`），避免"校验通过后、删除前"被并发插入；必要时在事务内二次校验或以唯一约束兜底。
+5. **事务原子性**：级联校验 + 删除置于同一事务（`db.Transaction(func(tx *gorm.DB) error { … })`），避免"校验通过后、删除前"被并发插入；必要时在事务内二次校验或以唯一约束兜底。**已落地（2026-09-25，#12）**：`cascade.Deleter.DeleteComponentSubtree / DeleteServiceSubtree` 接受 `guard func(tx *gorm.DB) error` 回调，活跃运行计数在级联事务内执行；service 层保留 fast-path 409 供 UX，事务内 guard 返回 409 时整体回滚，并发插入绕过窗口已关闭。
 6. **handler 一致性**：确保各 Delete handler 统一按 `*common.APIError` 透传状态码（`pipeline/handler/pipeline.go:97-106` 已是此模式，`catalog`/`component` handler 对齐）。
 7. **前端切换**：console `delDetail` / `delPipeline` 用真 `DELETE /services/:id`、`/components/:id`、`/pipelines/:id` 替换 `mockDeleteNode` / `mockDeletePipeline`，直接把 409 body 的 `reasons` 渲染进"无法删除"弹窗。
 
