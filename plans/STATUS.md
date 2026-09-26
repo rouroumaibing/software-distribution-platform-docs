@@ -60,6 +60,8 @@
 | 取消/重跑 E2E | ✅ 真集群验证（`e2e-cancel-rerun.sh`） |
 | agent_ops exec E2E | ✅ 202→Job→succeeded→SSE 重放/实时推流→PG 落库 |
 | console↔Keycloak E2E | ✅ auth ON 全链（401/200/组预置/临时密码拦截） |
+| 三流水线整体 E2E（构建/日常/发布，2026-09-26） | ✅ 三条流水线 + 审批 + 409 反向全通；揪出 G-1~G-12 共 12 缺口 |
+| E2E 缺口补齐轮（2026-09-26 第二批） | ✅ G-1~G-12 全部修复，回归中另发现 G-13（RBAC 授予权限不足）/G-14（RegisterProduced 非幂等）并修复；kind 回归 11/11 通过（审批闭环/通知/审计/409/G-6 两阶段 produces→consumes 交接/参数双通道/特权开关/签名存储）。gate：hub/runner `go build/vet/test`+gofmt 全绿，console `pnpm build`+`test` 全绿。证据：`plans/E2E-THREE-PIPELINES-2026-09-26.md` §9 |
 | gate | hub/runner `go build/vet/test`+gofmt 全绿；console `vue-tsc/build`+7 套冒烟全绿 |
 
 ---
@@ -78,6 +80,8 @@
 | 8 | **canary 精确权重回传**（`Rollout.Status.CurrentWeight` → console） | 登记（协议缺口） | 核实：runner 侧已有 `RolloutStatus.CurrentWeight`（0-100）产出；hub DTO 已序列化 `currentWeight`；**缺口 = hub 无 runner→hub rollout 状态回流通道**（`internal/dispatch` 只承载 hub→runner 控制命令，runner 不写 hub 表、不 import hub）。正方：随 TaskRun 状态回流捎带；反方：§16.5 wire-format 纪律要求协议消息单独立项评审。**拍板：按 §16.5 立项「rollout 状态回流」后再接权重**，console 端零改动（DTO 字段已备） |
 | 10 | **金丝雀 P4 真流量回 0% / P5 全链路灰度** | 验证项 | 需目标集群带真实 workload + 流量入口（Ingress controller + 真实服务），本地 kind 单节点无法产生有意义流量切分。P1-P3（步骤器/暂停/晋升）已真集群验证 |
 | 16 | **TaskRun 产物/结果落库**（`ResultRef`/`ArtifactRefs`） | 登记（跨模块） | 需 TaskRun 字段 + 协议 payload 扩展 + runner 补发三处联动（ADR-dispatch-durable-queue §6 D 项）。与 #8 同属「runner→hub 数据回流」域，**建议与 #8 的回流通道合并一次立项**，避免协议两次扩展 |
+| 17 | **软件包版本选择 / 制品→发布联动**（E2E G-3） | 登记（**最小版已落地**） | ✅ **最小版（2026-09-26 第三批）**：触发对话框加「从制品库选版本」picker（列组件已登记制品版本，选中即填 VERSION 参数），依赖 G-2/G-5/G-14 修复真实生效；kind 实测 UI 触发（picker 选 v0.0.4 → run WaitingApproval → approve → Succeeded）一次通过。同批顺带修复 **G-15**：`runApi.trigger` 未按 hub 列表契约取 `data[0]` → toast 显示 undefined。⬜ **完整联动留守**：选版本同时联动 Release chartVersion/manifest 引用属产品语义，等版本 picker 产品形态定稿后单独立项 |
+| 18 | **专用构建环境模板**（E2E G-4 完整版） | 登记（最小版已落地） | 任务级 privileged 开关已贯通（G-4 最小版），dind/cind 镜像 + privileged 即可构建；「linux/dind/cind 预置构建环境」作为模板库属产品功能，等构建场景真实需求出现再立项 |
 
 ## 3. 刻意不做 / 裁定保留
 
