@@ -90,3 +90,30 @@
 | C-11 | Hub/Runner | 目标离线告警 + Helm 一键接入 + runner 重连对账（**2026-09-21 二次裁定：安装/升级逻辑落 hub、console 只调 API；版本按版本矩阵 CM 取；前置 = `agent_version` 上报 + per-target 身份 + hub 引入 k8s 客户端**）。**版本矩阵的发布链路已于 2026-09-21 落地**（hub 仓 `build/hub/versions.yaml` → `build.sh` 校验并渲染 → CM `package-versions` + env `PACKAGE_VERSION_*`；三仓 `imageAddr` 硬编码缺口同批修复）——**端点已落地**（`POST /targets/:id/enroll-token` + `install`/`upgrade` 台账，2026-09-23）；**一键接入编排仍属 §9.9 引导特性** —— install/upgrade 执行器经双向钢人裁定留守 queued（`shared/DATA-MODEL.md` §9.10 / §16.5） | 🟡 部分 | P2-11 |
 | C-12 | Console | 流水线全生命周期 UI（新建/删除入口、编辑器支持 build/release/approval 编排） | ✅ **已完成（2026-09-22）** —— 列表五列 + `＋ 新建流水线` + 删除强确认（输入名称）+ 渲染 `409 + {reasons}`；编辑器支持阶段 `◀ ▶` / 子任务 `▲▼` 重排、阶段 `executionMode` 切换、保存前弹 JSON/YAML 预览与实际调用序列；子任务表单改为**配置派生**（去掉违反 §7.4 的三选一）；删掉过时的 `kind !== 'build'` 客户端闸门（N-7）。落地记录见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §5（`pnpm test:pipeline` 41 条） | P0-3 |
 | C-13 | Runner | Test 类型 / 环境模型（daily/版本归档/转测/生产环境语义） | ✅ **已完成** —— runner 侧模型已落地：`api/v1alpha1/pipelinerun_types.go` 的 `TaskTypeTest`（`"Test"`）+ `EnvironmentType`（dev/test/staging/prod/canary/bluegreen）+ `IsValidEnvironment`；`internal/dispatch/snapshot.go` 消费并派生 | P2-1 |
+
+---
+
+## 5. E2E 缺口修复闭环（2026-09-26 第二批）
+
+> 来源：2026-09-26 三流水线整体 E2E（构建/日常/发布 + 审批 + 409 反向）揪出 **G-1~G-12 共 12 缺口**，回归中另发现 **G-13（runner RBAC 授予权限不足）/ G-14（RegisterProduced 非幂等）**；全部于同批（第二批）修复，kind 回归 **11/11 通过**。
+> 权威记录：`plans/E2E-THREE-PIPELINES-2026-09-26.md` §6（登记）+ §9（修复方案 + 双向钢人结论 + 回归台账）；状态总览见 `plans/STATUS.md` §1.4。
+> 本批缺口**均为 E2E 实测发现的接线 / 契约断裂，非 STORY 抽取项**，故不入 §1 的 B- 序列待办；仅其延伸产品能力（版本选择联动、专用构建环境模板）沉淀为 follow-up **B-20 / B-21**（见 §1）。
+
+| 缺口 | 严重度 | 本质 | 修复 | 状态 |
+| --- | --- | --- | --- | --- |
+| G-1 | P0 | 执行 Job 无 ServiceAccount → Release 无部署权限 | hub 注入 `SDP_JOB_SERVICE_ACCOUNT` + runner `ensureRunRBAC` 幂等 ensure SA/最小 Role + chart ClusterRole 补权限 | ✅ 已修（kind 实测：sdp-test 内自动建 sdp-deploy SA/Role/RoleBinding） |
+| G-2 | P0 | 制品登记断链 → 前端制品 Tab 恒空 | `ApplyStatus` Succeeded 时 `RegisterProduced` 入库（幂等） | ✅ 已修 |
+| G-5 | P0 | 参数注入断裂（两侧互推、谁都没实现） | 双通道：hub 触发时 `${KEY}` 文本替换 + runner 把 Params 注入容器 env（保留字 denylist） | ✅ 已修 |
+| G-8 | P0 | 签名存储路由从未挂载（`localArtifactStore` 漏赋值） | `case "local"` 补 `localArtifactStore = localStore` | ✅ 已修（upload-url 签发的 PUT/GET 200） |
+| G-9 | P0 | Release 任务丢 ReleaseSpec → 普通 Release 必败 | `buildTaskRun` 补拷 `ReleaseSpec`（+ Params/Privileged） | ✅ 已修（真 Release 任务 5s Succeeded） |
+| G-10 | P0 | `GetOrgID` GORM Scan 类型错 → 审批通知/审计/超时全断 | 改 `database/sql` `Row().Scan`（uuid.UUID 实现 Scanner） | ✅ 已修（`/notifications` 返回待审批、pipeline_approvals 落库） |
+| G-11 | P0 | console config.js 混 YAML 注释 → SKIP_AUTH 下卡登录页 | 注释移出 `config.js:` 块，JS 内只用 `//` | ✅ 已修（helm 重装后直进应用） |
+| G-3 | P1 | 无软件包版本选择 / 制品→发布无联动 | 最小版：触发对话框「从制品库选版本」picker | ◐ 最小版已落（B-20）；完整联动留守 |
+| G-4 | P1 | 无构建环境选择（dind/cind） | 任务级 privileged 开关贯通 | ◐ 最小版已落（B-21）；专用模板留守 |
+| G-6 | P1 | 制品 consume 为占位 | consume init 容器实装：新增 `POST /artifacts/storage-url` 按 key 签 GET 下载 | ✅ 已修（两阶段 produces→consumes 交接） |
+| G-7 | P2 | job 镜像硬编码裸名 | 四个默认镜像全可配（env `SDP_JOB_IMAGE_*` + chart `jobImages.*`） | ✅ 已修 |
+| G-12 | 回归 | console↔hub ReleaseConfig 契约断裂（manifest 字符串 / chartUrl 假字段） | console 类型对齐 runnerapi + 移除假字段 chartUrl | ✅ 已修 |
+| G-13 | 回归 | runner ClusterRole 权限不足 → K8s 特权提升防护拒绝授予 | 补 deployments/services/configmaps/secrets/pods 全 CRUD 动词 + 清理脏 Role | ✅ 已修 |
+| G-14 | 回归 | `RegisterProduced` 非幂等 → 同 key 重复 7 行 | 按 (component_id, storage_key) 存在即跳过 | ✅ 已修（同 key 恒 1 行） |
+
+> 仍 open 的 follow-up（非 P0，见 §1 / STATUS §2）：**B-20** 制品→发布语义联动（选版本同时改 chartVersion/manifest）、**B-21** 专用构建环境模板；**#8 canary 精确权重回传** = runner→hub 唯一协议级真缺口（CurrentWeight/agent_version/TaskRun 产物未回传）。

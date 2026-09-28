@@ -309,7 +309,7 @@ realm 由 [`templates/keycloak-realm-configmap.yaml`](https://github.com/rouroum
 | 侧 | 配置 | 关键点 |
 | --- | --- | --- |
 | Keycloak | `keycloak.hostname: "https://www.sdpworkflow.com:8443/keycloak"`（KC_HOSTNAME，完整 URL） | ⚠️ **路径必须带上 `/keycloak`**——实测 KC 不把 `http.relativePath` 追加到 KC_HOSTNAME 后面，不带路径时 issuer 通告成 `.../realms/sdp`，网关 `/keycloak` 前缀路由下不可达 |
-| 网关 | https listener 端口 **8443**（根 `deploy/gateway-sdp.yaml`） | 与浏览器访问端口/issuer 端口三方一致；listener 443 会令 X-Forwarded-Port=443、issuer 丢端口，而 host 443 映射须重建 kind 集群 |
+| 网关 | https listener 端口 **8443**（local-kind-dev/deploy/gateway-sdp.yaml） | 与浏览器访问端口/issuer 端口三方一致；listener 443 会令 X-Forwarded-Port=443、issuer 丢端口，而 host 443 映射须重建 kind 集群 |
 | hub | `auth.keycloakIssuerUrl`（同 issuer）+ 两个 dev-only 脚手架 | ① hostAliases 指 **envoy svc ClusterIP**（`auth.resolveHostIp`）——**不能指节点 IP**：pod 只能达 nodePort 30k 段，URL 的 `:8443` 对不上；② `auth.trustedCASecret: console-tls` 挂自签 CA + `SSL_CERT_FILE`（Go 系统信任池读该变量） |
 | console | `auth.authDisabled=false` + issuer/clientId/redirectUri | ⚠️ helm `--set xxx=false` 解析成 **bool**，模板 `false \| default "true"` 会被 sprig 当零值顶掉——模板须先 `\| toString`（chart config.yaml 已修） |
 
