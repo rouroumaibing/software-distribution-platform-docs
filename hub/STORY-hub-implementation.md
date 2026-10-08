@@ -26,27 +26,27 @@ Hub 此前已写好各 domain 的 handler / service / repository / middleware，
 |---|---|
 | `cmd/hub/main.go` | 入口：装配 DB→repos→services→handlers→认证→gateway，启动 Gin + WS |
 | `internal/config/config.go` | 环境变量配置（`KEYCLOAK_ISSUER` 空即 dev 免认证） |
-| `internal/db/db.go` | `gorm.Open(postgres)` + `AutoMigrate` 全部 31 张表（含 §7 多 org RBAC 扩展 4 张：`platform_roles` / `platform_role_bindings` / `component_roles` / `pipeline_approvals`） |
+| `internal/db/db.go` | `gorm.Open(postgres)` + `AutoMigrate` 全部 33 张表（含 §7 多 org RBAC 扩展 4 张：`platform_roles` / `platform_role_bindings` / `component_roles` / `pipeline_approvals`；含迁移 0018 新增的 `agent_ops` / `agent_op_logs`） |
 | `internal/gateway/gateway.go` | Hub 侧 WebSocket：鉴权、按集群跟踪连接、下发 spec、回写状态 |
 | `internal/run/service/pipeline_run.go` | `Trigger` 组装 DAG spec 并下发；`ApplyStatus` 回写运行状态 |
 | `internal/run/models/trigger_request.go` | `POST /pipelines/:id/runs` 请求 DTO |
 | `internal/target/{repository,service}` | 新增 `GetByName` / `Heartbeat` |
 | `internal/run/repository/*` | 新增 `GetByCRNameTarget` / `SaveStatus` / `Upsert` |
-| `middleware/user_context.go` | 认证关闭时自动置备 dev 用户 |
+| `internal/middleware/user_context.go` | 认证关闭时置固定 dev 伪主体（`DevSubject="dev"`）；D3 后 hub 身份无状态，不建/不查任何用户行 |
 | `runner/api/v1alpha1/{protocol,gateway_payloads}.go` | Hub↔Runner 共享线协议（`Message`/`MessageType`/`StatusUpdatePayload`/`LogChunkPayload`） |
 
 ---
 
 ## 2. 验收标准 (Acceptance Criteria - AC)
 
-- [x] **AC-01 (正常路径 · 启动)**: Given 配置了 `DB_DSN` 的 Postgres, When 执行 `go run ./cmd/hub`, Then 进程启动、Gin 监听 `HUB_ADDR`、`AutoMigrate` 建立全部 31 张表（含 §7 多 org RBAC 扩展）、gateway 路由挂载于 `GATEWAY_PATH`，日志输出 `db: auto-migrate complete`。
+- [x] **AC-01 (正常路径 · 启动)**: Given 配置了 `DB_DSN` 的 Postgres, When 执行 `go run ./cmd/hub`, Then 进程启动、Gin 监听 `HUB_ADDR`、`AutoMigrate` 建立全部 33 张表（含 §7 多 org RBAC 扩展与迁移 0018 的 `agent_ops`/`agent_op_logs`）、gateway 路由挂载于 `GATEWAY_PATH`，日志输出 `db: auto-migrate complete`。
 - [x] **AC-02 (正常路径 · 目标接入)**: Given 一个已在 `targets` 表注册的目标且 `GATEWAY_TOKEN` 匹配, When Runner 携带 `X-Target-Name` + `Authorization: Bearer <token>` 拨入 WS, Then 连接建立、`targets.status` 置 `online`、断开后置 `offline`。
 - [x] **AC-03 (正常路径 · 触发运行)**: Given 至少一个在线集群且目标 pipeline 有 task 模板, When `POST /pipelines/:id/runs`, Then Hub 按当前版本组装 `PipelineRunSpec`（跨 stage 推导 `DependsOn`），落 `pipeline_runs`(Pending)+`task_runs`(Pending)×N，并经 gateway `apply_pipeline_run` 单播到目标集群 Runner。
 - [x] **AC-04 (正常路径 · 状态回写)**: Given 某运行已由 Runner 执行, When Runner 经 WS 回传 `status_update`, Then `pipeline_runs.phase`/`start_time`/`completion_time` 与每个 `task_runs.*` 被同步更新；未知运行（如 Runner 重启后的孤儿消息）被安全忽略。
-- [x] **AC-05 (异常与边界 · 无在线目标)**: Given 没有任何在线 Runner, When 触发运行, Then `selectTarget` 返回 `ErrNoOnlineTarget`，HTTP **503**，不产生脏的 run 记录（除非 `Dispatch` 失败时才标记 Failed 并回写 message）。
+- [x] **AC-05 (异常与边界 · 无在线目标)**: Given 没有任何在线 Runner, When 触发运行, Then `selectTarget` 返回 `ErrNoOnlineTarget`，HTTP **500**（经 handler 侧裸 error → `common.toAPIError` 兜底映射为 `ErrInternal`，见 `internal/common/errors.go:164-175`），不产生脏的 run 记录（除非 `Dispatch` 失败时才标记 Failed 并回写 message）。
 - [x] **AC-06 (异常与边界 · 鉴权失败)**: Given Runner 携带错误 `GATEWAY_TOKEN` 或缺失 `X-Target-Name`, When 拨入 WS, Then 分别返回 **401** / **400**，不建立连接。
-- [x] **AC-07 (异常与边界 · 非法输入)**: Given `pipelineId` 非 UUID 或无 task 模板, When 触发, Then 返回 **400** / 友好错误"pipeline xxx has no task templates to run"，不落库。
-- [x] **AC-08 (权限与安全 · 控制台 API)**: Given 未登录或 `KEYCLOAK_ISSUER` 未配置, When 访问受保护 API, Then dev 模式下自动建/取 dev 用户并放行；生产模式（配置了 issuer）须经 OIDC 校验，无 token 返回 **401**。
+- [x] **AC-07 (异常与边界 · 非法输入)**: Given `pipelineId` 非 UUID 或无 task 模板, When 触发, Then 返回 **500**（错误经 `toAPIError` 兜底为 `ErrInternal`，非 400）/ 错误信息"pipeline xxx has no task templates to run"，不落库。
+- [x] **AC-08 (权限与安全 · 控制台 API)**: Given 未登录或 `KEYCLOAK_ISSUER` 未配置, When 访问受保护 API, Then dev 模式下置固定 dev 伪主体（`DevSubject="dev"`）并放行——D3 后 hub 身份无状态，不做任何建/取用户行的库操作（`internal/middleware/user_context.go`）；生产模式（配置了 issuer）须经 OIDC 校验，无 token 返回 **401**。
 
 ---
 
@@ -55,7 +55,7 @@ Hub 此前已写好各 domain 的 handler / service / repository / middleware，
 > L 级核心链路，全量填写。
 
 - **[x] 资损与网络安全 (Security)**
-  - 敏感数据脱敏: **涉及**。`component_configs.is_secret=true` 的密钥仅存 `secret_ref`、不存明文 `value`。（`users.keycloak_id` 曾标 `json:"-"` 不出 JSON —— 该表已随 D3 删除，主体一律取 token `sub`。）
+  - 敏感数据脱敏: **涉及**。`component_configs.is_secret=true` 的密钥仅存 `secret_ref`、不存明文 `value`。（hub 无用户表，主体一律取 token `sub`。）
   - 核心接口幂等/防重: **部分涉及**。Runner 重连后 `status_update` 按 `cr_name+target_id` 幂等 upsert（重复消息覆盖而非新建）；`Dispatch` 失败仅标记 Failed 不产生重复 run。
 - **[x] 高并发与限流降级 (High Availability)**
   - 核心接口预估 Peak QPS: 普通（内部控制面，非 C 端高并发）；gateway 连接按 `target_id` 单播，连接表 `map[uuid]*websocket.Conn` 加 `sync.RWMutex` 保护。
@@ -83,7 +83,7 @@ POST /pipelines/:id/runs
   "triggeredBy": "user@corp"
 }
 → 201 { pipelineRun }
-→ 503 无在线集群 / 400 非法输入
+→ 500 无在线集群 / 500 非法输入（两者均为裸 error 经 `toAPIError` 兜底映射为 `ErrInternal`）
 ```
 
 **目标接入（gateway WebSocket）**
@@ -93,23 +93,29 @@ Headers: Authorization: Bearer <token>   X-Target-Name: <target-name>
 → 101 Switching Protocols；连接建立置 online，断开置 offline
 ```
 
-**Hub↔Runner 线协议（共享 `runnerapi`）**
+**Hub↔Runner 线协议（共享 `runnerapi`，全量消息类型见 `runner/api/v1alpha1/protocol.go`）**
 | 方向 | `Message.Type` | Payload |
 |---|---|---|
-| Hub → Runner | `apply_pipeline_run` | `runnerapi.PipelineRunSpec` |
-| Hub → Runner | `approve_task` | （预留） |
+| Hub → Runner | `apply_pipeline_run` | `runnerapi.ApplyPipelineRunPayload`（内嵌 `PipelineRunSpec`） |
+| Hub → Runner | `approve_task` | `runnerapi.ApproveTaskPayload`（`gateway.Approve` → `MessageApproveTask`） |
+| Hub → Runner | `rerun_task` | `runnerapi.RerunTaskPayload`（`gateway.RerunTask` → `MessageRerunTask`） |
+| Hub → Runner | `cancel_pipeline_run` | `runnerapi.CancelPipelineRunPayload`（`gateway.Cancel` → `MessageCancelPipelineRun`） |
+| Hub → Runner | `rollout_control` | `runnerapi.RolloutControlPayload`（暂停/继续/回滚金丝雀） |
+| Hub → Runner | `agent_op` | `runnerapi.AgentOpDispatchPayload`（exec/install/upgrade 台账操作） |
 | Runner → Hub | `status_update` | `StatusUpdatePayload{ targetID, pipelineRunName, phase, tasks[] }` |
 | Runner → Hub | `log_chunk` | `LogChunkPayload{ pipelineRunName, taskName, stream, chunk }` |
 | Runner → Hub | `heartbeat` | （空） |
+| Runner → Hub | `agent_op_status` | `runnerapi.AgentOpStatusPayload`（SSE 重放源） |
+| Runner → Hub | `agent_op_log` | `runnerapi.AgentOpLogPayload` |
 
 信封恒为 `Message{ type, payload json.RawMessage }`，收发双方共用 `runner/api/v1alpha1`，保证线格式唯一。
 
 ### 4.2 数据库 / 缓存变动（DDL 设计）
 
-共 **31 张表**，由 `internal/db/db.go` 的 `AutoMigrate` 自动生成；其中 V1 的 `roles` + `approvals` 仍保留为迁移窗口兼容（P2 已切到 `pipeline_approvals`）。**表数已于 2026-09-23 用真实 Postgres 核实**（`bash hack/migration-check.sh` 会回显实际建表数）；下方「逐表 DDL」块展开历史 26 个槽位（含已删的 `users` 槽位 #22），另 6 张表的 DDL 见 `DATA-MODEL.md`。
+共 **33 张表**，由 `internal/db/db.go` 的 `AutoMigrate` 自动生成；其中 V1 的 `roles` + `approvals` 仍保留为迁移窗口兼容（P2 已切到 `pipeline_approvals`）；迁移 `0018` 新增 `agent_ops` / `agent_op_logs` 两张（§9.9 接入编排台账 + SSE 日志分片）。**表数已于 2026-09-23 用真实 Postgres 核实**（`bash hack/migration-check.sh` 会回显实际建表数）；下方「逐表 DDL」块展开历史 26 个槽位（含已删的 `users` 槽位 #22），其余表的 DDL 见 `DATA-MODEL.md`。
 
 **公共基类**
-- `Base`（软删除，用于 orgs/services/components/pipelines——`users` 已随 D3 删表）：`id uuid PK default gen_random_uuid()`、`created_at`、`updated_at`、`deleted_at timestamptz`（软删索引）。
+- `Base`（软删除，用于 orgs/services/components/pipelines）：`id uuid PK default gen_random_uuid()`、`created_at`、`updated_at`、`deleted_at timestamptz`（软删索引）。
 - `BaseNoSoftDelete`（硬删除，用于 targets/environments/pipeline_stages/pipeline_task_templates/全部运行历史）：`id uuid PK`、`created_at`、`updated_at`。
 - 设计取舍：运行历史故意**不用软删除**（审计事实，删即硬删；删组件不级联清运行记录）。
 
@@ -147,9 +153,11 @@ Headers: Authorization: Bearer <token>   X-Target-Name: <target-name>
 | 29 | `role_api_mappings` | permission.RoleAPIMapping | — | 角色→接口映射 §5.1③ |
 | 30 | `credentials` | credentials.Credential | — | 凭据 |
 | 31 | `environment_groups` | environmentgroup.EnvironmentGroup | — | 环境分组 |
+| 32 | `agent_ops` | target.AgentOp | — | 接入编排 §9.9（migration 0018） |
+| 33 | `agent_op_logs` | target.AgentOpLog | — | 接入编排 §9.9（SSE 日志分片，migration 0018） |
 
-> 表数注：上方清单为**完整 31 张**。`users` 表已随 D3 删除（迁移 `0015`），故本清单不再含它；
-> 下方「逐表 DDL」块的注释编号沿用历史编号（保留已删的 `#22 users` 槽位），与本清单编号**不再一一对应**。
+> 表数注：上方清单为**完整 33 张**（hub 无 `users` 表）；
+> 下方「逐表 DDL」块的注释编号沿用历史编号（保留 `#22 users` 槽位），与本清单编号**不一一对应**。
 
 **逐表字段（DDL 等价）**
 
@@ -386,11 +394,11 @@ CREATE TABLE component_role_bindings (
   granted_at timestamptz NOT NULL DEFAULT now(),
   expires_at timestamptz                             -- §7.4 TTL；NULL = 永久
 );
--- D3（迁移 0015）：V1 的 user_id / role_id 两列已删除，其解析分支同批移除。
+-- D3 裁定：component_role_bindings 无 user_id / role_id 列（主体取 token `sub`）。
 
--- 22. users —— ❌ **表已删除**（D3，迁移 0015）
--- hub 不存用户身份（ACCOUNT-PERMISSION-MODEL §2.2）：`UserContext` 不再逐请求开通用户，
--- 主体一律取 token `sub`。原结构（org_id / email / name / keycloak_id / Base 软删列）见
+-- 22. users —— ❌ 无此表（D3 裁定，迁移 0015）
+-- hub 不存用户身份（ACCOUNT-PERMISSION-MODEL §2.2）：`UserContext` 不建/不查用户行，
+-- 主体一律取 token `sub`。V1 原结构（org_id / email / name / keycloak_id / Base 软删列）见
 -- `migrations/0015_d3_drop_users_and_legacy_columns.sql` 的注释留档。
 
 -- 23. platform_roles (§7.2 平台级角色；OrgID NULL=内置)
@@ -453,9 +461,9 @@ components ─1:N─ component_role_bindings ─N:1─ component_roles（§7.3�
 ## 5. Story 级 Definition of Done (DoD Checklist)
 
 - [x] 3-Corner 澄清通过：AC 由 Dev 与历史主规格（Epic 5/7）对齐，QA 待补。
-- [x] 单元测试覆盖率基线：核心逻辑（`buildSpec`/`selectTarget`/`ApplyStatus`）已实现，**单测已补齐（2026-09-24）** —— hub 43 个 `_test.go`（含 `pipeline_run_{dispatch,phase2,serial}_test.go`、`approval_policy_test.go`、`rbac_test.go`、`locator_test.go`、`schema_dryrun_test.go`），以 `go build`+`go vet`+`go test` 为门禁。
+- [x] 单元测试覆盖率基线：核心逻辑（`buildSpec`/`selectTarget`/`ApplyStatus`）已实现，**单测已补齐（2026-09-24）** —— hub 48 个 `_test.go`（含 `pipeline_run_{dispatch,phase2,serial}_test.go`、`approval_policy_test.go`、`rbac_test.go`、`locator_test.go`、`schema_dryrun_test.go`），以 `go build`+`go vet`+`go test` 为门禁。
 - [x] 静态代码扫描无 P0/P1：hub 与 runner 两模块 `go vet ./...` 通过；`go mod tidy` 清理完成。
-- [x] 自动化测试/手动验收：两模块 `go build ./...` 均 EXIT=0；本地启动会执行 `AutoMigrate` 建 31 张表（含 §7 多 org RBAC 扩展）；**2026-09-23 已在真实 Postgres 上验收**（`bash hack/migration-check.sh`，两条建库路径全绿）；**2026-09-24 已在 kind 集群跑通 M1 端到端**（`e2e-smoke.sh` `PASS=15 FAIL=0`，见 audit §5.2）。
+- [x] 自动化测试/手动验收：两模块 `go build ./...` 均 EXIT=0；本地启动会执行 `AutoMigrate` 建 33 张表（含 §7 多 org RBAC 扩展与迁移 0018 的 `agent_ops`/`agent_op_logs`）；**2026-09-23 已在真实 Postgres 上验收**（`bash hack/migration-check.sh`，两条建库路径全绿）；**2026-09-24 已在 kind 集群跑通 M1 端到端**（`e2e-smoke.sh` `PASS=15 FAIL=0`，见 audit §5.2）。
 - [x] 监控埋点已接入（2026-09-24）：runner `pkg/metrics` + hub 新增 `internal/metrics`（零依赖 Prometheus 文本导出 + `GET /metrics`）。**告警规则 / 降级开关在预发·灰度的验证属运维环境项**。
 
 ---

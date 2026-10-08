@@ -29,7 +29,7 @@
 | `--hairline` | `#E0E0E0` | `#262B34` | 描边 |
 | `--accent` | `#0066CC` | `#4DA3FF` | 主操作/选中 |
 | `--accent-soft` | `#E8F0FE` | `#12304D` | 选中底 |
-| `--rail-bg` | `#FFFFFF` | `#141720` | 左栏底（**light 不再用海军蓝**） |
+| `--rail-bg` | `#FFFFFF` | `#141720` | 左栏底（**light 非海军蓝**） |
 
 **色板命名（v2 沿用的语义名，保留以免引用断裂）**：Action Blue `#0066CC`（主操作/链接/选中/Running）、Ink `#1D1D1F`（一级文字/深色按钮）、Near-Black `#272729`（备选深色填充）、Parchment `#F5F5F7`（画布底色 → 即 `--bg`）、Hairline `#E0E0E0`、Sub Hairline `#F0F0F2`（表格行间分隔）。
 
@@ -46,7 +46,7 @@
 
 ### 9.5 组件形态
 
-- 按钮：`Primary`（药丸/Action Blue/白字）/ `Dark`（药丸/Ink/白字）/ `Pearl`（矩形/白底 hairline/深字）；危险操作用 `Danger`（红底，仅用于"确认删除"）。
+- 按钮：`Primary`（药丸/Action Blue/白字）/ `Dark`（药丸/Ink/白字）/ `Pearl`（矩形/白底 hairline/深字）；危险操作用 `Danger`（**白底描边**——surface 底 + `failed-fg` 红字 + 1px 红描边、圆角 10，非红底；依据 `tokens.css` `.btn-danger`。用于取消运行 / 审批拒绝 / 制品删除等破坏性确认）。
 - 徽章：药丸 + 状态图标 + 文字（§8.1）。
 - 顶部导航：56px 高 + 底部 hairline + 面包屑 + 右侧 搜索(⌘K) / 主题 / 灰阶 / 设计备注 / 头像。
 - 左栏：268px（折叠 64px）+ `--rail-bg` 底 + 条目 36px 行高 + 选中项 `--accent-soft` 底 + `--accent` 字（**不用 3px 竖条**）。

@@ -3,7 +3,7 @@
 > **事实源声明（2026-09-19 合并）**：本文是 console 前端设计的**唯一事实源**。
 > - **IA / 页面 / 交互 / 视觉以可交互原型 [`CONSOLE-UI-原型.html`](./CONSOLE-UI-原型.html) 为准**；文档与原型不一致时，以原型渲染结果为准，并回头修文档（本轮的修订依据）。
 > - **后端接口契约**（请求体 / 响应 / 字段名 / 端点 / DAG 映射）→ [`shared/API-REFERENCE.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/API-REFERENCE.md)；**删除语义** → [`shared/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md)；**数据模型 / RBAC 表** → [`shared/DATA-MODEL.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)。本文不重复这些契约，只写 console 侧的消费方式。
-> - 本文由两份文档合并而成：`CONSOLE-UI重设计文档.md`（IA v3 重设计）+ `CONSOLE-UI设计文档.md`（IA v2 合并版，2026-09-09）。**原两份文件已删除**；其中仍具权威性的章节（执行模型、异常分支、权限与审批 UX、四态、验收、流水线 4 类模式、API 桩状态）已按**原章节号**迁入本文，以保证 `hub/`、`runner/`、`README.md` 中的既有引用继续有效（见文末「章节号稳定性约定」）。
+> - 章节号沿用自旧文档：仍具权威性的章节（执行模型、异常分支、权限与审批 UX、四态、验收、流水线 4 类模式、API 桩状态）按**原章节号**收录于本文，以保证 `hub/`、`runner/`、`README.md` 中的既有引用继续有效（见文末「章节号稳定性约定」）。此前的 `CONSOLE-UI重设计文档.md`（IA v3 重设计）与 `CONSOLE-UI设计文档.md`（IA v2 合并版，2026-09-09）已由本文取代，仓内不存在。
 > - 标注约定：`【假设】`= 据上下文推导，需确认；`【待确认】`= 存在歧义 / 待拍板；`【后端依赖】`= 需 hub 补端点或核对；`【原型未展开】`= 原型中为占位页，只有结构没有内容。
 
 ---
@@ -47,7 +47,7 @@
 | 10 | 合并 | **2026-09-19** | **以原型为准**：两视图回写、主 Tab 6→**7**、筛选枚举与状态集按原型对齐；旧文合并进本文后删除；文件名改为 `CONSOLE-UI-DESIGN.md` | §1(S2)、§2(E)、§4(R-2/R-4)、§5.1、§5.4、§5.5、§7.3、§7.6、§8.1、§8.4、§10.2、附 A |
 | 11 | 同步 | **2026-09-19** | **设计→实现原子对齐**：console 落两视图（`runCenter.ts` + `router` redirect + `pnpm test:runcenter` 断言 + §10.2 用例同批改），`/pipelines` 旧链改落 `/service-tree`；原型三处过期设计备注修正；原型改名 `CONSOLE-UI-原型.html` | §5.5、§7.6、§10.2、附 A(N-13)、附 B(B.6/B.7/B.9/B.10) |
 | 12 | 同步 | **2026-09-22** | **C-01 ⌘K 全局搜索 + C-02 暗色主题落地**：双主题令牌（`:root[data-theme]`）+ 首屏防白闪引导 + 顶栏「搜索/主题/灰阶」；左栏纠正为 `--rail-bg`（清海军蓝与 3px 竖条，落 P4）；搜索浮层 + 客户端索引（N-8 降级路径）+ `?node=` 深链定位；门禁加 `pnpm test:theme-search`（25 条断言）。落地记录与**显式差异/顺带缺陷**见 **附 G** | §5.3、§7.1、§7.5、§9.1、§9.2、§9.5、§9.6、§10.1、附 A(N-8)、附 G |
-| 13 | 同步 | **2026-09-22** | **C-12 流水线全生命周期落地**：列表五列 + `＋ 新建流水线` + 删除强确认（`409 + {reasons}`）；编辑器改**直取** `GET /pipelines/:id`、阶段/子任务重排、阶段 `executionMode` 开关、保存前请求体预览；子任务表单改**配置派生**（不露三态原词，落 §7.4 拍板）；`kind` 编排闸门放开。hub 侧补 `pipeline_stages.execution_mode`（`migrations/0010`）+ `GET /runs?componentId=`；门禁加 `pnpm test:pipeline`（41 条断言）。落地记录与**显式差异**见 **附 H** |
+| 13 | 同步 | **2026-09-22** | **C-12 流水线全生命周期落地**：列表五列 + `＋ 新建流水线` + 删除强确认（`409 + {reasons}`）；编辑器改**直取** `GET /pipelines/:id`、阶段/子任务重排、阶段 `executionMode` 开关、保存前请求体预览；子任务表单改**配置派生**（不露三态原词，落 §7.4 拍板）；`kind` 编排闸门放开。hub 侧补 `pipeline_stages.execution_mode`（`migrations/0010`）+ `GET /runs?componentId=`；门禁加 `pnpm test:pipeline`（**63 条断言**；2026-10-08 注：落地当时口径为 41 条，断言随后续迭代扩至 63，以 `scripts/pipeline-editor-smoke.mjs` 的 `check()` 用例实测为准）。落地记录与**显式差异**见 **附 H** |
 | 14 | 同步 | **2026-09-22** | **R-8 服务树规模化落地**：懒加载（展开才请求，改走附 A N-9 新增的 `GET /orgs/:id/services`） + **服务端搜索**（hub 新端点 `GET /search`，附 A N-8，结果带所属路径） + 虚拟滚动（≥200 节点窗口化） + 独立滚动容器；hub 新增 `internal/search`（三类各取 limit 条 / ILIKE + 元字符转义 / 精确命中优先排序）；⌘K 浮层改**服务端优先、客户端索引兜底**（降级时浮层明示）；门禁加 `pnpm test:service-tree`（22 条断言）。落地记录、**显式差异**与顺带修掉的真实缺陷见 **附 I** | §4.1(R-8)、§5.2、§5.3、§5.1.1、附 A(N-8/N-9)、附 D、附 I |
 
 ### 0.3 修订史原文（v1 → v4.5，逐条保留）

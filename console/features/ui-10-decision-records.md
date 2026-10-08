@@ -31,6 +31,8 @@
 | F8 | 组件详情各 Tab 是**一等资源**：独立数据源、独立加载、独立权限、独立 `meta.title` | §5.4 / §7.3 |
 | F9 | 后端**现无**全局 `/runs` 端点，跨组件列表需求落在 N-1/N-3 | 附 A |
 
+> 【2026-10-08 状态更新】F9 已过期：hub 已注册全局 `GET /runs`（`cmd/hub/main.go:537`，`scoped.GET("/runs", pipelineRunHandler.ListAll)`）。本表为历史决策记录，原表述保留不改写；现口径见 附 A N-1。
+
 ### B.2 方案 A：`/runs?view=pipelines`（query）
 
 **钢人（最强辩护）**
@@ -281,6 +283,8 @@
 | 前端行为（流水线） | `delPipeline(name)`：强确认弹窗（输入名称）→ `DELETE` → 成功 `toast`（历史运行日志保留）；`409` 渲染 reasons。原型 `mockDeletePipeline` 为同语义后端模拟占位 |
 | 级联规则（后端） | 组件需**流水线 + 环境清零**；服务需其下**组件清零**；Org 需其下**服务清零**；递归向上。详见 [`shared/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md) |
 
+> 【2026-10-08 状态更新】① 上表「级联规则（后端）」中「清零才能删」已演进：现为**活跃 run 才 `409 + {reasons}`（Pending/Running/WaitingApproval），其余一律级联软删**（hub `catalog/service/service.go:145-168`：fast-path 即时 409 + 级联事务内 guard 复检，同一事务）。② 「前端行为（服务树）」行的**输入节点名强确认尚未实现**——现实现为普通确认弹窗 + 409 reasons 渲染（`ServiceTreeView.vue:879-897`），强确认是本表落地契约项，仍待实现。原表按历史决策记录保留不改写。
+
 ### C.8 验证方式（gate）
 
 | 层 | 断言 | 通过判据 |
@@ -291,6 +295,8 @@
 | 后端（N-15 未落地） | `DELETE /services/:id`（或 `DELETE /components/:id`）对已清节点 | `204`，子树移除 |
 | 后端（N-15 未落地） | 对残留节点 | `409` + `{reasons}` 且 reasons 层级正确、覆盖最深层未清理项 |
 
+> 【2026-10-08 状态更新】上表两行「后端（N-15 未落地）」已过期：hub 级联校验已落地——活跃 run `409 + {reasons}`、其余级联软删（`catalog/service/service.go:145-168`）；console 侧亦已真调用 `DELETE` 并渲染 reasons。断言本身仍有效，状态标注以本注记为准。
+
 ### C.9 实现落地记录（2026-09-15）
 
 | 状态 | 层 | 内容 |
@@ -300,6 +306,8 @@
 | **未落地** | hub `DeleteServiceTreeById` | 需补**递归级联校验**（组件→流水线/环境；服务→组件；Org→服务）并在事务内 `return 409 + {reasons}`。当前 handler/service/repository 三层只做"按 id 删"，**无级联校验** |
 | **未落地** | console `delDetail` | 真调用 `DELETE /services/:id`（或 `/components/:id`）（替换 `mockDeleteNode`），把 409 body 的 `reasons` 直接渲染 |
 
-> 对齐 v4.3 修订（§5.2）与 附 A N-15：前端删除 UX 与后端契约已在本文对齐；后端级联校验为真实落地缺口，登记为 N-15。
+> 【2026-10-08 状态更新】上表两行「未落地」均已过期、已落地：hub `DeleteServiceTreeById` 现含活跃 run 校验 + 递归级联软删（`catalog/service/service.go:145-168`）；console `delDetail` 已真调用 `DELETE`（org/catalog/component 各自 remove API）并渲染 409 reasons（`ServiceTreeView.vue:609-633`）。历史行保留不改写，现口径见 注记与 附 A N-15。
+
+> 对齐 v4.3 修订（§5.2）与 附 A N-15：前端删除 UX 与后端契约已在本文对齐；后端级联校验已随 N-15 落地（现口径见 附 A N-15 与上方【2026-10-08 状态更新】）。
 
 ---

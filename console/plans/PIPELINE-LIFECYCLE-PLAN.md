@@ -1,7 +1,7 @@
 # P0-3 实施计划 — Console 流水线全生命周期 UI（已自 plans/ 迁入 console 域）
 
-> 状态：**A / C / D / B 节全部实施完成**（2026-09-25 收口：A 节 `listGlobal` 直连 + stopgap 下线落地；B「新建入口」实际落在组件详情 · 交付 · 流水线 Tab 的「＋ 新建流水线」；C kind 闸 / D 行内删除此前已落）。当前登记见 [plans/STATUS.md](../../plans/STATUS.md) §1.3。
-> 注：运行中心「流水线」视图已在 IA v4.4 移除（归属组件详情），故 §4 中 RunCenterView 的行号引用已过时，A 节实际落地位置为 `useResourceMap.buildResourceIndex`（pipelines 分支改单次 `GET /pipelines`）+ `api/pipeline.ts listGlobal`。
+> 状态：**A / C / D / B 节全部实施完成**（2026-09-25 收口。A 节 `listGlobal` 直连 `GET /pipelines`、前端四级聚合 stopgap 已下线；B「新建入口」落点为组件详情 · 交付 · 流水线 Tab 的「＋ 新建流水线」；C kind 闸放开、D 行内删除均已实现）。当前登记见 [plans/STATUS.md](../../plans/STATUS.md) §1.3。
+> 注：运行中心已无「流水线」视图（归属组件详情 · 交付 · 流水线），§4 中 RunCenterView 的行号引用按编写时点快照理解；A 节实际落地位置为 `useResourceMap.buildResourceIndex`（pipelines 分支单次 `GET /pipelines`）+ `api/pipeline.ts listGlobal`。
 > 依赖前置：P0-1（`/releases` 端点，已落地）、**P0-2（`GET /pipelines` 全局列表，已落地）**。
 > 事实基线全部来自 console 仓实代码（file:line 见下），非文档声称。
 
@@ -19,14 +19,14 @@
 
 | 现状 | 证据 |
 |---|---|
-| 后端 `POST/GET/DELETE /pipelines[/:id]` 齐全 | `hub/internal/pipeline/handler/pipeline.go:33/34/36` |
+| 后端 `POST/GET/DELETE /pipelines[/:id]` 齐全 | `hub/internal/pipeline/handler/pipeline.go:35/36/39`（2026-10-08 复核行号；POST :35、GET 列表 :36、GET /:id :37、DELETE :39） |
 | 全局 `GET /pipelines`（P0-2 新增） | `hub/internal/pipeline/handler/pipeline.go:36` `rg.GET("/pipelines", h.List)` |
-| 后端支持 release/approval 编排 | `hub/internal/pipeline/models/pipeline.go:14`（`kind` 自由字符串）；`task_template.go:19`（`Type Build/Release/Approval`） |
+| 后端支持 release/approval 编排 | `hub/internal/pipeline/models/pipeline.go:19`（`kind` 自由字符串）；`task_template.go:36`（`Type Build/Release/Approval`）（2026-10-08 复核行号） |
 | 前端 `pipelineApi` 已含 `create`/`remove` | `console/src/api/crud.ts:8/17`（`createCrud('/pipelines')`） |
 | **无任何「新建流水线」UI 入口** | 全仓 grep `新建流水线|pipelineApi.create` 仅命中无关项；`PipelinesTab.vue:36` 注释「新建入口走服务树/触发对话框已有路径，此处仅编排已有流水线」 |
 | 编辑器仅 `build` 可达（两处闸） | `RunCenterView.vue:202-207` `if (p.kind !== 'build')`；`PipelinesTab.vue:24-29` 同 |
 | 前端聚合 stopgap 待下线 | `useResourceMap.ts:5-7`（「等全局聚合端点落地后本文件可下线」）；`RunCenterView.vue:14-15,42-43` |
-| 编辑器已支持三类任务 | `PipelineEditorView.vue:70-84`（`taskSummary`/`typeIcon` 覆盖 Build/Release/Approval） |
+| 编辑器已支持三类任务 | `PipelineEditorView.vue:106`（`taskSummary`）、`:39/:396`（`taskTypeIcon`）覆盖 Build/Release/Approval（2026-10-08 复核行号） |
 
 **结论**：P0-3 缺口几乎全在前端；后端零缺口（P0-2 已补最后一块）。
 
@@ -102,6 +102,6 @@ node scripts/runcenter-url-smoke.mjs   # URL 契约冒烟
 ## 6. 风险与开放问题
 
 - **B 节依赖 v3 IA 落点**：在定稿前强行实现会返工，故本计划将 B 单列 hold。
-- **releases 视图筛选**：全局 `GET /releases` 端点**已实现**（hub `internal/run/handler/release.go`），但当前仅支持 `pipelineRunId` 参数；`scope=global&state=paused` 形态的筛选后端未支持（`paused` 属 Rollout 任务级状态，见 CONSOLE-UI-DESIGN §7.6 / 附 A N-3，已登记 STATUS §2 #14）。releases 视图暂保持现状；不属 P0-3 范围。
+- **releases 视图筛选**：全局 `GET /releases` 端点已实现（hub `internal/run/handler/release.go`），`scope=global` + `state` 语义筛选（running/paused/succeeded → RolloutPhase）后端已支持（hub `internal/run/service/release.go:34-55` `List`/`mapReleaseState`，handler `release.go:55-62` 校验 `scope`/`state`；2026-10-08 复核），本项无开放风险。
 - **分页一致性**：A 节将 pipelines 视图改为服务端分页，需确保 `RunCenterQuery`（`constants/runCenter.ts`）的 `page` 已贯穿（当前已支持）。
 - **stopgap 不能全删**：`byPipelineId` 供 releases 视图按 kind 过滤运行，仅瘦身为单次 `GET /pipelines`，不整文件删除。

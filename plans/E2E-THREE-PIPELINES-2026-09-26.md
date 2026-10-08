@@ -126,7 +126,7 @@ G-9 修复前，部署场景用 **Build 任务 + kubectl 镜像 + 内嵌 manifes
 5. `docker.io/bitnami/kubectl:1.30` tag 不存在。
 6. kind 节点仅 mirror `localhost:5000`，裸名镜像（G-7）一律拉不动。
 7. runner chart ClusterRole 必须含 `networking.k8s.io/ingresses`（历史坑，现已修，见 audit §5.2）。
-8. **workspace 遮蔽**：runner mainContainer 无条件把 workspace emptyDir 挂在 `/workspace`（`job_builder.go:182`）→ 自带镜像内 `/workspace` 下的内容会被遮蔽；自带源码/工具须放其它路径（本测用 `/opt/src`）。
+8. **workspace 遮蔽**：runner mainContainer 无条件把 workspace emptyDir 挂在 `/workspace`（`job_builder.go:132`）→ 自带镜像内 `/workspace` 下的内容会被遮蔽；自带源码/工具须放其它路径（本测用 `/opt/src`）。
 9. **镜像 tag 缓存**：job Pod imagePullPolicy 默认 IfNotPresent → 同 tag 重新 push 后节点仍用旧镜像；改镜像必须换新 tag（本测 test→v2）。
 
 ## 8. 执行状态

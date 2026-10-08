@@ -23,7 +23,7 @@
 | 文件 | 说明 |
 | --- | --- |
 | [STORY-hub-implementation.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-hub-implementation.md) | hub 控制面实现 Story |
-| [STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md) | 实现 Backlog（B-01~B-19 + C-01~C-13）；**状态以 STATUS 为准，本表只记叙事** |
+| [STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md) | 实现 Backlog（B-01~B-21 + C-01~C-13）；**状态以 STATUS 为准，本表只记叙事** |
 | [STORY-TEMPLATE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-TEMPLATE.md) | Story 模板 |
 | [user-stories.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/user-stories.md) | 用户故事（裁定已折进正文标记） |
 | [assets/](https://github.com/rouroumaibing/software-distribution-platform-docs/tree/main/hub/assets) | 架构图源（png + 流水线.pptx，独立图源，未被 md 引用） |

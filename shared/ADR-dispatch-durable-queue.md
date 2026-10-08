@@ -37,7 +37,7 @@ owner 重新审视了"hub 与 runner 的交接机制 + 状态真相源"，经过
 
 - `dispatch_jobs` 为 1:多表：一条 `PipelineRun` 可对应多条下发记录。
 - 字段：`id` / `pipeline_run_id`(FK) / `target_id`(即环境 id，环境↔runner 1:1) / `payload`(JSON `ApplyPipelineRunPayload`) / `state`(`pending|dispatching|dispatched|failed|dead`) / `attempts` / `last_error` / `next_retry_at` / `created_at` / `updated_at`。
-- 索引：`(target_id, state, created_at)`、`(pipeline_run_id)`。
+- 索引：决策按查询形状定为 `(target_id, state, created_at)` 复合索引；**落地实现为三个单列索引**——`pipeline_run_id` / `target_id` / `state` 各建一个（GORM tag `index`，见 `internal/run/models/dispatch_job.go:35-43`）。
 
 > 否决的方案：在 `pipeline_runs` 上加 `dispatch_state/attempts/next_retry_at` 列。理由：见决策变量。
 
@@ -119,7 +119,7 @@ owner 明确：
   - 新增 `Redispatch(ctx, runID)`：`LatestByRun` 取最近 job → 拷贝 payload 建新 `pending` job → `tryDeliver`；返回重取后的 job 状态。
   - `DispatchJobStore` 接口加 `LatestByRun`。
 - `internal/run/repository/dispatch_job.go`：新增 `LatestByRun(pipelineRunID)`。
-- `internal/run/handler/pipeline_run.go`：`Trigger` 改为回 `[]*PipelineRun`；新增 `Redispatch` handler + 路由 `POST /runs/:id/redispatch` + swag 注解。
+- `internal/run/handler/pipeline_run.go`：`Trigger` 返回 `[]*PipelineRun`；`Redispatch` handler + 路由 `POST /runs/:id/redispatch` + swag 注解。
 - 测试：`pipeline_run_dispatch_test.go`（`fakeDispatchStore` 补 `LatestByRun`）；`pipeline_run_phase2_test.go`（内存 fake + 5 个测试：扇出在线/离线、重下发 dead→投、重下发离线挂起、无 dispatch 记录报错）。
 
 **验证门禁（全绿）**：`gofmt` / `go vet ./...` / `go build ./...` / `go mod tidy` / `go test ./internal/run/...`（9 个用例通过）。

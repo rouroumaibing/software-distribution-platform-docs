@@ -15,7 +15,7 @@
 - **关键指标/埋点**: 无（M1 以链路打通为验证目标；监控见 §3 工程护栏）。
 
 ### 1.1 本次文件清单（均为新增/接线，未重写既有业务逻辑）
-- `cmd/runner/main.go` —— 入口装配：manager + 长连接 + 注册两个下发 handler + 注册 3 个 reconciler（原 `MessageApplyPipelineRun` handler TODO 已消除）。
+- `cmd/runner/main.go` —— 入口装配：manager + 长连接 + 注册 5 个下发 handler（`apply_pipeline_run` / `approve_task` / `rollout_control` / `rerun_task` / `cancel_pipeline_run`）+ agent_op 执行器 handler + 注册 3 个 reconciler（原 `MessageApplyPipelineRun` handler TODO 已消除）。
 - `internal/dispatch/apply_handler.go` —— 解析 `ApplyPipelineRunPayload`，幂等创建 `PipelineRun` CR（先 ensure namespace）。
 - `internal/dispatch/approve_handler.go` —— 解析 `ApproveTaskPayload`，按 `sdp.io/pipeline-run`+`sdp.io/task` 标签定位 Approval TaskRun，写入 `ApprovedBy`/`RejectedBy`，达到 `RequiredCount` 置 Succeeded。
 - `internal/controller/pipelinerun_controller.go` —— DAG 调度（纯函数 `findRunnableTasks`/`dependenciesSatisfied` 等）+ 每次状态变更后异步经 `conn.Send(MessageStatusUpdate, …)` 上报 Hub。
@@ -71,16 +71,22 @@
 |------|------|-------------|------|
 | Hub→Runner | `apply_pipeline_run` | `ApplyPipelineRunPayload` | 下发流水线；Name/Namespace 必须 == Hub `pipeline_runs` 的 `CRName`/`CRNamespace` |
 | Hub→Runner | `approve_task` | `ApproveTaskPayload` | 回写审批决策（批准/拒绝） |
+| Hub→Runner | `rerun_task` | `RerunTaskPayload` | 单任务重跑：重置该 task 及其下游，不重发整条 run |
+| Hub→Runner | `cancel_pipeline_run` | `CancelPipelineRunPayload` | 取消整条 run：handler 只打注解，由 reconciler 落 Cancelled |
+| Hub→Runner | `rollout_control` | `RolloutControlPayload` | 金丝雀运维命令（pause/promote/rollback） |
+| Hub→Runner | `agent_op` | `AgentOpDispatchPayload` | agent 操作下发（§9.5 exec） |
 | Runner→Hub | `status_update` | `StatusUpdatePayload` | 每次状态变更上报；`PipelineRunName`==CRName |
 | Runner→Hub | `log_chunk` | `LogChunkPayload` | 实时日志分片（B-02 已落地：`pkg/logstream` 抓取发送 + hub 落库） |
-| Runner→Hub | `heartbeat` | （空） | 保活，Hub 标记目标在线 |
+| Runner→Hub | `heartbeat` | `{target}` | 保活，Hub 标记目标在线 |
+| Runner→Hub | `agent_op_status` | `AgentOpStatusPayload` | agent 操作生命周期流转（queued→running→succeeded\|failed） |
+| Runner→Hub | `agent_op_log` | `AgentOpLogPayload` | agent 操作输出分片流式回流 |
 
-**ApplyPipelineRunPayload**: `{ name, namespace, spec: PipelineRunSpec }`
+**ApplyPipelineRunPayload**: `{ name, namespace, spec: PipelineRunSpec, publishVersion? }`
 **ApproveTaskPayload**: `{ pipelineRunName, taskName, approver, rejected? }`
 **StatusUpdatePayload**: `{ targetID, pipelineRunName, pipelineRunNamespace, phase, message?, startTime?, completionTime?, tasks: TaskRunStatusSummary[] }`
 
 ### 4.2 数据库/缓存变动 —— Runner 的"表"即 K8s CRD（etcd 持久化）
-> ⚠️ **重要说明**: Runner 是 K8s Operator，**不连接任何关系型数据库**。其全部持久化状态由 3 个自定义资源（CRD）承担，物理存于 K8s 集群的 etcd。这与 Hub 的 Postgres（31 张表，含 §7 多 org RBAC 扩展）是**两套独立的存储**：Hub 存"历史/审计/权限"（SQL），Runner 存"实时执行状态"（CRD/etcd）。二者通过 `CRName`/`CRNamespace` 关联。
+> ⚠️ **重要说明**: Runner 是 K8s Operator，**不连接任何关系型数据库**。其全部持久化状态由 3 个自定义资源（CRD）承担，物理存于 K8s 集群的 etcd。这与 Hub 的 Postgres（33 张表，含 §7 多 org RBAC 扩展）是**两套独立的存储**：Hub 存"历史/审计/权限"（SQL），Runner 存"实时执行状态"（CRD/etcd）。二者通过 `CRName`/`CRNamespace` 关联。
 
 以下为 3 个 CRD 的"建表"（schema）设计，字段类型/枚举均对照 `api/v1alpha1/*_types.go` 核实。
 
@@ -118,7 +124,7 @@
 | **Spec** | | | |
 | `spec.pipelineRunRef` | string | — | 父 PipelineRun 名（同时设 ownerReference） |
 | `spec.taskName` | string | — | DAG 节点名 |
-| `spec.type` | enum | Build/Release/Approval | 分支类型 |
+| `spec.type` | enum | Build/Release/Approval/Test | 分支类型 |
 | `spec.image/scriptPath/scriptArgs` | string/string/[]string | — | Build 脚本型任务执行环境（escape hatch） |
 | `spec.command/args` | []string | — | Build 内联命令型任务（如 pytest/go build） |
 | `spec.releaseSpec` | *ReleaseSpec | Type==Release 必填 | chart/manifest 源 + 从参数管理注入的 values |
@@ -167,14 +173,14 @@
 
 #### 4.2.1 派生原生对象（非 CRD，由 RolloutReconciler 托管）
 Runner 在发布过程中还会创建/持有以下 K8s 原生对象（受 Rollout `ownerReference` 垃圾回收）：
-- **stable Deployment** (`spec.workloadRef`)：稳定版本，M1 默认副本数 2（Runner 不读线上 Deployment 副本数）。
+- **stable Deployment** (`spec.workloadRef`)：稳定版本，副本数由 `resolveTotalReplicas` 解析：优先 hub 下发的 `RolloutSpec.Replicas`，否则读取线上 stable Deployment 的 `spec.replicas`，默认 2（B-06，rollout_controller.go）。
 - **canary Deployment** (`{workloadRef}-canary`)：金丝雀版本，副本数 = `weightReplicas(weight, total)` = `weight*total/100`。
 - **`-sdp` ClusterIP Service**：`selector: {app: workloadRef}` 同时选 stable+canary Pod，靠副本比做 **DeploymentWeight** 流量切分。
 
 #### 4.2.2 CRD 生成与关键枚举取值
 - CRD YAML 由 `controller-gen v0.21.0` 生成于 `config/crd/bases/*.yaml`（安装步骤见 §4.2.3）。
 - 枚举常量（直接引用 `api/v1alpha1`）：
-  - `PipelineTaskType`: `Build` / `Release` / `Approval`
+  - `PipelineTaskType`: `Build` / `Release` / `Approval` / `Test`（C-13 转测流水线）
   - `PipelineRunPhase`: `Pending` / `Running` / `WaitingApproval` / `Succeeded` / `Failed` / `Cancelled`
   - `TaskRunPhase`: `Pending` / `Running` / `Succeeded` / `Failed` / `Skipped`
   - `RolloutPhase`: `Progressing` / `Paused` / `Healthy` / `Degraded` / `RollingBack`
@@ -204,7 +210,7 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 - `PipelineRunReconciler` 纯函数 `findRunnableTasks` / `dependenciesSatisfied`：仅当某 task 的全部 `DependsOn` 前驱 `Succeeded`，才创建其 `TaskRun`。
 - **阶段间串行**：hub `buildSpec` 已为后续阶段的**每个**任务补上"依赖上一阶段**全部**任务"的 `DependsOn`（任务自带依赖时不覆盖）→ 自然形成阶段顺序屏障。
 - **阶段内并行（默认）**：同阶段任务间无 `DependsOn` → 同时可运行。
-- **阶段内串行（`executionMode=Serial`）**：✅ **已落地（C-06）**。Hub `internal/pipeline/service/stage.go` 为每个阶段持久化并校验 `executionMode`（`parallel|serial`，大小写/首尾空白归一化，非法值返回 400）；Runner `internal/controller/pipelinerun_controller.go` 的 `serialBlocked()` 在运行时强制「同阶段串行」——同一 `Stage` 且 `executionMode=Serial` 的任务，必须等声明顺序在其之前的所有兄弟任务 `Succeeded` 后才可启动，**无需 hub 合成同阶段 `DependsOn` 链**（与 `UNIMPLEMENTED-MODULES-PLAN.md §1 Epic D` 对齐）。
+- **阶段内串行（`executionMode=Serial`）**：✅ **已落地（C-06）**。Hub `internal/pipeline/service/stage.go` 为每个阶段持久化并校验 `executionMode`（`parallel|serial`，大小写/首尾空白归一化，非法值返回 400）；hub `buildSpec` 已为 serial 阶段的**每个**任务追加同阶段紧邻前驱的 `DependsOn`（hub `internal/run/service/pipeline_run.go`），Runner `internal/controller/pipelinerun_controller.go` 的 `serialBlocked()` 保留为运行时兜底校验——两层共同强制「同阶段串行」。
 - 终态（`Succeeded`/`Failed`/`Skipped`/`Cancelled`）后不再调度新 `TaskRun`。
 
 **3. 单节点执行（TaskRun → 实际命令）**
@@ -218,9 +224,9 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 - 每次 TaskRun/Stage/PipelineRun 状态变更，`conn.Send(MessageStatusUpdate, StatusUpdatePayload{PipelineRunName, tasks[]})` 经 WS 上报 Hub。
 - Hub `ApplyStatus` 据 `CRName` 写回 `task_runs` / `pipeline_runs`（**这是进展的系统记录**）。**阶段进展由 hub 侧 `task_runs` 派生聚合**（确认不建 `stage_runs`，用户决策，见 [hub 数据模型 §6.3](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)），Runner 不维护阶段级中间表。
 
-**5. 异常与跳过**
-- 某 task `Failed` 且不可重试 → DAG 中依赖它的下游 task 标 `Skipped`（不调度）；整条 `PipelineRun` 跟随 `Failed`。
-- 上游 `Skipped` 同样阻断下游，保证"阶段完成 = 全部子任务终态"的不变式。
+**5. 异常与失败传播**
+- 某 task `Failed` 且不可重试 → 其下游因 `dependenciesSatisfied` 只认 `Succeeded` 而停留 `Pending`、不再调度（与 AC-02「其余保持 Pending」一致）；整条 `PipelineRun` 跟随 `Failed`。
+- ⚠️ 「下游传播 `Skipped`」（含上游 Skipped 阻断下游）**待实现**：当前 `Skipped` 仅由 cancel 路径置位——cancel 时从未被调度（无 `TaskRunRef`）的任务被标为 `Skipped`（`pipelinerun_cancel.go` `cancelledTaskSummary`），失败路径无任何写点。
 
 ### 4.4 授权边界（Runner 侧；不持有授权逻辑）
 
@@ -249,7 +255,7 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 
 ## 6. 后续待办（非本 Story 范围 / 已注明 TODO）
 - ✅ **Hub 审批下发路径**：Hub 侧已实现 `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision`（经 `gateway.Approve` → `MessageApproveTask` 下发），与 Runner 的 `ApproveTask` handler 形成完整审批闭环（见 SDP-HUB-001 本轮补充）。**P2 起 Hub 额外落 `pipeline_approvals` 审计记录并实施防自审（`requested_by == approver` 直接拒绝），Runner 仅据此解除挂起/终止（[hub 数据模型 §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)）。**
-- ✅ **实时日志（B-02）**：`pkg/logstream` 已实现 Pod 日志抓取并经 `MessageLogChunk`/`LogChunkPayload` 经 WS 回流 Hub 落库（与 `UNIMPLEMENTED-MODULES-PLAN.md §1 Epic D` 对齐）。
+- ✅ **实时日志（B-02）**：`pkg/logstream` 已实现 Pod 日志抓取并经 `MessageLogChunk`/`LogChunkPayload` 经 WS 回流 Hub 落库。
 - ✅ **IngressCanary 路由（B-04）**：`internal/controller/rollout_controller.go` + `pkg/canary/engine.go` 已实现金丝雀渐进发布与 IngressCanary 流量切分。
 - ✅ **HTTPProbe / PrometheusQuery 健康检查（B-05）**：`pkg/health/health.go` 的 `HTTPProbe`（真实 GET + 2xx 判定）、`PrometheusQueryOK`（真实 Prometheus 查询 + 阈值）已接入 release 健康判定。
 - ✅ **Rollout 副本数读取真实 Deployment（B-06）**：`rollout_controller.go` 的 `resolveTotalReplicas` 读取线上 stable Deployment 的 `spec.replicas` 作为 total（fallback `RolloutSpec.Replicas` → 默认 2），不再写死 `total=2`。

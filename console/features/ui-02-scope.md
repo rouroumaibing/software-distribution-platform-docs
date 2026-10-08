@@ -21,9 +21,9 @@
 
 ### 4.2 后续 Later（刻意不做 / 待补）
 
-- ❌ 通知中心（顶栏铃铛真实化）——需后端通知端点。
+- ✅ 通知中心：console `src/layout/MainLayout.vue` 顶栏铃铛 + 下拉（`loadNotifications` / `toggleNotif` / 点击直达 `link`），消费 hub `GET /notifications`（`src/api/notification.ts`，当前来源 = 待审批运行流）；端点于 hub `cmd/hub/main.go` 注册。
 - ❌ DAG 自由画布（沿用结论，`DependsOn` 需求明确后评估 vue-flow）。
-- ✅ ~~流水线版本历史 / 回滚到旧版本~~ **已落地（2026-09-22，C-09）** —— hub `GET /pipelines/:id/versions` + `/:version` + `/:version/diff` + `POST /:version/rollback`；console `PipelineVersionPanel.vue`（对比 + 回滚二次确认）。回滚 = 结构回填 + 追加新版本，绝不重写历史。
+- ✅ 流水线版本历史 / 回滚（C-09）：hub `GET /pipelines/:id/versions` + `/:version` + `/:version/diff` + `POST /:version/rollback`；console `PipelineVersionPanel.vue`（对比 + 回滚二次确认）。回滚 = 结构回填 + 追加新版本，绝不重写历史。
 - ❌ 左栏内联资源树（**已明确否决**，见 S5）。
 - ❌ API 管理模块（新平台无此后端域）。
 

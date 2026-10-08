@@ -13,7 +13,7 @@
 
 > 裁定语义：目录位置表达的是**文档的治理范围主张**（这份内容属于整个平台），不是变更流程的镜像。防腐不靠位置，靠本 README 的维护纪律 + STATUS 指针协议 + 各域 index 交叉引用。
 
-## 当前住户（7）
+## 当前住户（8）
 
 | 文件 | 横跨范围 |
 | --- | --- |
@@ -23,6 +23,7 @@
 | [DATA-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) | 领域/数据模型：hub 写、runner 写、console 读；含下发/授权/接入拓扑 |
 | [API-REFERENCE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/API-REFERENCE.md) | REST 端点契约：hub 实现、console 消费 |
 | [KEYCLOAK.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/KEYCLOAK.md) | 认证子系统：keycloakx 部署（hub chart）+ console/hub 交互 + 账号改密 |
+| [CERTIFICATES.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/CERTIFICATES.md) | 平台 TLS 证书：env 仓生成器 + 各组件 secret 引用契约（hub/console/网关） |
 | [ADR-dispatch-durable-queue.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-dispatch-durable-queue.md) | hub↔runner WS 线协议决策：变更需两端同步 |
 
 ## 维护纪律

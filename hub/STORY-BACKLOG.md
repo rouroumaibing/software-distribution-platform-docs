@@ -20,7 +20,7 @@
 | B-05 | **HTTP/Prometheus 健康检查** | M1 实际只校验 `PodReady`；`HTTPProbe`/`PrometheusQuery` 引擎分支已留但未接真实探测 | ✅ **已完成** —— `pkg/health/health.go` `HTTPProbe`（真实 GET + 2xx 判定）/`PrometheusQueryOK`（真实查询 + 阈值）已接入 release 健康判定 | runner §6:195 | Epic 6 |
 | B-06 | **Rollout 副本数读取真实 Deployment** | M1 默认 `total=2`，未读线上 Deployment 的 `spec.replicas` | ✅ **已完成** —— `rollout_controller.go` `resolveTotalReplicas` 读线上 stable Deployment 的 `spec.replicas`（回退 `RolloutSpec.Replicas` → 默认 2），`TestResolveTotalReplicas` 钉住 | runner §6:196 | — |
 | B-07 | **端到端验证** | ✅ **已执行（2026-09-24 本机 docker + kind 实跑）** —— 全栈部署绿、`plans/e2e-smoke.sh` `RESULT: PASS=15 FAIL=0`、run `Running → Succeeded`（证明 runner 真执行）；执行中揪出并修复 **3 个真 bug**（deploy 脚本空数组 / runner RBAC 缺 ingresses / component 删 500）。证据见 `plans/STATUS.md` §1.4 | ✅ 已执行 | runner §6:197 | M1 验收 |
-| B-08 | **单元测试** | 核心逻辑（`buildSpec`/`selectTarget`/`ApplyStatus`/canary 引擎）具备单测条件，M1 未补用例，当前以 `go build`+`go vet` 作门禁 | ✅ **已补齐** —— hub 43 个 `_test.go`、runner 9 个（含 `pkg/canary/engine_test.go`、`internal/dispatch/*`、`pipeline_run_{dispatch,phase2,serial}_test.go`、`rollout_controller_test.go`、`pkg/health`、`pkg/logstream`），覆盖调度 / 派发 / 审批超时 / 生产强审批 / 灰度引擎 / 租约 | hub §5:371, runner §5:185 | 质量基线 |
+| B-08 | **单元测试** | 核心逻辑（`buildSpec`/`selectTarget`/`ApplyStatus`/canary 引擎）具备单测条件，M1 未补用例，当前以 `go build`+`go vet` 作门禁 | ✅ **已补齐** —— hub 48 个 `_test.go`、runner 11 个（含 `pkg/canary/engine_test.go`、`internal/dispatch/*`、`pipeline_run_{dispatch,phase2,serial}_test.go`、`rollout_controller_test.go`、`pkg/health`、`pkg/logstream`），覆盖调度 / 派发 / 审批超时 / 生产强审批 / 灰度引擎 / 租约 | hub §5:371, runner §5:185 | 质量基线 |
 | B-09 | **监控告警与降级开关验证** | 依赖后续 Epic 5 离线告警与 console 灰度监控；Prometheus 指标埋点未接入 | 🟡 **埋点已补齐（2026-09-24，T-U6）** —— runner `pkg/metrics`（controller-runtime 内置 metrics server 暴露 `/metrics`）+ hub **新增** `internal/metrics`（零依赖 Prometheus 文本导出：`GinMiddleware` 计数 + `GET /metrics`，`main.go` 已挂载）；**告警规则 / 降级开关在预发·灰度的验证仍属运维环境项** | hub §5:374, runner §5:187, hub §3:66 | Epic 5 |
 | B-10 | **QA 负责人待补** | Story 责任人 QA 字段、（3-Corner 澄清）QA 待补 | ⬜ **流程项（非代码）** —— 待人工指定 QA 负责人后回填，不阻塞代码验收 | hub §1:13, hub §5:370 | 协作流程 |
 | B-11 | **主规格细化项** | ✅ **已完成（2026-09-22，Epic E）** —— ① **审批超时**：`run/service/approval_timeout.go`（超时判负，先派发 runner 拒绝再记 hub 侧 `Cancelled`，目标离线顺延；env `APPROVAL_TIMEOUT_INTERVAL` 默认 60s）；② **生产强审批**：`run/service/production_guard.go`（**fail-closed**，`409 + reasons`，`ERR.08409005`）+ `environment/repository.ProductionTargets` + console 触发对话框原样渲染拒绝；③ **产物签名下载**：核对待办为**过时标记** —— `GET /artifacts/:id/download` → `DownloadURL` → `PresignDownload`（S3 presigned / Local HMAC）与 console 下载入口**早已完整**，本轮仅更正文档；④ **版本对比**：由 C-09 交付；⑤ **自定义角色**：平台级 = C-10，组件级本轮补齐 `POST/PUT/DELETE /component-roles`（**读挂裸 `api`、写要求平台级 `user:manage`**）+ `(org_id, name)` 唯一（`migrations/0014`）。见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §11.1 | ✅ 已完成 | hub §6:384 | 多 Epic |
@@ -43,10 +43,10 @@
 
 | 文档原待办（行号） | 实际状态 | 证据 |
 |--------------------|----------|------|
-| "Runner 端 handler 注册：`cmd/runner/main.go:52` 的 `MessageApplyPipelineRun` 回调未接实际逻辑" (hub §6:380) | ✅ 已注册 | `cmd/runner/main.go:53` 注册 `MessageApplyPipelineRun` → `applyHandler.Handle`；`:55` 注册 `MessageApproveTask`；`:70` 注册 `RolloutReconciler` |
+| "Runner 端 handler 注册：`cmd/runner/main.go:52` 的 `MessageApplyPipelineRun` 回调未接实际逻辑" (hub §6:380) | ✅ 已注册 | `cmd/runner/main.go:131` 注册 `MessageApplyPipelineRun` → `applyHandler.Handle`；`:133` 注册 `MessageApproveTask`；`:137` 注册 `MessageRerunTask`；`:168` 注册 `RolloutReconciler` |
 | "灰度发布补全：`runner/pkg/canary/` 为空，`rollout_runs` 暂无写入来源" (hub §6:382) | ✅ 已实现 | `pkg/canary/engine.go` 已创建；`rollout_controller.go` 管理 stable/canary Deployment 并回填 Rollout/TaskRun 状态 |
 
-**建议**：将 `[STORY-hub-implementation.md §6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-hub-implementation.md)` 第 380、382 行删除或改为"✅ 已在 SDP-RUNNER-001 完成"，避免 backlog 误读。
+**现状**：`STORY-hub-implementation.md §6` 的上述两行待办（Runner handler 注册 / canary 补全）已回填修正为 ✅ 完成，backlog 无误读。
 
 ---
 

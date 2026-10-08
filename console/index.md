@@ -30,7 +30,7 @@
 
 | 文件 | 说明 |
 | --- | --- |
-| [PIPELINE-LIFECYCLE-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/plans/PIPELINE-LIFECYCLE-PLAN.md) | 流水线全生命周期 UI 迭代（A 节待实施：下线前端聚合 stopgap 接 `GET /pipelines`；B 节 hold；C/D 已实施）——登记 STATUS §2 #18 |
+| [PIPELINE-LIFECYCLE-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/plans/PIPELINE-LIFECYCLE-PLAN.md) | 流水线全生命周期 UI 迭代（**A 节已实施（2026-10-08 状态更新）**：P0-2 落地——`pipelineApi.listGlobal` 直取 `GET /pipelines`（`src/api/pipeline.ts:191-196`），前端「组织→服务→组件→流水线」四级聚合 stopgap 已下线；B 节 hold；C/D 已实施）——登记 STATUS §2 #18 |
 
 > 裸待办条目不进本目录，只登记在 [STATUS §2](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md)；本目录文件必须是「有实施路径与验收 Gate 的活跃计划」。
 

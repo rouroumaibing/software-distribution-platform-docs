@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # e2e-smoke.sh — 按页面真实操作顺序冒烟测试全部前端 API（经 console ingress = 浏览器同路径）。
-# console 已从 NodePort(8081) 改为 ClusterIP + ingress（kind 8443->443），自签证书用 curl -k。
+# console 走 ClusterIP + ingress（kind 8443->443），自签证书用 curl -k。
 set -u
 # BASE/CURL 可经环境变量覆盖：默认走 console ingress（网关同路径）；
 # 也可指向 hub NodePort 直连（如 BASE="http://localhost:8080/api/v1" CURL="curl -s"），

@@ -98,6 +98,9 @@ Pipeline  ──1:N──▶  PipelineRun    (pipeline_runs.pipeline_id + target
 | `environments` | `component_id` | `components` | 1:N（`ON DELETE CASCADE`，但组件是**软删** → cascade 不触发，见 §8.4） |
 | `environments` | `target_id` | `targets` | **NOT NULL**；**裸 FK 无 cascade** → 删被引用的目标会 **FK 报错（500）**（见 §9.2） |
 | `environments` | `group_id` | `environment_groups` | 可空（§8；**已落地** 2026-09-22，见 §8.9） |
+| `pipeline_versions` | `pipeline_id` | `pipelines` | 1:N，`(pipeline_id, version)` 唯一（§10.1） |
+| `task_run_logs` | `pipeline_run_id` | `pipeline_runs` | 1:N，日志分片（§10.2） |
+| `rollout_runs` | `task_run_id` | `task_runs` | 1:N，渐进发布历史（§10.3） |
 
 ---
 
@@ -146,7 +149,7 @@ Pipeline  ──1:N──▶  PipelineRun    (pipeline_runs.pipeline_id + target
 
 **方案 A：derive-on-read（读时聚合，不建 `stage_runs`）** —— 当前采用
 - 每次 `GET /runs/:id/stage-progress`（或 `progress`）由 hub 后端按 `StageName` 分组现算阶段 rollup，随响应一并发出。
-- 正方：零额外表、零一致性风险；`task_runs` 已按 `(pipeline_run_id, StageName)` 索引，单次轮询 O(N_tasks)，在现实并发（数十运行、每运行 <100 任务）下可接受；阶段状态永远等于其子任务状态的函数，**无漂移**。
+- 正方：零额外表、零一致性风险；`task_runs` 已有 `pipeline_run_id` 与 `stage_name` **两个单列索引**（`internal/run/models/task_run.go:16,27`，**非复合索引**），单次轮询 O(N_tasks)，在现实并发（数十运行、每运行 <100 任务）下可接受；阶段状态永远等于其子任务状态的函数，**无漂移**。
 - 反方：子任务极多（数百/千）时每次轮询扫全量 task 行，虽有索引仍随规模线性增长；阶段级"开始/结束时间"需从子任务 min/max 推算。
 
 **方案 B：冗余 `stage_runs` 聚合表（建表）**
@@ -169,7 +172,7 @@ Pipeline  ──1:N──▶  PipelineRun    (pipeline_runs.pipeline_id + target
 **钢人结论（已确认：不建 `stage_runs`，用户决策）**
 - **MVP 采用方案 A**：后端在 `Progress`/`stage-progress` 响应里**顺手算好阶段 rollup** 一起下发（一次查询、后端聚合、前端零计算）。
 - **未来若规模迫使必须引入（当前决策为不建），触发条件如下**：① 实测 progress 查询 p95 延迟在真实并发下超预算；或 ② 出现"阶段级操作"需求（暂停/恢复/重跑某一阶段）需要阶段实体身份。届时 `stage_runs` **只能作为派生缓存**——由 `ApplyStatus` 同一事务/路径、从 `task_runs` **重算**（而非增计数）写入，杜绝双真相源漂移。
-- 阶段进展 API：`GET /runs/:id/stage-progress`（见 §6.5）✅ **已落地（2026-09-23）** —— `PipelineRunHandler.StageProgress`（`cmd/hub/main.go` `scoped.GET("/runs/:id/stage-progress")`）在读取时聚合阶段 rollup（`name/sequence/executionMode/status/done/total`），呼应本节的「后端算一次、前端零计算」；`GET /runs/:id/progress` 仍保留为高频轮询端点（返回 `phase + per-task`）。⚠️ 当初「待实现」的陈述已过时。
+- 阶段进展 API：`GET /runs/:id/stage-progress`（见 §6.5）✅ **已落地（2026-09-23）** —— `PipelineRunHandler.StageProgress`（`cmd/hub/main.go` `scoped.GET("/runs/:id/stage-progress")`）在读取时聚合阶段 rollup（`name/sequence/executionMode/status/done/total`），呼应本节的「后端算一次、前端零计算」；`GET /runs/:id/progress` 仍保留为高频轮询端点（返回 `phase + per-task`）。
 
 ### 6.4 DB 表设计变更（本次新增/推荐）
 
@@ -201,8 +204,8 @@ CREATE TABLE stage_runs (
 
 | 方法 & 路径 | 返回 | 说明 |
 | --- | --- | --- |
-| `GET /runs/:id/progress` | `{ run: PipelineRun, tasks: TaskRun[] }` | 现状；高频轮询主入口 |
-| `GET /runs/:id/stage-progress` | `{ run, stages: [{name, sequence, executionMode, status, done, total}] }` | ✅ **已落地（2026-09-23）**（derive-on-read 实现）；后端按 `StageName` 聚合，供 console §7.6 顶部阶段卡；定义漂移（快照名不在定义中）以合成行追加（`sequence=0`） |
+| `GET /runs/:id/progress` | `{ phase, message, tasks: TaskRun[] }` | 现状；高频轮询主入口；**不含 `run` 对象**，仅相位 + 消息 + 任务行（`internal/run/handler/pipeline_run.go` `Progress`） |
+| `GET /runs/:id/stage-progress` | `{ run: {id, phase, message}, stages: [{name, sequence, executionMode, status, done, total}] }` | ✅ **已落地（2026-09-23）**（derive-on-read 实现）；`run` 为**瘦对象**（仅 `id`/`phase`/`message`，非完整 PipelineRun，`StageProgress`）；后端按 `StageName` 聚合，供 console §7.6 顶部阶段卡；定义漂移（快照名不在定义中）以合成行追加（`sequence=0`） |
 
 ### 6.6 运行终态操作：取消与单任务重跑（2026-09-24 落地，实施裁定归档）
 
@@ -220,7 +223,7 @@ CREATE TABLE stage_runs (
 
 ## 7. 授权模型（权限管控 G7；目标态 = 多 org；P1 建表 / P2 审批 / P3 Enforcement 均已落地；**平台级 HTTP 端点 ✅ 已落地（2026-09-22，C-10）**）
 
-> ✅ **当前状态（2026-09-22 更新）**：本节 §7 表 + Enforcement 中间件已落地，**平台级 HTTP 端点也已注册**（`internal/permission/handler/platform_role.go` / `platform_binding.go`；`main.go` 已接线）—— C-10 关闭，平台管理员绑定现在可经 API 配置。两张绑定表同批补上 **`expires_at`**（`migrations/0011`），且 `ListMatching` **排除过期授权** —— §7.4 的「到期回收」不再只是文档承诺（过期行保留供审计，由回收作业另行清理）。仍未做：platform 级路由的**权限守卫**（随 `ACCOUNT-PERMISSION-MODEL.md` §11 步骤 4「中间件重排」收口）、console 侧权限管理 UI。
+> ✅ **当前状态**：本节 §7 表 + Enforcement 中间件已落地，**平台级 HTTP 端点已注册**（`internal/permission/handler/platform_role.go` / `platform_binding.go`；`main.go` 已接线）—— C-10 关闭，平台管理员绑定可经 API 配置。两张绑定表带 **`expires_at`**（`migrations/0011`），且 `ListMatching` **排除过期授权** —— 到期行保留供审计，由回收作业另行清理（§7.4）。仍未做：platform 级路由的**权限守卫**（随 `ACCOUNT-PERMISSION-MODEL.md` §11 步骤 4「中间件重排」收口）、console 侧权限管理 UI。
 
 > 双向钢人论证结论（见 [console 设计文档 §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) / 对话记录）：Keycloak 与 k8s RBAC 均**退到边界**——KC 只做身份+组，k8s RBAC 只管 runner 集群操作；承载"用户对组件能做什么 + 谁能审批"的是 **hub 内的两层 RBAC + 审批表**。这同时满足：① 组件级权限以"管理员/组映射为主"（无运行时自助需求 → 不引入 Keycloak UMA）；② 默认审批人 = 组件 owner/管理员（所有权在 app，见 §7.4）。
 
@@ -241,9 +244,9 @@ CREATE TABLE stage_runs (
 >
 > **实现相位状态（截至 2026-09-14）**：
 > - **P1（已落地）**：§7 全部表建表 + 列 + `org_id` 冗余 + 预置角色（含 `component-admin`）。
-> - **P2（已落地，审批子系统切换 §7）**：`pipeline_approvals` 取代 V1 `approvals`——run 触发时为每个 Approval 子任务 seed `PipelineApproval`（org/component/run 作用域，`requested_by`=触发人）；`Approve` 改为状态机 + **防自审**（`requested_by == approver` 直接拒绝）+ 审计字段；runner 经 `ApproveTaskPayload` 解除 DAG 挂起。见 `internal/run/{repository/approval.go,service/pipeline_run.go}`、`internal/run/models/pipeline_approval.go`。
+> - **P2（已落地）**：审批子系统使用 §7 表——run 触发时为每个 Approval 子任务 seed `PipelineApproval`（org/component/run 作用域，`requested_by`=触发人）；`Approve` 为状态机 + **防自审**（`requested_by == approver` 直接拒绝）+ 审计字段；runner 经 `ApproveTaskPayload` 解除 DAG 挂起。见 `internal/run/{repository/approval.go,service/pipeline_run.go}`、`internal/run/models/pipeline_approval.go`。
 > - **P3（已落地，Enforcement 切 §7 + console）**：
->   - **P3a**：§7 action 枚举成为权威（`internal/permission/models/role.go`），`BindingService` 重写——`ResolveComponentActions` / `HasPermission` / `HasPlatformPermission` 合并 §7 绑定 + owner override + V1 回退；中间件 `rbac.go` 路由判定改用 §7 action（`ActionPipelineTrigger` / `ActionComponentRead` / `ActionApprovalApprove`）；Keycloak `groups` claim 经 `UserContext` 注入（`CurrentGroups`）。
+>   - **P3a**：§7 action 枚举为权威（`internal/permission/models/role.go`）；`BindingService` 的 `ResolveComponentActions` / `HasPermission` / `HasPlatformPermission` 合并 §7 绑定 + owner override + V1 回退；中间件 `rbac.go` 路由判定使用 §7 action（`ActionPipelineTrigger` / `ActionComponentRead` / `ActionApprovalApprove`）；Keycloak `groups` claim 经 `UserContext` 注入（`CurrentGroups`）。
 >   - **P3b**：组件创建自动把 owner 绑 `component-admin`（非致命失败），`Create` 写入 `owner_sub`（= 当前请求的 token `sub`，§5.3）；handler 手写路由、owner 未填时从会话补。见 `internal/component/{service,handler}/component.go`、`internal/permission/handler/binding.go`。
 >   - **P3c**：console `permissions.ts` 切换 §7 `ComponentRoleBinding`（`subjectType` / `subjectId` / `componentRoleId`）+ 新增 hub `GET /component-roles`（`internal/permission/handler/component_role.go`）；`PermissionsTab.vue` 支持 user/group 主体、§7 角色选择器、自审拦截提示。V1 旧行（`userId` / `roleId`）回显兼容。
 > - **遗留（非阻塞）**：V1 `roles` / `approvals` 表与代码路径保留为迁移窗口兼容，**经双向钢人裁定保留不删**（全仓仍有活引用 + DROP 不可逆，真删需用户显式确认）；Keycloak 组目录未由 hub 暴露（console 组名手填，待 `/groups` 接口）。**平台级权限 UI 已落地**（console `PlatformAdminView`，C-10 / T-U7）。
@@ -260,7 +263,7 @@ CREATE TABLE stage_runs (
 
 ### 7.2 平台级角色（platform-level）
 
-- **`platform_roles`**：`(id, name, description, actions[])`，`actions` 为平台级 action 枚举，如 `page:overview:view`、`page:servicetree:view`、`page:settings:view`、`org:manage`、`user:manage`、`component:create`（全局建组件）、`environment:create`。
+- **`platform_roles`**：`(id, name, description, actions[])`，`actions` 为平台级 action 枚举，如 `page:overview:view`、`page:servicetree:view`、`page:settings:view`、`org:manage`、`user:manage`、`component:create`（全局建组件）。（2026-10-08 修正：原列 `environment:create` 不在 §7 action 词汇表 `internal/permission/models/role.go:25-46` 与种子 `cmd/hub/conf/09_rbac_multiorg.sql` 中，已删。）
 - **`platform_role_bindings`**：`(id, subject_type[user|group], subject_id, platform_role_id)`。`subject_type=group` 由 Keycloak `groups` claim 登录时自动解析（hub 把 KC group → platform_role 映射灌入会话/ token）。
 - **映射机制**：hub 配置 `keycloak_group → platform_role`（如 `sdp-admin` → 全部 actions；`sdp-viewer` → 仅 `*:view`）。Enforcement 见 §7.5。
 - **颗粒度**：平台级只到"页面/全局动作"粒度，不细分单个组件。
@@ -273,7 +276,7 @@ CREATE TABLE stage_runs (
   - `component:read` / `component:update` / `component:delete`
   - `pipeline:read` / `pipeline:create` / `pipeline:update` / `pipeline:delete` / `pipeline:trigger`
   - `config:read` / `config:update`
-  - `artifact:read` / `artifact:download` / `artifact:delete`
+  - `artifact:read` / `artifact:download`（2026-10-08 修正：原列 `artifact:delete` 不在 §7 action 词汇表 `internal/permission/models/role.go:25-46` 与预置角色种子里，已删）
   - `approval:approve`（仅 approver 持有）
   - 预置四种角色（built-in，`org_id IS NULL`，见 `cmd/hub/conf/09_rbac_multiorg.sql`）：`component-viewer`(read 类)、`component-editor`(read+update+trigger+create/delete pipeline+config)、`component-approver`(+`approval:approve`)、`component-admin`(+ **全部组件动作**，含 `approval:approve` 与 `component:manage`；创建组件的 owner 自动绑定此角色，见 §7.4)。
 - **`component_role_bindings`**：`(id, component_id, subject_type[user|group], subject_id, component_role_id)`。同一组件可多绑定；`subject_type=group` 复用 KC 组。
@@ -303,7 +306,7 @@ hub 在 API 网关/中间件层统一鉴权：
 3. 按路由判定所需 action（如 `POST /components/:id/pipelines` → `pipeline:create@component_id`），校验是否在有效 action 集内；否 → `403`。
 4. Approval 类端点额外校验 `approval:approve` 且申请人 ≠ 审批人（防自审）。
 
-- **已实现（P3a）**：上述校验在 hub 路由/中间件层落地——`BindingService.HasPermission` 合并 §7 绑定 + owner override + V1 回退；路由判定改用 §7 action（`ActionPipelineTrigger` / `ActionComponentRead` / `ActionApprovalApprove`）；Keycloak `groups` claim 经 `UserContext` 注入并参与绑定解析（见 §7 实现相位状态 P3a）。
+- **已实现（P3a）**：上述校验在 hub 路由/中间件层——`BindingService.HasPermission` 合并 §7 绑定 + owner override + V1 回退；路由判定使用 §7 action（`ActionPipelineTrigger` / `ActionComponentRead` / `ActionApprovalApprove`）；Keycloak `groups` claim 经 `UserContext` 注入并参与绑定解析（见 §7 实现相位状态 P3a）。
 
 ### 7.6 开源参考映射
 
@@ -315,7 +318,12 @@ hub 在 API 网关/中间件层统一鉴权：
 | 选谁审 / 通过拒绝 / 防自审 | **GitHub Environments / GitLab Protected Environments / Spinnaker Manual Judgment** | 审批=独立门禁节点；required reviewers + 防自审 + wait timer |
 | 动态策略（可选） | **OPA / Casbin** | 未来"仅工作时间可发布生产"等用策略引擎，**不在本期**（D4 判定 = 「延后 + 登记」；触发条件与引入时的硬约束见 [hub/STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md) **B-19**，边界见 [shared/ACCOUNT-PERMISSION-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCOUNT-PERMISSION-MODEL.md) §5.2） |
 
-### 7.7 表结构（DDL，与 AutoMigrate 同步已实现）
+### 7.7 表结构（⚠️ 以下 DDL 为**示意**，SSOT = AutoMigrate 模型；2026-10-08 修正）
+
+> 原标题「DDL，与 AutoMigrate 同步已实现」不成立，三处以模型为准（`internal/permission/models/`）：
+> 1. `actions` 实为 `datatypes.JSON`（Postgres `jsonb`；`platform_role.go:22`、`component_role.go:32`），**非 `TEXT[]`**；
+> 2. 两张绑定表**无 UNIQUE 约束**——仅普通索引（`component_role_bindings`：`component_id` / `org_id` / `component_role_id` 单列索引；`platform_role_bindings`：`(subject_type, subject_id)` 复合索引 + `expires_at` 索引），防重由**服务层 `ExistsActive`** 承担（`internal/permission/repository/platform_role_binding.go:105`）；
+> 3. `subject_type` 与 `pipeline_approvals.status` 的 **CHECK 约束未落**（`pipeline_approval.go:20` 仅以注释枚举取值）。
 
 ```sql
 -- 平台级
@@ -346,8 +354,8 @@ CREATE TABLE component_role_bindings (
   -- §7 主体模型（P3）：subject_type/subject_id + component_role_id
   subject_type TEXT CHECK (subject_type IN ('user','group')),
   subject_id TEXT, component_role_id UUID REFERENCES component_roles(id),
-  -- D3（2026-09-23，迁移 0015）已删除 V1 兼容列 user_id / role_id，
-  -- 以及它们指向的本地 `users` 表：hub 不存用户身份（§2.2），主体只有 `sub` 一条路。
+  -- 无 V1 兼容列 user_id / role_id，也无本地 `users` 表（D3，迁移 0015）：
+  -- hub 不存用户身份（§2.2），主体只有 `sub` 一条路。
   granted_by TEXT, granted_at TIMESTAMPTZ NOT NULL DEFAULT now(), expires_at TIMESTAMPTZ,
   UNIQUE (component_id, org_id, subject_type, subject_id, component_role_id)
 );
@@ -437,7 +445,7 @@ environment_groups ──1:N──▶ environments  (environments.group_id，可
 
 | 决策 | 结论 | 对本章的影响 |
 | --- | --- | --- |
-| 删环境 / 删组件时，**集群侧**已部署资源是否回收 | **不回收**（**平台侧与目标侧生命周期解耦**：无论走哪条接入通道，删除平台记录都**不回收目标侧资源**，避免误伤生产） | §8.4「删环境」行**不再涉及集群侧**；删环境只处理**平台侧**（DB 行 + 审计） |
+| 删环境 / 删组件时，**集群侧**已部署资源是否回收 | **不回收**（**平台侧与目标侧生命周期解耦**：无论走哪条接入通道，删除平台记录都**不回收目标侧资源**，避免误伤生产） | §8.4「删环境」行只处理**平台侧**（DB 行 + 审计），不涉及集群侧 |
 | 「残留」的定义 | **只指平台侧**遗留（DB 行 / 对象存储对象 / 配置与审计） | §8.4「删组件」行的"分组应随之消失"须**服务层显式级联**（组件软删，DB `ON DELETE CASCADE` 不触发）；集群侧不计入残留 |
 | `component_config_history.environment_id` | **去 FK + 加 `environment_key` 快照列**（优于单纯 `ON DELETE SET NULL`） | §8.4「删环境」的"删除前须告知配置覆盖行数"**仍然成立**；同时消除"删环境随机 500"（现状：`component_configs` 是 cascade、`config_history` 是 `NO ACTION`，同一操作两种结果） |
 | `pipeline_stages` / `pipeline_task_templates` | **补 `deleted_at`** + **封父存在性校验** + **修 `pipelines` 唯一约束** | 与本章无直接耦合，记录于 `DELETE-CONTRACT.md` §6.6-3（B-15）。**(a)(b)(c) 已于 2026-09-16 落地；(d) `deleted_at` + 活行唯一 + stage 级联软删已于 2026-09-22 落地**（见 §8.9） |
@@ -446,7 +454,7 @@ environment_groups ──1:N──▶ environments  (environments.group_id，可
 | Artifact 域内级联软删 | **仍未做** —— 删 org→service→component→pipeline 时的制品/对象处理 | `DELETE-CONTRACT.md` §6.4（B-16 最后一项） |
 
 **未变（仍然有效）**：
-- §8.2 的 DDL 方案（新表 `environment_groups` + `environments.group_id` **可空**）；
+- §8.2 的 DDL 方案（新表 `environment_groups` + `environments.group_id` **可空**）——⚠️ **仅方向有效**（2026-10-08 修正）：落地模型为 `Name` / `Description` / `OrderIndex`（`internal/environmentgroup/models/environment_group.go:12-18`），**无** §8.2 DDL 中的 `key` 列、`(component_id, key)` 唯一约束与 `display_order`（排序列为 `order_index`），§8.2 DDL 仅作历史示意；
 - §8.4 的"组内有环境则 `409 + {reasons}` 拒绝 / 组内空则允许硬删"；
 - §8.5 的 `env_type`（平台策略标记）与分组**正交，不合并**；
 - §8.6 的折叠状态**不落库**（用户级 UI 偏好）。
@@ -522,7 +530,9 @@ environment_groups ──1:N──▶ environments  (environments.group_id，可
 | `vendor` / `region` | varchar | `aliyun` / `tencent` / `aws` / `self-hosted` …；**多厂商、多 region 是设计前提** |
 | `status` | varchar(32) | `online` / `offline`，由网关连接 / 断开触发 `Heartbeat` 翻转 |
 | `agent_version` / `last_heartbeat_at` | | Runner 版本与心跳 |
-| （无其他列） | | **本表刻意不含任何凭据列**：无 kubeconfig、无 kube-apiserver 地址、无 SSH |
+| `target_kind` | varchar(16) not null default `k8s` | 目标类型判别列：`k8s` / `host`（§9.5 / §9.7，2026-09-23 落地；`target/models/target.go:17`） |
+| `enroll_token` / `enroll_token_expire_at` | 可空 | 一次性引导令牌及其过期时间（`POST /targets/:id/enroll-token` 签发，24h；json 序列化恒为 `-`，**永不回显给客户端**，`target.go:23-26`） |
+| （其余列） | | 除上列外**本表不含任何连接凭据列**：无 kubeconfig、无 kube-apiserver 地址、无 SSH（直连凭据落 `credentials` 表，§9.7；`enroll_token` 是一次性引导令牌，非连接凭据） |
 
 **为什么没有凭据列——执行方向决定的**：在 `agent` 通道下，平台**从不入站访问目标**（⚠️ **直连通道 `kubeconfig` / `ssh` 例外** —— hub 侧发起连接并持有目标凭据，见 §9.5）。
 
@@ -575,8 +585,8 @@ targets ──1:N──▶ environments   (environments.target_id，NOT NULL)
 | 通道 `access` | 目标类型 | 发起方 | 凭据归属 | 今天是否存在 |
 | --- | --- | --- | --- | --- |
 | `agent` | `k8s` | 目标集群内 Runner **出站回连** | 目标侧（Runner 持 `GATEWAY_TOKEN`）；**hub 零凭据** | ✅ 已实现（§9.1） |
-| `kubeconfig` | `k8s` | **hub 出站**直连 apiserver | **hub 侧** | ❌ hub 零 `client-go`、零出站代码 |
-| `ssh` | `host` | **hub 出站**直连主机 | **hub 侧** | ❌ 全仓零 SSH 代码 |
+| `kubeconfig` | `k8s` | **hub 出站**直连 apiserver | **hub 侧** | ⚠️ **模型与凭据层已落地（2026-09-23）**：`targets.target_kind`、`credentials` 表（AES-GCM 信封加密）、`environments.access=kubeconfig` 均入 AutoMigrate；hub 仍零 `client-go`，直连**执行**由 runner 承担（exec 路径，见上 `agent_ops` 一节） |
+| `ssh` | `host` | **hub 出站**直连主机 | **hub 侧** | ⚠️ **仅模型层落地**：`environments.access=ssh`、`credentials` 表与 `EnvAccessConfig.SSH*` 已落；**SSH 直连拨号未做** |
 
 > **裁决要点**（2026-09-21 用户澄清）：`kubeconfig` / `ssh` 都是 **hub 侧发起连接**，**不是给 Runner 用**；发布目标与归档机器**都可能是非 K8s 的**，平台须覆盖非容器环境的「连接 / 测试 / 发布 / 执行命令」全链路。前端形态见 console §7.12。
 
@@ -625,17 +635,17 @@ exec 的两条执行路径（runner `internal/agentops`）：`agent` access 用 
 - 删目标前置校验：存在引用它的 `environments` → `409 + {reasons}`（现状 500，属缺口修复）。
 - 单测：单机版拓扑下建环境（`target_id` 指向自身所在集群）可正常创建与触发运行。
 
-### 9.7 非容器目标与直连通道的承载（**形状已定，表结构待补**）
+### 9.7 非容器目标与直连通道的承载（✅ **表结构已落地（2026-09-23）**；下列形状约定为历史记录，落地形状以本段为准）
 
-> 本节是**问题登记 + 形状约定**，不是已实现的表设计。真正的表须在立项后按 §5 维护约定走迁移。
+> **落地现状（2026-10-08 更新）**：`targets` 加 `target_kind` 判别列（`k8s` / `host`，default `k8s`，`internal/target/models/target.go:17`）；直连凭据落独立 `credentials` 表（AES-GCM 信封加密，`internal/credentials/codec`，入 AutoMigrate `db.go:92`）；`environments.access` 枚举 `agent` / `kubeconfig` / `ssh`（`internal/environment/models/environment.go:31`），非密配置落 `EnvAccessConfig`（JSON 序列化列，`KubeCredRef` / `SSHSecretRef` 指向 `credentials` 行，`environment.go:40,57-59`）。仅 **SSH 直连拨号**未做（§9.5 矩阵）。
 
 **为什么需要扩表**：`environments.target_id` 是 **NOT NULL FK**（§9.2），而 `host` 目标**根本没有目标行**——现有模型**表达不出**非容器环境。且同时还要装直连凭据，不是"加个可空列"能了事的。
 
 **形状约定**（三条，后续立项须遵守）
 
-1. **`targets` 的语义仍是窄的**：现表只覆盖 `k8s` + `agent` 目标（§9.1），保持窄语义**不变**；`kubeconfig` 目标与 `host` 目标需要**扩表**——加 `targetKind` 判别列并承载 `credentialRef`。
-2. **凭据加密落库（2026-09-23 已定，Task #7）**：`credentials` 表直接存凭据值，但经 **AES-GCM 信封加密**（`internal/credentials/codec`，`CREDENTIAL_ENCRYPTION_KEY` 缺失时 dev 明文兼容 legacy），**明文不进 DB、API 只回显 `xxxSet: bool`**。⚠️ 与原「只存 `credentialRef`、物理位置指向 hub K8s Secret / 外部 Vault」铁律**已偏离**——因本库 P0 拓扑无独立 secret manager，引用名方案无法落地，双向钢人裁定改为加密落库（见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §16.4）。
-3. **`environments` 的引用要放宽**：`target_id` NOT NULL 须改为**多态引用**（`target_kind` + `target_id`）或"新增可空列 + 恰有其一"约束。**这是破坏性 schema 变更**（现存行都走 `k8s` + `agent` 分支），迁移前须备份。
+1. **`targets` 的语义仍是窄的** → **已按「加判别列」方向落地（2026-09-23）**：`targets.target_kind` 判别列已加（`k8s` / `host`，default `k8s`），`host` 目标同表承载；凭据不以列挂 `targets`，统一落 `credentials` 表（原 `credentialRef` 设想由 `environments.access_config` 的 `KubeCredRef` / `SSHSecretRef` 承担）。
+2. **凭据加密落库（Task #7）**：`credentials` 表直接存凭据值，但经 **AES-GCM 信封加密**（`internal/credentials/codec`，`CREDENTIAL_ENCRYPTION_KEY` 缺失时 dev 明文兼容 legacy），**明文不进 DB、API 只回显 `xxxSet: bool`**。不走「只存 `credentialRef`、指向 hub K8s Secret / 外部 Vault」的引用名方案——本库 P0 拓扑无独立 secret manager，引用名无法落地（裁定见 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §16.4）。
+3. **`environments` 的引用**：实际落地**未走多态引用**——`target_id` 仍为 NOT NULL FK 指向 `targets` 单行（§9.2 不变），`host` 目标在 `targets` 表内有行（`target_kind='host'`），通道由 `environments.access` 区分，无需破坏性 schema 变更。原「`target_kind` + `target_id` 多态引用」设想**未采纳**。
 
 **已明确、不再讨论的边界**
 
@@ -681,7 +691,7 @@ exec 的两条执行路径（runner `internal/agentops`）：`agent` access 用 
 **落地前置（三个，缺一不可）**
 
 1. `Target.AgentVersion` 要有**写入点**（runner 在握手 / 心跳里上报版本）。
-2. **per-target 凭据 / 身份**：现网关 `GATEWAY_TOKEN` 是**全局共享**（§9.1），无法给新装 runner 单独发身份；`POST /targets/:id/enroll-token` 目前**只存在于原型**。
+2. **per-target 凭据 / 身份**：现网关 `GATEWAY_TOKEN` 是**全局共享**（§9.1），无法给新装 runner 单独发身份。✅ **`POST /targets/:id/enroll-token` 已落地（2026-09-23）**：`target/handler/target.go:36` 注册路由、`target/service/target.go` `GenerateEnrollToken`（:91-104）签发一次性令牌（24h 过期，落 `targets.enroll_token` / `enroll_token_expire_at`，明文仅回显一次）。
 3. hub 需引入 **k8s 客户端能力**（现 `go.mod` 里 `k8s.io/*` 全是 `// indirect`、代码内零 `clientcmd` / `rest.Config`）——这是**控制面边界扩张**，已随本裁定一并批准。
 
 ### 9.10 版本矩阵（`package-versions` ConfigMap，**2026-09-21 二次裁定**）
@@ -742,7 +752,7 @@ exec 的两条执行路径（runner `internal/agentops`）：`agent` access 用 
 | ① 事实源（人工） | hub 仓 `build/hub/versions.yaml` | 三组件配套版本的**唯一人工填写点**。三仓各自独立 release（tag 互不知情），配套关系必须显式写下来 |
 | ② 版本检查 | `build/hub/build.sh` → `resolve_versions()` | 清单缺失 / **任一键为空或非法 SemVer** → **构建失败**（带人话提示）；带 `-r1` 这类后缀 → 构建日志给 **NOTE**（非致命，提示其 SemVer 语义，见下）；`hub` 键 ≠ 本次 tag → **告警**（以 tag 为准）。console / runner 键按清单取值 |
 | ③ 渲染 | `build/hub/build.sh` → `render_chart_version()` + `render_package_versions()` | 把 tag 与清单值写进**交付包内的 chart 副本**（`output/charts/...`）；**不动仓内源文件**（源文件仍是模板基线 `v0.0.1`） |
-| ④ 载体 | chart `templates/configmap-package-versions.yaml` + `values.yaml` 的 `packageVersions:` 段 | 渲染出 CM `package-versions`。**不写 `metadata.namespace`**——命名空间内资源一律由 helm 的 release namespace 决定（与本仓 Deployment / Service / PVC 及 console 两个 CM 同约定；全仓仅 runner `rbac.yaml` 显式写，因其为集群级资源 / 跨命名空间引用）。写死 `{{ .Release.Namespace }}` 会让 `helm template`（未带 `-n`）把 CM 渲染进 `default`，而 Deployment 无 namespace → `kubectl apply -n <ns>` 时两者分离，`configMapKeyRef` 解析失败 |
+| ④ 载体 | chart `templates/configmap-package-versions.yaml` + `values.yaml` 的 `packageVersions:` 段 | 渲染出 CM `package-versions`。**写入 `metadata.namespace`**（取 `{{ .Values.namespace }}`，默认 `sdp-workflow`）：所有名字空间内资源（Deployment / Service / PVC / 本 CM 及 console 两个 CM）统一注入 `metadata.namespace`，使 `helm template`（未带 `-n`）与 `kubectl apply -n <ns>` 渲染结果一致、`configMapKeyRef` 同 ns 解析正常（证据：`configmap-package-versions.yaml` 头部注释）。 |
 | ⑤ 消费 | `templates/deployment-hub.yaml` → env `PACKAGE_VERSION_{CONSOLE,HUB,RUNNER}` | hub 端点 `GET /package-versions` ✅ **已落地（2026-09-23，`internal/packageversion`）**，env 已就位 |
 | ⑥ 触发 | `.github/workflows/release.yml`（GitHub Release published → `build.sh <tag>`） | **钩子已存在**，本次未新增流程 |
 
@@ -759,3 +769,98 @@ exec 的两条执行路径（runner `internal/agentops`）：`agent` access 用 
 **同批修掉的既有缺口**：三仓 `build.sh` 此前只把 `version` 用在 `-ldflags` / 镜像 tag / 交付包文件名三处，**chart 内 `values.yaml` 的 `imageAddr` 与 `Chart.yaml` 的 `version` 是硬编码 `v0.0.1`** —— 发 `v0.0.2` 的包，`helm install` 仍指向 `v0.0.1` 镜像（拉不到 / 装错版本）。现三仓 `build.sh` 均加 `render_chart_version()` 一并修正，已用 `helm template` 验证渲染出的 `image:` 随 tag 走。
 
 **后续可选**（未做）：CI 侧增加"被引用的 runner / console tag 是否真实存在"的**一致性校验**（需 GitHub API 查询）。**边界**：这只能是**校验**，**不得**演化为"自动取各仓最新 tag 填进 CM"——配套关系是人工发布决定（见上表"谁维护"）。
+
+---
+
+## 10. 补录表（AutoMigrate 清单中此前未收录的表；2026-10-08 按模型结构体补记）
+
+> SSOT = `internal/db/db.go:83-105` 的 AutoMigrate 清单。本节补录 §1–§9 未覆盖的 7 张表，字段以各 model 结构体为准（非 DDL 推测）。
+
+### 10.1 `pipeline_versions`（`internal/pipeline/models/version.go:19`；迁移 `0013`）
+
+流水线定义的**不可变快照**：每次结构性编辑保存时捕获 stages+tasks 全量，镜像触发时物化进 `runnerapi.PipelineRunSpec.Tasks[]` 的内容。
+
+| 列 | 类型 | 说明 |
+| --- | --- | --- |
+| `pipeline_id` | uuid not null, index | 父流水线（FK 语义，§4） |
+| `version` | int not null | 递增版本号；`(pipeline_id, version)` 唯一（`idx_pipeline_versions_pipeline_version`） |
+| `snapshot` | jsonb not null | 快照体（`Snapshot` = pipeline 元信息 + stages/tasks 全保真副本；JSON 列以 `json.RawMessage` 存原字节，保证回滚还原原样） |
+| `created_by` | varchar(128) | 触发保存的主体 |
+| `created_at` | timestamptz | — |
+
+### 10.2 `task_run_logs`（`internal/run/models/task_run_log.go:18`）
+
+Runner 经 `MessageLogChunk` 流式回传的**日志分片**，hub 落库持久化（Runner Pod 消失后日志仍可查），是 `GET /runs/:id/tasks/:name/log` 的查询源。
+
+| 列 | 类型 | 说明 |
+| --- | --- | --- |
+| `pipeline_run_id` | uuid not null, index | 所属运行 |
+| `task_name` | varchar(128) not null, index | 任务名；run 级输出用伪桶 `__run__`（`RunLevelLogBucket`） |
+| `stream` | varchar(16) | `stdout` / `stderr` |
+| `chunk` | text not null | 日志分片内容 |
+| `created_at` | timestamptz | 排序键 = `(created_at, id)` 保序（Runner 单 WS 连接按序推流，无需显式 seq） |
+
+### 10.3 `rollout_runs`（`internal/run/models/rollout_run.go:13`）
+
+Deploy 型 TaskRun 的**渐进发布历史**，供 console 展示金丝雀权重随时间的变化。
+
+| 列 | 类型 | 说明 |
+| --- | --- | --- |
+| `task_run_id` | uuid not null, index | 所属 TaskRun（§4） |
+| `workload_ref` | varchar(256) not null | 工作负载引用 |
+| `phase` | varchar(32) not null default `Progressing` | Rollout 相位 |
+| `current_step_index` / `current_weight` | int not null default 0 | 当前步进 / 权重 |
+| `start_time` / `completion_time` | timestamptz 可空 | 起止时间 |
+
+### 10.4 `resource_ownership`（`internal/permission/models/resource_ownership.go:20`；迁移 `0012`）
+
+资源归属**权威源**（ACCOUNT-PERMISSION-MODEL §3）；`component_role_bindings.org_id` 冗余列降级为派生缓存（可重建、不可手改）。
+
+| 列 | 类型 | 说明 |
+| --- | --- | --- |
+| `resource_type` | varchar(32) not null, index | 资源类型 |
+| `resource_id` | uuid not null, index | 资源 id；`(resource_type, resource_id)` 唯一（单属主 + 共享集，`0012` DDL 唯一索引） |
+| `owner_org` | uuid, index | 属主 org |
+| `allowed_orgs` | jsonb | 共享 org 集 |
+| `created_at` | timestamptz | — |
+
+### 10.5 `role_api_mappings`（`internal/permission/models/role_api_mapping.go:14`；迁移 `0012`）
+
+「角色 → 接口」映射落表（ACCOUNT-PERMISSION-MODEL §5.1③），让某角色能打哪些接口可被独立审阅与对账，而不是散在路由注册语句里。
+
+| 列 | 类型 | 说明 |
+| --- | --- | --- |
+| `role_kind` | varchar(16) not null, index | `platform` / `component`（CHECK 落在 `0012` DDL） |
+| `role_id` | uuid not null, index | 角色行 id |
+| `action` | varchar(64) not null | action；`(role_kind, role_id, action)` 唯一（`0012` DDL 唯一索引） |
+| `description` | text | — |
+
+### 10.6 `audit_log`（`internal/permission/models/audit_log.go:13`；迁移 `0012`）
+
+写操作审计**单表**（ACCOUNT-PERMISSION-MODEL §6），由审计中间件统一写、业务零手写；写失败降级为告警，不阻塞操作。
+
+| 列 | 类型 | 说明 |
+| --- | --- | --- |
+| `timestamp` | timestamptz not null, index | 事件时间 |
+| `subject_type` / `subject` | varchar(16) / varchar(128) index | 主体（`sub` 或 `/group`） |
+| `roles` | varchar(512) | 逗号连接的有效 action 集（供快速审阅） |
+| `source_ip` | varchar(64) | 来源 IP |
+| `action` | varchar(64) index | 如 `component:create` |
+| `resource_type` / `resource_id` | varchar(32) / varchar(64) index | 目标资源 |
+| `result` / `status_code` | varchar(16)（`success`/`failure`） / int | 结果与 HTTP 状态码 |
+| `detail` | text | 补充信息 |
+
+### 10.7 `permission_requests`（`internal/permission/models/permission_request.go:15`；迁移 `0012`）
+
+权限申请审批流（ACCOUNT-PERMISSION-MODEL §7.2）；与 `pipeline_approvals` 是**两件事**（后者是流水线审批门），两模块只通过数据对接、无函数调用——审批通过经权限服务写一条带 `expires_at` 的绑定。
+
+| 列 | 类型 | 说明 |
+| --- | --- | --- |
+| `requester` | varchar(128) not null, index | 申请人（Keycloak `sub`） |
+| `requested_role_id` / `requested_role_kind` | uuid not null index / varchar(16) not null | 申请的角色（`platform` / `component`，CHECK 落在 `0012` DDL） |
+| `requested_resource_type` / `requested_resource_id` | varchar(32) / uuid | 资源范围（nil = 平台级） |
+| `reason` | text not null | 申请理由 |
+| `approver` | varchar(128) | 审批人 |
+| `status` | varchar(16) not null default `Pending` | `Pending` / `Approved` / `Rejected`（CHECK 落在 `0012` DDL） |
+| `effective_at` / `expires_at` | timestamptz 可空 | 生效 / 过期时间 |
+| `created_at` / `decided_at` | timestamptz | 申请 / 决策时间 |

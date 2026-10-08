@@ -14,11 +14,11 @@
   - `Serial`（✅ **调度已落地（2026-09-23，C-06）**）：hub `buildSpec` 在同阶段子任务间按序推导「紧邻前驱」`DependsOn` 链，严格先后（调用方手写 `DependsOn` 优先）；runner `serialBlocked()` 消费；
   - **阶段完成条件**：该阶段所有子任务 `Succeeded` 或 `Skipped` 即视为完成；任一 `Failed` 且不可重试 → 阶段失败，下游不调度（DAG `Skipped`）。
 - **数据与执行解耦（推送模型，已确认）**：触发 `POST /pipelines/:id/runs` 时 hub 先把"任务落实到数据库"（`pipeline_runs` + 按 DAG 种子的 `task_runs` + `dispatch_jobs`），再把整份已解析 spec 经 WebSocket **推送**给目标环境 runner；runner 在集群内建 CRD 执行，**不直连 hub DB**，状态经 WS `status_update` 流回 hub 写回 `task_runs`。详见 [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) §6 / [runner STORY](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md) §4.3。
-- **原型对应**：编排页阶段卡可前后移动（重排 `sequence`）、阶段内子任务可上下移动（重排 `displayOrder`）、阶段头 `executionMode` 一键在 并行/串行 间切换（原静态「并行 ▾」已改为可点击切换）。
+- **原型对应**：编排页阶段卡可前后移动（重排 `sequence`）、阶段内子任务可上下移动（重排 `displayOrder`）、阶段头 `executionMode` 一键在 并行/串行 间切换（非静态展示，可点击切换）。
 
 ### 6.1 流水线 CRUD 全流程（P5，本次重设计重点）
 
-> **删除逻辑统一原则（v4.3 / v4.5）**：**所有删除操作（服务树节点 + 流水线）判定权威唯一在后端**，前端只触发 `DELETE` + 渲染后端 `409 + {reasons}` verdict，不持有任何数据判断逻辑。级联校验在 `DELETE` 事务内原子完成。服务树见 附 C / N-15；流水线见本节 D1 与 N-5。
+> **删除逻辑统一原则**：**所有删除操作（服务树节点 + 流水线）判定权威唯一在后端**，前端只触发 `DELETE` + 渲染后端 `409 + {reasons}` verdict，不持有任何数据判断逻辑。级联校验在 `DELETE` 事务内原子完成。服务树见 附 C / N-15；流水线见本节 D1 与 N-5。
 
 **正向主干**
 
@@ -30,9 +30,9 @@
 | C4 提交 | 编排完成「保存」→ 弹出**请求体预览**（JSON / YAML 可切换）→ 发送到 hub | `PUT /pipelines/:id`（已存在）或 `POST /pipelines`（新建） | ✅ **已落地（2026-09-22）**：保存前弹 JSON / YAML 双视图，并**如实标注实际调用序列**（hub 无整 DAG 端点，见 附 H.3） |
 | E1 编辑元信息 | 详情头部「编辑」→ 改名称/描述 → 保存 | `PUT /pipelines/:id` | ✅ **已落地（2026-09-22）** |
 | E2 编辑结构 | 加阶段/任务、改任务、删阶段/任务 | `POST/PUT/DELETE`（stage/task） | ✅ **已落地（2026-09-22）**：**已放开 `kind` 限制**，三种取值均可编排 |
-| D1 删除 | 列表行内/头部「删除」→ **强确认（输入名称）→ `DELETE` → 后端级联校验**；有残留（进行中 / 待审批运行）则 `409 + {reasons}`，前端渲染"无法删除"弹窗——**前端不预先计算影响面**（判定权威唯一在后端，与服务树删除同原则，见 附 C / N-15） | `DELETE /pipelines/:id` | ✅ **已落地（2026-09-22）**：前端强确认 + 渲染 verdict；后端级联校验见 `shared/DELETE-CONTRACT.md` §4 |
+| D1 删除 | 列表行内/头部「删除」→ **强确认（输入名称）→ `DELETE` → 后端级联校验**；有残留（进行中 / 待审批运行）则 `409 + {reasons}`，前端渲染"无法删除"弹窗——**前端不预先计算影响面**（判定权威唯一在后端，与服务树删除同原则，见 附 C / N-15） | `DELETE /pipelines/:id` | ✅ **已落地**：前端强确认 + 渲染 verdict；后端级联校验见 `shared/DELETE-CONTRACT.md` §2 |
 
-**异常分支（前端只渲染后端 verdict — 与 v4.3 服务树删除同一契约，见 附 C）**
+**异常分支（前端只渲染后端 verdict — 与服务树删除同一契约，见 附 C）**
 
 | 异常 | 触发 | 后端行为（DELETE 事务内判定） | 前端渲染 |
 | --- | --- | --- | --- |
@@ -43,7 +43,7 @@
 | 保存校验失败 | 阶段无任务 / 任务必填缺失 / Release 无 chart 且无 manifest | 行内错误定位到具体阶段/任务，不阻断其他编辑 | 修正后重存 |
 | 无权限 | 缺 `pipeline:*` | 按钮禁用 + hover 提示所需权限（见 §7.9） | 申请 role-binding |
 
-**关键策略**（2026-09-22 已定）：删除语义 = **软删 + 保留历史运行**；**进行中 / 待审批运行一律拒绝删除，不级联终止**；`version` 随结构更新 +1。权威契约见 `shared/DELETE-CONTRACT.md` §4。
+**关键策略**：删除语义 = **软删 + 保留历史运行**；**进行中 / 待审批运行一律拒绝删除，不级联终止**；`version` 随结构更新 +1。权威契约见 `shared/DELETE-CONTRACT.md` §2。
 
 ### 6.2 异常分支（子任务 → 阶段 → 运行 三级）
 
@@ -58,7 +58,7 @@
 | 审批拒绝 | 审批人 `Rejected` | Approval 任务 `Failed` | 阶段 `Failed` | `Failed` | 修正后重跑该 Approval 阶段 |
 
 > 权限相关分支已由 **§7 Enforcement**（P3a 落地）实现：生产环境强制审批 + 组件级 role-bindings + 防自审，详见 [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)。
-> 流水线**删除**类异常（新，v4.5）见 §6.1 的异常分支表。
+> 流水线**删除**类异常见 §6.1 的异常分支表。
 
 ### 6.3 用户旅程（正向主干）
 
@@ -76,9 +76,9 @@
 
 Dashboard「待办」区三段，每段一个 CTA（深链形态与 §7.6 的视图 URL 契约一致）：
 
-1. **待我审批** `n` → `/runs?view=runs&filter=waiting`（"待我"这层身份过滤需附 A N-2 的 `assignee=me`，未落地前退化为全部待审批）；
-2. **失败运行** `n`（近 24h）→ `/runs?view=runs&filter=failed`（近 24h 这个时间窗需 N-1 端点加参数）；
-3. **暂停的灰度** `n` → `/runs?view=releases&filter=paused`（原型 `todoCard` 的 `data-nav="runs" data-run-tab="releases"`；**注意**：`paused` 这个发布筛选的后端支持见 §7.6 与附 A N-3）。
+1. **待我审批** `n` → `/runs?view=runs&phase=WaitingApproval`（"待我"这层身份过滤需附 A N-2 的 `assignee=me`，未落地前退化为全部待审批）；
+2. **失败运行** `n`（近 24h）→ `/runs?view=runs&phase=Failed`（近 24h 这个时间窗需 N-1 端点加参数）；
+3. **暂停的灰度** `n` → `/runs?view=releases&phase=paused`（原型 `todoCard` 的 `data-nav="runs" data-run-tab="releases"`；**注意**：`paused` 这个发布筛选的后端支持见 §7.6 与附 A N-3，且实现版不渲染该筛选项，深链值会被丢弃）。
 
 > 原型实测：三张待办卡、KPI 四张（今日运行 / 成功率 / 运行中 / 在线目标，其中"在线目标"可点直达接入管理页）、「最近运行」表 3 行（列：流水线 / 流水线ID / 组件 / 触发人 / 状态 / 耗时 / 开始时间）+「查看全部 42 条 →」。
 

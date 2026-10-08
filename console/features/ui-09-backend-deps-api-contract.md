@@ -8,21 +8,21 @@
 
 | # | 项 | 类型 | 说明 |
 | --- | --- | --- | --- |
-| N-1 | 全局运行聚合端点 | **已落地** | `GET /runs` 已存在（hub `cmd/hub/main.go` 的 `scoped.GET("/runs", pipelineRunHandler.ListAll)`，service/repo 按 `created_at desc` 排序，支持 `page/pageSize/phase` 精确匹配）。仍未支持 `assignee`（N-2）与时间窗过滤 |
+| N-1 | 全局运行聚合端点 | **已落地** | `GET /runs` 已存在（hub `cmd/hub/main.go` 的 `scoped.GET("/runs", pipelineRunHandler.ListAll)`，service/repo 按 `created_at desc` 排序，支持 `page/pageSize/phase` 精确匹配）。**【2026-10-08 更新】时间窗过滤已落地**：`?createdAfter=`（RFC3339，hub `run/handler/pipeline_run.go:139-147`）；仍未支持 `assignee`（N-2） |
 | N-2 | 待我审批端点 | 【后端依赖】 | 建议 `GET /runs?filter=awaiting_me` 或在 N-1 内加 `assignee=me&phase=WaitingApproval`。当前只能筛到 `phase=WaitingApproval`（"待我"这层身份过滤未实现）——**因此运行视图的「待我审批」筛选项目前名不符实** |
-| N-3 | 跨组件发布列表 + 全局流水线端点 | **部分落地 / 部分消解** | hub 现已暴露全局 `GET /pipelines`（列表）与完整 `/releases` CRUD（`POST`/`GET`/`GET/:id`/`PUT`/`DELETE`）。**v4.4 后"全局流水线列表"不再有消费面**（流水线列表归组件「交付」）；发布视图在**设计层面**可直接走后端全局端点，不再依赖前端聚合兜底（**实现版仍走扫描 + kind 聚合** —— console 侧尚无 `releaseApi` 封装，见 附 B B.10「刻意不做」①）。另：**「已暂停」筛选需要 `GET /releases?scope=global&state=paused`**（`Paused` 属 Rollout 任务级状态，见 §7.6），未提供前实现版需逐 run 拉 tasks（N+1） |
+| N-3 | 跨组件发布列表 + 全局流水线端点 | **部分落地 / 部分消解** | hub 现已暴露全局 `GET /pipelines`（列表）与完整 `/releases` CRUD（`POST`/`GET`/`GET/:id`/`PUT`/`DELETE`）。**v4.4 后"全局流水线列表"无消费面**（流水线列表归组件「交付」）；发布视图在**设计层面**可直接走后端全局端点，无需前端聚合兜底（**实现版仍走扫描 + kind 聚合** —— console 侧尚无 `releaseApi` 封装，见 附 B B.10「刻意不做」①）。另：**「已暂停」筛选已落地【2026-10-08 核对】**：`GET /releases?scope=global&state=paused` 已支持（hub `run/service/release.go:32-55` 将 `state` 语义键 `all/running/paused/succeeded` 映射为 RolloutPhase、非法键 400；handler 校验 `scope` 仅接受 `global`；`Paused` 属 Rollout 任务级状态，见 §7.6），无需逐 run 拉 tasks（N+1） |
 | N-4 | `/pipelines` CRUD 端点存在性 | **已核对（2026-09-15）后端有** | `internal/pipeline/handler/pipeline.go` 显式注册了 `POST /pipelines`、`GET/PUT/DELETE /pipelines/:id`、`GET /components/:id/pipelines`（注释里写明"exposes the pipeline CRUD surface consumed by the console's createCrud('/pipelines')"）。**旧文 附 A.1「后端无 GET/POST/PUT/DELETE `/pipelines/:id`」的说法作废** |
-| N-5 | 流水线删除语义 + 级联校验契约 | 【待确认 + 后端依赖】 | 行为契约（残留判定 + `409 + {reasons}` 规格 + 实现态）已迁出至 [`shared/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md) §2，与服务树删除同模式（附 C / N-15）；前端零判断、只渲染 verdict。原型 `delPipeline` 已改为后端 verdict 模式（见 §6.1 D1 / §7.4） |
+| N-5 | 流水线删除语义 + 级联校验契约 | 【待确认 + 后端依赖】 | 行为契约（残留判定 + `409 + {reasons}` 规格 + 实现态）见 [`shared/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md) §2，与服务树删除同模式（附 C / N-15）；前端零判断、只渲染 verdict。原型 `delPipeline` 走后端 verdict 模式（见 §6.1 D1 / §7.4） |
 | N-6 | 流水线 `version` 递增策略 | 【待确认】 | 更新后是否 `version+1`；无历史表时仅作展示 |
-| N-7 | 编排 `kind` 限制 | 【待确认】 | 现编辑器仅 `kind==='build'` 可编排；release/custom 是否放开 |
-| N-8 | 全局搜索端点 | ✅ **已落地（2026-09-22）** | 建议 `GET /search?q=&type=component,pipeline,service&limit=20`，返回 `{type,name,path,id}`。**R-7 全局搜索依赖此端点**；无则退化为前端在已加载资源内搜索（不覆盖未展开的深层节点）。**2026-09-22 现状**：console 走的正是这条降级路径 —— `useResourceMap.buildResourceIndex()` 一次遍历服务树摊平 Service/组件/流水线建索引，`utils/search.ts` 客户端打分排序；已能跨层直达（不依赖树展开），代价是索引在**首次 ⌘K 时**全量拉取（M1 百级请求可接受，且启动 0 次树请求的 S5 不变量不受影响）。落地记录见 附 G。**2026-09-22 落地**：hub 侧新增 `GET /search`（`internal/search`：三类各取 `limit` 条、`ILIKE` + LIKE 元字符转义、精确命中 > 前缀 > 包含 的排序；响应 `[{type,id,name,path,keyword}]`）。console 的 ⌘K 改为**服务端优先、客户端索引兜底**，降级时浮层明示（不静默）；客户端索引保留为空查询的"头部视图"来源（§5.3 要求）。见 附 I |
-| N-9 | 树分层懒加载端点 | ✅ **已落地（2026-09-22）** | 建议的三条全部存在：`GET /orgs`（已有）、`GET /orgs/:id/services`（**本次新增**，`internal/catalog`；一次把组织 id 解析成 1:1 服务树再列直接子层，替前端省掉一跳）、`GET /services/:id/components`（已有）。懒加载按此落地，S5 的"分层请求"成立；服务树页展开组织 = 1 次请求、展开服务 = 1 次请求，挂载 = 2 次（组织 + 首个组织的服务），不再随服务数线性膨胀。见 附 I |
-| ~~N-10~~ | ~~「最近访问」持久化~~ | **已废（v4）** | 该分组已从左栏删除，无需持久化方案 |
+| N-7 | 编排 `kind` 限制 | **已消解【2026-10-08 核对】** | 客户端不设「仅 `kind==='build'` 可编排」闸门（`PipelinesTab.vue:73-77` 注明：hub 的 `kind` 是自由分类、无服务端校验，与可编排范围无关，见 附 H.5-3）；release/custom 均可编排 |
+| N-8 | 全局搜索端点 | ✅ **已落地** | 建议 `GET /search?q=&type=component,pipeline,service&limit=20`，返回 `{type,name,path,id}`。**R-7 全局搜索依赖此端点**；无则退化为前端在已加载资源内搜索（不覆盖未展开的深层节点）。console 侧客户端索引：`useResourceMap.buildResourceIndex()` 一次遍历服务树摊平 Service/组件/流水线建索引，`utils/search.ts` 客户端打分排序，可跨层直达（不依赖树展开），代价是索引在**首次 ⌘K 时**全量拉取（M1 百级请求可接受，且启动 0 次树请求的 S5 不变量不受影响）。落地记录见 附 G。hub 侧 `GET /search`（`internal/search`：三类各取 `limit` 条、`ILIKE` + LIKE 元字符转义、精确命中 > 前缀 > 包含 的排序；响应 `[{type,id,name,path,keyword}]`）；console 的 ⌘K 为**服务端优先、客户端索引兜底**，降级时浮层明示（不静默）；客户端索引保留为空查询的"头部视图"来源（§5.3 要求）。见 附 I |
+| N-9 | 树分层懒加载端点 | ✅ **已落地** | 建议的三条全部存在：`GET /orgs`（已有）、`GET /orgs/:id/services`（`internal/catalog`；一次把组织 id 解析成 1:1 服务树再列直接子层，替前端省掉一跳）、`GET /services/:id/components`（已有）。懒加载按此实现，S5 的"分层请求"成立；服务树页展开组织 = 1 次请求、展开服务 = 1 次请求，挂载 = 2 次（组织 + 首个组织的服务），不随服务数线性膨胀。见 附 I |
+| ~~N-10~~ | ~~「最近访问」持久化~~ | **已废** | 左栏无「最近访问」分组（S5 恒定不变量），无需持久化方案 |
 | N-11 | 两个搜索入口是否合并 | 【待确认】 | 服务树页内搜索（就地定位，含未展开的深层节点）与顶栏 ⌘K（跨页跳转）是否重叠。选项：① 保留分工（当前）② 页内搜索降级为"仅过滤已加载节点"，统一由 ⌘K 承担跨层搜索 ③ 去掉页内搜索 |
 | N-12 | 目标 KPI 与接入管理页的关系 | 【待确认】 | Dashboard「在线目标 3/4」是否直接复用 `/admin/targets` 的聚合（避免两处口径不一致） |
 | N-13 | 运行中心视图的路由形态 | **已裁决（A）** | 取 `?view=runs\|releases`（query），**不**用嵌套子路由。双向钢人论证 + 5 条硬约束见 **附 B**。**真实 console 已于 2026-09-19 同步为两视图**（`src/constants/runCenter.ts` + `router` redirect + `pnpm test:runcenter` 断言 + §10.2 用例一次原子改，落地记录见 附 B B.10） |
 | N-14 | 全局视图的状态筛选是否需要后端参数 | **部分落地** | 运行视图的 `phase` 已下推服务端（`GET /runs?phase=`）；发布视图因走前端聚合，筛选只能在已拉取的窗口内生效——数据被截断时表格上方会显式提示"按最近 N 条运行聚合，全局聚合端点待补"，不静默给错数字 |
-| N-15 | 服务树节点删除的级联校验端点 | 【后端依赖】**未落地** | hub 端点的**行为契约（级联规则 + `409 + {reasons}` 规格 + 实现态）已迁出至 [`shared/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md) §1**；console 侧仅负责"强确认 → `DELETE` → 渲染 409 verdict"，论证与契约见 **附 C**。清理顺序提示：组件 → 流水线/环境 → 服务 → 组件 … → Org |
+| N-15 | 服务树节点删除的级联校验端点 | **已落地** | hub 端点已实现：**活跃 run → `409 + {reasons}`，其余一律级联软删**（hub `catalog/service/service.go:145-168`：fast-path 即时 409 + 级联事务内 guard 复检、同一事务；`common/errors.go:153-158` 提供 `409 + {reasons}` 结构）。console 侧 `ServiceTreeView.vue:565-640` 真调用 `DELETE` 并渲染 409 reasons（非 mock）。行为契约详见 [`shared/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md) §1，论证与前端分工见 **附 C**。清理顺序提示：组件 → 流水线/环境 → 服务 → 组件 … → Org |
 
 ---
 
@@ -44,7 +44,7 @@
 | Target | `GET /targets` | target.ts ✅ |
 | Environment | `GET /components/:componentId/environments` | environment.ts ✅ |
 | Pipeline | `GET /components/:componentId/pipelines` | pipeline.ts ✅ |
-| Pipeline | `POST /pipelines`、`GET/PUT/DELETE /pipelines/:id` | **后端已有**（N-4 已核对）；console 的新建/更新/删除入口见 §6.1（新增 UI） |
+| Pipeline | `POST /pipelines`、`GET/PUT/DELETE /pipelines/:id` | **后端已有**（N-4 已核对）；console 的新建/更新/删除入口见 §6.1 |
 | Stage | `POST/GET/DELETE /pipelines/:id/stages` `/stages/:id` | pipeline.ts ✅ |
 | Task | `POST/GET/PUT/DELETE /stages/:stageId/tasks` `/tasks/:id` | pipeline.ts ✅ |
 | Run | `POST /pipelines/:id/runs` | run.ts ✅ |
@@ -52,11 +52,11 @@
 | Run | `GET /runs`（全局列表，`page/pageSize/phase`） | **后端已有**（N-1）；运行中心运行视图的数据源 |
 | Run | `GET /runs/:id/progress` | run.ts ✅ |
 | Run | `GET /runs/:id/stage-progress` | run.ts ✅（后端按 `StageName` 聚合下发） |
-| Run | `POST /pipelines/:id/runs/:id/redispatch` | run.ts ✅ |
+| Run | `POST /runs/:id/redispatch`（全局路径【2026-10-08 核对】，hub `cmd/hub/main.go:548`；console `src/api/run.ts:113` 同步） | run.ts ✅ |
 | Run | `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision` | run.ts ✅（后端 `h.Approve` 已实现） |
 | Artifact | `GET /components/:componentId/artifacts` `/artifacts/:id` `/download` `/DELETE` | artifact.ts ✅ |
-| Permission | `GET /component-roles`（§7.9 角色选择器数据源）`POST/GET /components/:componentId/role-bindings` `/DELETE /role-bindings/:id` `GET /roles` | permission.ts ✅（2026-09-23 **去掉 `GET /users`**：hub 不存用户表（D3），主体改为「绑定表派生 + 手输 `sub`」，见 ACCOUNT-PERMISSION-DECISIONS §3.5 (b′)） |
-| Release | `GET /releases`、`POST/GET/PUT/DELETE /releases/:id` | **后端已有**（N-3，全局端点、非组件作用域）；发布视图数据源。`?scope=global&state=paused` 细粒度筛选尚未加（`internal/run/handler/release.go` 仅基础 CRUD + 列表）；console 侧以「前端聚合 + 数据截断显式提示」过渡，不静默给错数字 |
+| Permission | `GET /component-roles`（§7.9 角色选择器数据源）`POST/GET /components/:componentId/role-bindings` `/DELETE /role-bindings/:id` `GET /roles` | permission.ts ✅（**无 `GET /users`**【2026-09-23 核对】：hub 不存用户表（D3），主体取「绑定表派生 + 手输 `sub`」，见 ACCOUNT-PERMISSION-DECISIONS §3.5 (b′)） |
+| Release | `GET /releases`、`POST/GET/PUT/DELETE /releases/:id` | **后端已有**（N-3，全局端点、非组件作用域）；发布视图数据源。**【2026-10-08 核对】`?scope=global&state=` 细粒度筛选已落地**（hub `run/service/release.go:32-55`：`state` 语义键 `all/running/paused/succeeded` → RolloutPhase，非法键 400；handler 校验 `scope` 仅 `global`）。「前端聚合 + 数据截断显式提示」为筛选落地前的历史过渡态描述 |
 | Search | `GET /search?q=&type=&limit=` | **后端已有**（N-8，2026-09-22）；result = `[{type,id,name,path,keyword}]`，`type` ∈ `service,component,pipeline`（逗号分隔、缺省三类全搜） |
 
 > **作废声明**：本表旧版曾写"后端无 `GET/POST/PUT/DELETE /pipelines/:id`（仅按组件列出）→ 流水线自身 CRUD 曾受 G1 影响"、"无 `PUT /stages/:id`（G6 已修）"、"无独立 Rollout 控制/日志读取端点（G4/G2 已修）"。**这些结论均已过期**：`/pipelines` 的 CRUD 已于 N-4 核对存在；G1–G6 全部关闭。
@@ -74,7 +74,7 @@
 | 类型 | 含义 | 表单字段 |
 | --- | --- | --- |
 | **Build** | 命令型：工具镜像跑命令 | `image` + `command`([]string) + `args` + 可选 `scriptPath` + `produces`/`consumes` + `timeoutSeconds` + `retryPolicy` |
-| **Release** | 声明式施加软件单元 | `releaseConfig.chart`(repo/name/version 或 chartUrl) + `releaseConfig.values` + `releaseConfig.manifest`；带 `rolloutConfig` 走金丝雀（**注意**：常被称作「发布目标」的那个目标是**运行级**参数、由触发时选定，**不是**任务级字段 —— 见 附 H.2） |
+| **Release** | 声明式施加软件单元 | `releaseConfig.chart`(repoURL/name/version；【2026-10-08 更新】`chartUrl` 字段名已更正为 `repoURL`，对齐 runner ChartSource，见 `src/api/pipeline.ts:45` 与 附 G-12) + `releaseConfig.values` + `releaseConfig.manifest`；带 `rolloutConfig` 走金丝雀（**注意**：常被称作「发布目标」的那个目标是**运行级**参数、由触发时选定，**不是**任务级字段 —— 见 附 H.2） |
 | **Approval** | 人工卡点 | `approvalConfig.allowedApprovers`（审批人）+ `requiredApprovals`（需几人通过）+ `timeoutSeconds`；原型字段名 `approvers` |
 
 保存 = `POST /stages/:stageId/tasks`（新建）或 `PUT /tasks/:id`（更新）。

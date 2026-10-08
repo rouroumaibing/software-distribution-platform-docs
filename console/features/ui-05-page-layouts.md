@@ -22,11 +22,11 @@
 └───────────────┴────────────────────────────────────────────────┘
 ```
 
-- 左栏背景随主题：light 用 `surface`（**不再用海军蓝**）；dark 用更深 surface。选中项 = 圆角块 + `accent-soft` 底 + `accent` 字（不用 3px 竖条）。
+- 左栏背景随主题：light 用 `surface`（**非海军蓝**）；dark 用更深 surface。选中项 = 圆角块 + `accent-soft` 底 + `accent` 字（不用 3px 竖条）。
 - **左栏无树、无"最近访问"**：资源树只在 `/service-tree` 页内出现（见 7.5）；跳转靠顶栏 ⌘K。
 - 主区三项（总览/服务树/运行中心）**不挂分组标签**；仅「平台管理」有标签（见 §5.1 v4.1 调整）。
 - 泛化约束：左栏宽度**恒定**（268/64），不随内容伸缩；条目数**恒 5**（见 S5）。
-- **面包屑只有顶栏一条**（原型 `#crumb`，`renderCrumb()`），中间层可点；内容区不再重复。段位规则：
+- **面包屑只有顶栏一条**（原型 `#crumb`，`renderCrumb()`），中间层可点；内容区不重复。段位规则：
   | 页面 | 面包屑 |
   | --- | --- |
   | 总览 / 服务树 / 运行中心（运行视图） | `SDP / 总览`｜`SDP / 服务树`｜`SDP / 运行中心` |
@@ -48,7 +48,7 @@
 │ 流水线 | 流水线ID | 组件 | 触发人 | 状态 | 耗时 | 开始时间 │  ← 3 条速览
 ```
 
-- 待办卡是**行动导向**（数量 + CTA），且**点击即落到对应视图+筛选**（筛选真实生效）：`待我审批 3` → 运行视图 / 待我审批；`失败运行 2` → 运行视图 / 失败；`暂停的灰度 1` → **发布视图**（原先是独立的 `/releases` 页，v4 已并入）。
+- 待办卡是**行动导向**（数量 + CTA），且**点击即落到对应视图+筛选**（筛选真实生效）：`待我审批 3` → 运行视图 / 待我审批；`失败运行 2` → 运行视图 / 失败；`暂停的灰度 1` → **发布视图**（发布归运行中心发布视图，无独立 `/releases` 页）。
 - 「最近运行」只放 **3 条速览 + 出口**，完整列表归运行中心（避免与运行中心同表重复，见 §8.4）。
 - **目标离线提示条（warnbox）** 只讲行动（离线→自动重放），数字口径归 KPI（§8.4）。
 - KPI 与最近运行**要求全局聚合**——见 附 A。
@@ -63,13 +63,13 @@
 - **交付 · 发布** = 该组件发布记录（列：环境 / 灰度步骤 / 健康度 / 状态）。
 - **配置** = 左环境树（分组 → 环境）+ 右 `values.yaml`（查看 / 编辑 / 导入 / 导出）。
 - **环境** = 环境与分组管理：分组可折叠、hover `＋` 新建环境（走**两步向导**）；**分组的删除入口只在"分组为空"时出现**（非空分组不给删除入口，避免误删）；环境删除走右侧详情面板。右侧面板即**对接配置**（基本信息 / 接入方式三选一 / 按接入方式分流的凭据区 / 逐项连接测试），完整规格见 **§7.12**。
-- 面包屑只有顶栏一条；内容区不再重复（§8.4）。
+- 面包屑只有顶栏一条；内容区不重复（§8.4）。
 - **制品 / 权限 / 日志** 三个 Tab 均已展开（2026-09-21 原型同步设计）：制品库（筛选 + 表格 + 行内操作，§7.10）、组件级权限（`component_role_bindings`，§7.9）、运行日志聚合（§7.11）。权限的 UX 规格见 §7.9。
 
 ### 7.4 流水线 CRUD 页面
 
 - **列表（组件交付→流水线）**：列 = 名称 / 类型 / 版本 / 最近运行 / 操作（运行 · 编辑 · 删除）；右上 `＋ 新建流水线`。
-- **跨组件视角**：v4.4 起**不再有**独立/视图化的跨组件流水线列表；跨组件巡视只保留运行与发布两个切面。
+- **跨组件视角**：v4.4 裁决：**无**独立/视图化的跨组件流水线列表；跨组件巡视只保留运行与发布两个切面。
 - **编辑器**：沿用阶段组横向流；顶部工具条 `[保存] [▶ 触发] [🗑 删除流水线]`，阶段头有 `executionMode` 开关与 `[+ 子任务]`，任务卡 hover 出 `[编辑] [删除]`。
 - **子任务的"产品语言"（2026-09-17 拍板，原型已实现）**：编辑器**不露 `Build` / `Release` / `Approval` 原词**，只显示「构建 / 运行任务」「发布任务」「人工审核阶段」三种描述；三者由配置**派生**（填了发布目标 → `Release`，填了审批人 → `Approval`，否则 `Build`），`type` 仅作为请求体序列化产物进入 hub 供 runner 派发。**不引入模版目录**。
 - **请求体预览**：保存时弹出 JSON / YAML 双视图，标注 `PUT /pipelines/:id`（更新）或 `POST /pipelines`（新建），字段映射见附 D。
@@ -95,7 +95,7 @@
 ```
 
 - 树面板**自身滚动**，页面不随树变长；懒加载提示挂在未展开节点右侧。
-- 右卡只放**节点自身信息**；同级节点已在左卡树中可见，不再重复列表（§8.4）。
+- 右卡只放**节点自身信息**；同级节点已在左卡树中可见，不重复列表（§8.4）。
 - 全局搜索浮层：`⌘K` → 输入 → 结果（类型 + 名称 + 路径）→ Enter 打开。
 
 ### 7.6 运行中心（两视图，v4 新增、v4.4 收敛，取代原「全局流水线页 / 全局发布页」）
@@ -112,7 +112,7 @@
 ```
 
 - **为什么只有一个入口**：运行与发布是"跨组件的同一批数据的不同切面"，各自独立成菜单会让左栏出现同类项膨胀。合并后主区只剩 3 项（总览/服务树/运行中心），且新增切面（如"制品"）不需要再动导航。
-- **URL 形态（N-13 已裁决，见附 B）**：`/runs?view=runs|releases`（+ `&filter=` / `&page=`）。视图是**同一页的状态**，不是子页面 —— 因此不进路径层级；切换视图用 `replace`（返回键一次退出运行中心）。
+- **URL 形态（N-13 已裁决，见附 B）**：`/runs?view=runs|releases`（+ `&phase=` / `&page=`）。视图是**同一页的状态**，不是子页面 —— 因此不进路径层级；切换视图用 `replace`（返回键一次退出运行中心）。
 - **视图内筛选真实生效**，且取值只能落在真正存在的枚举里（原型 `RUN_FILTERS`，已逐项核对）：
 
   | 视图 | 筛选项（原型实测） | 过滤位置 |
@@ -121,7 +121,7 @@
   | 发布 | 全部 / 进行中 `running` / **已暂停** `paused` / 成功 `succeeded` | 前端聚合数据上过滤（发布无 phase 枚举） |
 
   > **「已暂停」是已落地的一等状态（2026-09-19 按原型回写）**：原型 `PH` 状态集含 `paused ⏸ 已暂停`，发布数据 `r1` 即 `phase:'paused'`，筛选存在且能出结果。**后端支持仍是缺口**：`Paused` 是 Rollout（runner `Rollout` CRD，**任务级**）的状态，不在 `PipelineRunPhase` 六个枚举（Pending/Running/WaitingApproval/Succeeded/Failed/Cancelled）里。因此在 hub 提供 `GET /releases?scope=global&state=paused` 之前，该筛选项在**真实实现版**需要"逐 run 拉 `GET /runs/:id/tasks`"（N+1）才能判定 —— 登记为附 A N-3。
-  > ✅ **原型内部不一致已修（2026-09-19）**：`NOTE['runs-releases']` 第 2 条已改写为“「已暂停」已是本原型的一等状态（`PH` 徽章 + `RUN_FILTERS` 筛选 + 数据行可筛出结果），后端端点待补”；同条第 1 条“hub 无全局发布端点”亦按 N-3（全局 `/releases` CRUD 已落地）改写。
+  > `NOTE['runs-releases']` 现行文案：“「已暂停」已是本原型的一等状态（`PH` 徽章 + `RUN_FILTERS` 筛选 + 数据行可筛出结果），后端端点待补”；全局 `/releases` CRUD 状态见 附 A N-3。
   > ⚠️ **真实实现版的筛选项是「可实现子集」**（2026-09-19 记录）：`src/constants/runCenter.ts` 的 `RUN_VIEWS` 现为 运行「全部 / 运行中 / 失败 / **待我审批**」+ 发布「全部 / 进行中 / 成功」。**「已暂停」在实现版不渲染**（N-3 端点未落地）—— `isValidRunFilter('releases','paused')` 显式返回 `false`：宁可没有该筛选，也不要“点了没反应”（原型铁律：不渲染无 handler 的装饰控件）。
   > 📐 **两层命名（勿混）**：原型 `RUN_FILTERS` 用语义键（`running` / `failed` / `waiting` / `paused` / `succeeded`），实现版用 `PipelineRunPhase` **真实枚举值**（`Running` / `Failed` / `WaitingApproval` / `Succeeded`）直传 `GET /runs?phase=` —— 上表「筛选项」即“语义键 → 真实枚举值”的映射结果。
   > ⚠️ **两处不对称（待拍板，非缺陷）**：运行视图无「成功」、发布视图无「失败」/「待审批」，系原型现行形态（`全部` 已覆盖）。若要放开成状态全集，改 `RUN_VIEWS` 一处即可（纯前端、可逆）；非法值由 `pnpm test:runcenter`「筛选值只落在真实枚举内」断言兜住。
@@ -137,7 +137,7 @@
 
 ### 7.8 其余列表页
 
-权限 = 「筛选栏 + 表格 + 分页 + 行内操作」标准布局；**环境不是列表页** = 左侧环境树 + 右侧**对接配置面板**（见 §7.12）；制品库为**只读版本包清单**（仅 3 列 + 顶部归档说明，无筛选栏 / 行内操作，见 §7.10）。
+权限 = 「筛选栏 + 表格 + 分页 + 行内操作」标准布局；**环境不是列表页** = 左侧环境树 + 右侧**对接配置面板**（见 §7.12）；制品库为**版本包清单**（6 列 + 行内下载 / 删除，无筛选栏，见 §7.10）。
 
 ### 7.9 权限与审批 UX（对应 [hub 数据模型 §7](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)）
 
@@ -208,20 +208,23 @@
 
 ### 7.10 制品库（Artifacts，组件级）
 
-组件详情「制品」Tab = **只读的版本包清单**，作用域主键 = 组件 uuid（`GET /components/:componentId/artifacts`）。本页只展示**流水线构建 / 发布产物**，不是上传入口；人工不可删除 / 上传。
+组件详情「制品」Tab = **版本包清单**，作用域主键 = 组件 uuid（`GET /components/:componentId/artifacts`）。本页只展示**流水线构建 / 发布产物**，不是上传入口；支持行内**下载 / 删除**。
 
-- **列（仅 3 列）**：
-  - **版本包**：制品名，`<a>` 超链接，点击经**签名 URL 直连**下载（hub 生成有时效预签名 URL，前端不持有对象存储凭据，不经 console 中转）。
-  - **构建时间**：产物落库的本地时间（`builtAt`）。
-  - **文件大小**：人类可读体积（`size`）。
-- **四态**：有效（默认）/ 空态（组件尚无制品 → "运行构建 / 发布后，产物自动归档进制品库"）/ 加载中 / 错误（拉取失败 → 重试，§8.3）。
+- **列（共 6 列，实现 `ArtifactsTab.vue` 实测）**：
+  - **版本**：mono 加粗（`version`）。
+  - **类型**：chip 徽章（`artifactType`：image / binary / archive / generic）。
+  - **大小**：人类可读体积（`sizeBytes`，B/KB/MB）。
+  - **Commit**：mono 短哈希（`commitSha` 前 7 位，无则 `—`）。
+  - **创建时间**：本地时间（`createdAt`）。
+  - **操作**：`下载`（经**签名 URL** 新窗口打开——hub 返回短时效预签名 URL，前端不持有对象存储凭据）· `删除`（`DELETE /artifacts/:id`，成功 toast + 行移除）。
+- **状态**：加载中 / 空态（"该组件下暂无制品"）/ 列表；**错误态未实现**（拉取失败无重试 UI，§8.3 的设计尚未落到本页）。
 - **归档与备份（本页顶部信息条，参考实现）**：
   - **存储**：对象存储 MinIO（3 副本 · 跨 AZ 同步），bucket `sdp-artifacts`，对外域名 `artifacts.sdp.local`；并镜像至 NFS 归档盘 `/data/artifacts/{org}/{component}/{version}/`（断网可取用）。
   - **目录布局**：`sdp-artifacts/{org}/{service_tree_path}/{component}/{run_id}/{artifact_name}`（以 run 为单位归集，便于复现某次构建）。
   - **备份周期**：每日 02:00 增量快照 + 每周日 03:00 全量快照；保留策略为**热层（可下载）90 天 → 转冷归档 1 年（合规留痕）→ GC 报告 + 人工确认后清理**。
-  - **过期**：`expires_at` **已生效**（2026-09-23，B-16 收口）—— hub 保留期 GC（`ARTIFACT_GC_INTERVAL`，**默认关闭**）按该声明回收，**先删对象、后删行**；对象删失败的行标记 `cleanup_state='pending_deletion'`（**不再出现在本页列表**）并由下一轮自动重试。对账本身仍是**仅报告 + 人工确认**（见 hub `DELETE-CONTRACT.md` §6.5 / §6.6-4）。
-- **删除不可开放给人工**：本页不提供删除 / 上传操作；产物清理由 GC 与过期策略统一处理（与 §7.9 组件级权限一致——`artifact:delete` 在后端保留，但前端不暴露入口）。
-- 端点（附 A · N-x / 旧文 `artifact.ts`）：`GET /components/:componentId/artifacts`、`GET /download`（签名 URL）。（原型已移除 `POST/DELETE` 前端入口；后端契约保留。）
+  - **过期**：`expires_at` **已生效**（2026-09-23，B-16 收口）—— hub 保留期 GC（`ARTIFACT_GC_INTERVAL`，**默认关闭**）按该声明回收，**先删对象、后删行**；对象删失败的行标记 `cleanup_state='pending_deletion'`（**不出现在本页列表**）并由下一轮自动重试。对账本身仍是**仅报告 + 人工确认**（见 hub `DELETE-CONTRACT.md` §6.5 / §6.6-4）。
+- **行内删除**：本页提供行内删除（`artifactApi.remove`）；上传不提供。产物批量清理由 GC 与过期策略统一处理（`artifact:delete` 权限语义不变）。
+- 端点（`src/api/artifact.ts`）：`GET /components/:componentId/artifacts`（分页）、`GET /artifacts/:id`、`GET /artifacts/:id/download`（签名 URL）、`DELETE /artifacts/:id`。
 
 ### 7.11 日志（Logs，组件级运行日志聚合）
 
@@ -275,7 +278,7 @@
 
 #### 7.12.2 新建环境 = 两步向导
 
-原弹窗只有名称/目标/命名空间，且创建后**没有落点继续配置**。改为两步：
+单弹窗只有名称/目标/命名空间，且创建后**没有落点继续配置**，故拆为两步：
 
 - **Step 1 基本信息**：环境名称 / 所属分组（只读，来自左树）/ 环境类型（`test` | `production`）。
   - 附说明：**分组 ≠ 环境类型** —— 分组只是归类（可折叠、可为空），与环境类型正交；审批策略只看环境类型（§7.9）。
@@ -331,9 +334,9 @@
 - 主机可增删改（弹窗），面板以紧凑表格列 host / port / user / 认证 / 凭据引用 / 跳板机 / 操作。
 - 多主机 = 一个环境的 `ssh.targets[]`；跨环境复用凭据 = `secretRef` 相同。
 
-#### 7.12.4 凭据存储与脱敏（**沿用既有铁律，但凭据的物理位置变了**）
+#### 7.12.4 凭据存储与脱敏（**沿用既有铁律：只存引用名，凭据物理位置在 hub 侧**）
 
-> ⚠️ **2026-09-21 更正**：直连通道的凭据**由 hub 持有**（hub 侧发起连接），**不是 runner 侧**。本节第一版按"目标侧 Secret"写，已改正。
+> ⚠️ 直连通道的凭据**由 hub 持有**（hub 侧发起连接），**不是 runner 侧**——勿改回目标 / runner 侧 Secret。
 
 1. **记录只存引用名**：环境 / 目标记录只落 `credentialRef`，**与 `repo_secret_ref` / `secret_ref` 同一套铁律**；hub **不新增"凭据明文列"**。
 2. **凭据物理位置——未定**：候选 ① **hub 自身运行环境的 K8s Secret**（与 hub 的 Postgres DSN / 对象存储 key 同级托管）、② hub DB 加密列、③ 外部 Vault / KMS。注意本库 P0 拓扑**没有**独立 secret manager，故 ① 与 ② 的实际隔离差异比直觉小——**这条需单独拍板**（`shared/DATA-MODEL.md` §9.7 已登记）。
@@ -375,14 +378,14 @@
 | --- | --- | --- |
 | 目标下拉 | `GET /api/v1/targets` | ✅ 已有（`RegisterCRUD`） |
 | 环境 CRUD | `POST/GET/PUT/DELETE /api/v1/environments`、`GET /components/:id/environments` | ✅ 已有 |
-| 环境创建 | `POST /api/v1/environments` | ⚠️ 请求体需扩 `access` / `kubeconfigSecretRef?` / `sshTargets?` / `sshSecretRef?`（现仅 `targetId` / `namespace` / `envType`） |
-| 环境分组 | `environment_groups` + `environments.group_id` | ⚠️ 见 [hub 数据模型 §8](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)（DDL 已拟，未落库） |
+| 环境创建 | `POST /api/v1/environments` | ✅ **请求体已扩齐（2026-10-08 核对）**：`componentId` / `key` / `name` / `targetId` / `envType` / `namespace` / `access`（`agent`/`kubeconfig`/`ssh`）/ `accessConfig`（各通道非敏感配置 + 凭据引用，如 `kube.credRef` / `ssh.secretRef`）/ `groupId` / `status`（hub `internal/environment/models/environment.go`，CRUD 泛型绑定模型体） |
+| 环境分组 | `environment_groups` + `environments.group_id` | ✅ **已落库（2026-10-08 核对）** —— hub `internal/environmentgroup` 全套（handler / repository / service / models）+ `cmd/hub/main.go` 注册（:48-50 import、:471 `RegisterRoutes`），表经 GORM `AutoMigrate` 建于 `internal/db/db.go`；见 [hub 数据模型 §8](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) |
 | 连接测试 | `POST /api/v1/environments/:id/test` → 逐项 checklist | ✅ **已落地** —— `EnvironmentService.Test` / `TestReport`（配置完整性结构校验；连通性项如实返回 `skip`，hub 无出站能力），结果持久化到 env |
 | 凭据库 | `GET/POST/PUT/DELETE /api/v1/credentials`（只回 `valueSet`，不返明文） | ✅ **已落地（2026-09-23）** —— `internal/credentials`（AES-GCM 信封加密落库，列前缀 `enc:v1:`；API 仅回 `valueSet`）+ console `CredentialsView.vue`（平台管理第 3 个 Tab） |
 | kubeconfig 解析 | `POST /api/v1/credentials/parse-kubeconfig` | ✅ **已落地** —— 结构化回显 `server`/`caPresent`/`insecureSkipTLS`/`authMethod`/`currentContext`/`defaultNamespace` + `errors`（**拒绝 `exec:` 插件**） |
 | 目标注册 token | `POST /api/v1/targets/:id/enroll-token`（一次性） | ✅ **端点已落地** —— `TargetHandler.EnrollToken` / `TargetService.GenerateEnrollToken`（一次性 + 过期）。⚠️ 网关仍用全局共享 `GATEWAY_TOKEN`，per-target 身份约束（`agent_version` 上报 + 凭据流转）属 `§9.9` 引导特性 |
 
-> **SSH 属净新增能力**：hub 全仓无 `ssh` 命中、hub 亦无 `client-go`（**零出站能力**）；`sshTargets` / `sshSecretRef` / `POST /environments/:id/test` / `POST /environments/:id/exec` 均需新建。按层分写约定，列定义应落 `docs/shared/DATA-MODEL.md`、请求体与响应落 `docs/shared/API-REFERENCE.md`；本节只给 console 侧的消费形状。**凭据由 hub 侧持有**（§7.12.4）。
+> **SSH 直连仍未实现（2026-10-08 更新）**：`POST /environments/:id/test`（逐项 checklist）与 `POST /environments/:id/exec`（校验并排队 agent 操作，执行归 runner）**端点均已注册**（hub `internal/environment/handler/environment.go:24,27`）；但 hub `go.mod` **无 `x/crypto/ssh` 依赖**，`ssh` 通道的出站直连拨号能力仍属净新增，hub 亦无 `client-go`。按层分写约定，列定义应落 `docs/shared/DATA-MODEL.md`、请求体与响应落 `docs/shared/API-REFERENCE.md`；本节只给 console 侧的消费形状。**凭据由 hub 侧持有**（§7.12.4）。
 
 > ⚠️ **`targets` 只覆盖 `agent` 通道**：`environments.target_id` 是 **NOT NULL FK**，**表达不出非容器目标**；非容器目标需给 `targets` **扩表**（`targetKind` + 直连凭据列，`shared/DATA-MODEL.md` §9.7）。本节的 `ssh.targets[]` 只是**环境内**的主机清单，**不等于**跨环境复用的目标注册表。
 
@@ -399,7 +402,7 @@
 | 走哪条通道 | 全部（`agent` / `kubeconfig` / `ssh` 按环境 `access` 分流） | 仅**直连通道**（`kubeconfig` / `ssh`）；`agent` 通道无此入口 |
 | 输出 | 落 `GET /runs/:id/tasks/:name/log` | **流式回显在弹窗内**，不落运行记录 |
 
-**任务侧的执行后端（未立项，仅登记形状）**：现 `TaskRunSpec` 只有一种执行实现（目标集群里的 K8s Job，`runner/pkg/executor/job_builder.go`）。`ssh` 目标没有 Job / 命名空间 / 卷，其任务语义须改为**「制品分发到主机 + 在主机上执行脚本」**，工作区是**目标主机上的临时目录**。这需要一个 `executor backend` 判别维度（`README.md` §5.6 / `shared/DATA-MODEL.md` §9.7 未定项）。
+**任务侧的执行后端（未立项，仅登记形状）**：现 `TaskRunSpec` 只有一种执行实现（目标集群里的 K8s Job，`runner/pkg/executor/job_builder.go`）。`ssh` 目标没有 Job / 命名空间 / 卷，其任务语义应为**「制品分发到主机 + 在主机上执行脚本」**，工作区是**目标主机上的临时目录**。这需要一个 `executor backend` 判别维度（`README.md` §5.6 / `shared/DATA-MODEL.md` §9.7 未定项）。
 
 > 原型现状：**② 已做出**（kubeconfig 面板与 SSH 面板各有「▷ 远程执行（诊断）」，mock 输出）；**① 的任务类型扩展尚未设计**（属编排页任务模型改造，需连同 `TaskRunSpec` 一起立项）。
 

@@ -1,6 +1,6 @@
 # 平台状态总览（STATUS）— 已完成 / 未完成 / 刻意不做
 
-> **本文件是全平台唯一的完成状态权威。** 其余任何文档（STORY / BACKLOG / 计划 / 设计文档）里的 ⬜ / 待补 / follow-up 标记，凡与本清单冲突，**以本清单为准**；文档各自只维护「行为规格」，不再维护状态判断。
+> **本文件是全平台唯一的完成状态权威。** 其余任何文档（STORY / BACKLOG / 计划 / 设计文档）里的 ⬜ / 待补 / follow-up 标记，凡与本清单冲突，**以本清单为准**；状态判断一律只在本清单维护，各文档只维护「行为规格」。
 > 来源：三轮 source-grounded 复核（2026-09-23 审计 → 2026-09-24 第二轮全量复核 → 2026-09-24 第三轮收口），全部结论均有 `文件:行号` 级代码证据或真集群 E2E 记录（历史过程见 git 历史中的 `plans/UNIMPLEMENTED-MODULES-PLAN.md` §16–§18 等已删档文档——**旧引用中的 §x.y 编号均指删档文档章节**，当前状态一律以本文件为准）。
 > 最后核验：2026-09-27（在 2026-09-25 第四轮基础上，回溯确认 2026-09-26 E2E「三流水线」整体测试 + 缺口补齐第二批：G-1~G-14 全修复、kind 回归 11/11 通过，见 §1.4；并 grep 复核三仓修复均真实落盘）。
 
@@ -17,7 +17,7 @@
 | 流水线 | 版本快照 + `GET /pipelines/:id/versions/:v/diff`（C-09）；Serial 调度（C-06，hub `buildSpec` 派生紧邻依赖链）；触发走 service 校验 | `pipeline_run_serial_test.go` |
 | 运行 | **取消运行中流水线**（`POST /runs/:id/cancel`，注解→reconciler 落 `Cancelled`）；**单任务重跑**（`POST /runs/:id/tasks/:name/rerun`，Failed→Running）；`GET /runs/:id/stage-progress` 聚合；**releases 视图筛选后端**（`GET /releases?scope=global` + `state` 语义映射 running/paused/succeeded，#14）；**运行时间窗过滤**（`GET /runs?createdAfter=RFC3339`，#15） | UNIMPLEMENTED §18；`e2e-cancel-rerun.sh` 真集群过 |
 | 审批 | 审批下发闭环 + 防自审 + `pipeline_approvals` 审计；审批超时自动判负（B-11）；生产环境强制审批 fail-closed（B-11） | `run/service/approval_timeout.go`、`production_guard.go` |
-| 日志/监控 | 实时日志落库（`pkg/logstream` 对应 hub 侧接收）；hub `GET /metrics`（`internal/metrics`） | audit §5.1 T-U6 |
+| 日志/监控 | 实时日志落库（runner 侧抓取在 `pkg/logstream`，hub 侧接收在 `internal/gateway/gateway.go:313-314` 的 `MessageLogChunk` → `logH`）；hub `GET /metrics`（`internal/metrics`） | audit §5.1 T-U6 |
 | agent_ops | exec 全链路（派发→目标集群 Job→状态/日志回传→SSE `GET /agent-ops/:id/stream` + 台账 + 轮询）；install/upgrade 台账受理（202 句柄） | `internal/target/*` + `cmd/hub/agentop_dispatcher.go`；migration 0018 |
 | 制品 | 签名下载（presigned / Local HMAC）；`expires_at` 保留期 GC + 孤儿对账（仅报告） | B-16；`DELETE-CONTRACT` §6.6-4 |
 | 账号权限 | Keycloak 身份 + hub 唯一权限权威（D1–D6 闭，D3 删 users 表）；两层 RBAC + 平台/组件自定义角色；四张权限表 + 审计 + 权限申请审批 + 到期回收；组织 claim 接入 + 资源归属强制点；`§10 #14` 403 缺口修复；**权限对账 conformance gate 脚本化**（§10 门禁，#17） | `ACCOUNT-PERMISSION-MODEL.md`；UNIMPLEMENTED §8/§9/§12/§14 |
@@ -44,7 +44,7 @@
 | 域 | 已完成项 | 证据落点 |
 | --- | --- | --- |
 | 导航/搜索 | 服务树懒加载 + ⌘K 全局搜索（C-01）；暗色主题（C-02）；**服务树删除入口 UI**（org/service/component 三级，强确认 → `DELETE` → 渲染后端 `409+{reasons}` verdict，#13）；**通知中心铃铛**（未读数 + 下拉，消费 `GET /notifications`，#7） | `ServiceTreeView`、`CommandPalette.vue`、`MainLayout.vue` |
-| 流水线 | 全生命周期 UI（C-12）；配置派生表单；版本历史/对比面板（C-09）；**流水线直连全局 `GET /pipelines`，前端聚合 stopgap 下线**（A 节收口，#18；B 新建入口 / C kind 放开 / D 行内删除此前已落） | `pnpm test:pipeline` 41 条；`useResourceMap.ts` |
+| 流水线 | 全生命周期 UI（C-12）；配置派生表单；版本历史/对比面板（C-09）；**流水线直连全局 `GET /pipelines`（无前端聚合 stopgap）**（A 节收口，#18；B 新建入口 / C kind 放开 / D 行内删除均已落地） | `pnpm test:pipeline` 41 条；`useResourceMap.ts` |
 | 运行监控 | DAG 执行图 + 实时日志面板 + 运行页审批；取消/重跑按钮 | `RunMonitorView.vue` |
 | 灰度监控 | 金丝雀步骤器（10/50/100）+ 暂停/晋升/回滚 | `ReleaseDetailView.vue` |
 | agent_ops | 台账页 + SSE 消费端（T-U3） | `AgentOpsView.vue` + `agent-op-smoke.mjs` 14 检查 |
@@ -95,5 +95,5 @@
 
 ---
 
-> 状态变更纪律：新增/收口任何待办，**先改本清单**，再在对应域文档补行为规格；各文档不再自持状态标记，防止再次出现「正文过时 ⬜」。
+> 状态变更纪律：新增/收口任何待办，**先改本清单**，再在对应域文档补行为规格；状态标记只由本清单自持，各文档不自持，防止再次出现「正文过时 ⬜」。
 > 指针协议（2026-09-24）：本清单同时是**全局总索引**——已完成项的既成设计落 `<域>/features/`（各自只追加），带实质设计内容的活跃计划落 `<域>/plans/` 并由本清单对应条目指针指向；**裸待办（无设计内容）只准活在本清单，禁止为其建文档**。形态论 / 归属原则 / shared 入住门槛见根 [README §6](../README.md)。
