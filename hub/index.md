@@ -15,6 +15,9 @@
 | [KEYCLOAK.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/KEYCLOAK.md) | 认证子系统：keycloakx 子 chart + realm 预置 + 与 console/hub 交互 + 账号改密 |
 | [ADR-dispatch-durable-queue.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-dispatch-durable-queue.md) | 下发持久队列 ADR |
 | [CROSS-COMPONENT-ALIGNMENT.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/CROSS-COMPONENT-ALIGNMENT.md) | 跨组件对齐总览（北极星 / 授权 / 执行模型 / 术语） |
+| [runner-reflux-spec.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/runner-reflux-spec.md) | runner→hub 执行态回流协议（hub 为落库权威：ApplyStatus 扩展/身份帧对账/通知已读） |
+| [install-upgrade-executor-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/install-upgrade-executor-design.md) | agent_ops install/upgrade 执行器（hub 派发放行 + 双对账终态判定） |
+| [alerting-rules-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/alerting-rules-design.md) | 离线告警规则（hub gateway gauge 指标补齐 + 通知流注入） |
 
 完整住户清单与维护纪律见 [shared/README.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/README.md)。
 

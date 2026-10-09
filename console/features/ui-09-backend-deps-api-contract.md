@@ -95,3 +95,16 @@
 - **已知落差**：hub 的 `POST /pipelines` 是**扁平创建**（仅 `componentId`/`name`/`kind`/`description`），阶段/任务需经 `POST /pipelines/:id/stages` → `POST /stages/:id/tasks` 级联落库；console 侧发出完整 DAG，**由 console 展开为多次调用**。【待拍：是否新增"整 DAG 一次提交"端点】 ✅ **已按此实现（2026-09-22）**：见 **附 H.3**。
 
 ---
+
+## 附 A 补充：2026-10-08 原型补齐轮新增/澄清（只追加，不改写上方 N-1–N-15 历史行）
+
+> 背景：原型补齐轮（运行域闭环 + 平台管理，见 ui-05 §7.13 / ui-11 附 K）触发的依赖增补与端点记账。
+
+| # | 项 | 类型 | 说明 |
+| --- | --- | --- | --- |
+| N-16 | 平台审计日志查询端点 | 【后端依赖】 | 原型「用户与权限」页新增平台审计日志表，覆盖：审批（decision）、运行取消（cancel）、手动执行（`POST /environments/:id/exec`，`target:exec` 逐条审计）、凭据轮转/创建、目标注册、组映射变更。建议 `GET /audit?who=&act=&page=`；写入面 hub 侧已具备，**统一查询端点是否存在待核对**，缺则登记为新端点 |
+| N-17 | 通知聚合数据源 | 【待确认】 | 顶栏通知中心（待审批 / 失败运行 / 目标异常 + 未读角标）。**前端聚合可先行、零新端点**：待审批 = `GET /runs?phase=WaitingApproval`、失败 = `GET /runs?phase=Failed&createdAfter=`（N-1 时间窗已落地）、目标异常 = targets 心跳状态；独立 `GET /notifications` 仅在需要已读状态 / 跨设备同步时立项 |
+
+**D.1 补记（不改上方 D.1 表历史行）**：Run 域取消桩在 D.1 表中缺登记，本轮补记——`POST /runs/:id/cancel`（console `src/api/run.ts:149-150`；hub 侧取消运行中流水线已落地，语义 = 停掉 Pending/Running/WaitingApproval 的 run）。审批决策（`run.ts:124`）与单任务重跑（`run.ts:112` redispatch）上表已列。**原型 2026-10-08 补齐轮的 终止 / 审批 / 仅失败任务重跑 三个动作，实现版直接消费以上既有桩，无新后端依赖**。
+
+---

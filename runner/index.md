@@ -20,4 +20,6 @@ git 不跟踪空目录，且按「无内容不建壳」原则：首份内容落�
 
 - 执行模型与协议权威：[shared/DATA-MODEL.md §6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)（**权威在 hub**）
 - 授权边界：runner 只消费 hub 已鉴权下发的 spec，自身无授权逻辑（见 Story §4.4；权威模型在 [shared/ACCOUNT-PERMISSION-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCOUNT-PERMISSION-MODEL.md)）
+- runner→hub 执行态回流协议（灰度权重/产物/身份帧）：[shared/runner-reflux-spec.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/runner-reflux-spec.md)（runner 为发送端权威）
+- install/upgrade 执行器（自升级 Job 执行体）：[shared/install-upgrade-executor-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/install-upgrade-executor-design.md)
 - console 消费的 4 类流水线模式定义：[console/features/ui-01-goals-users-competitors.md §1.1](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-01-goals-users-competitors.md)

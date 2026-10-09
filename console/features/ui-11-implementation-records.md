@@ -209,3 +209,117 @@ hub 侧新增 `internal/search/repository/search_dryrun_test.go`：**DB-free 查
 ## 附 J：修正记账（2026-10-08 追加，不改写上文历史行）
 
 - **`pnpm test:pipeline` 断言数口径：41 → 63。** 附 H.4 / 附 I.4 所记「41/41」是 C-12 / R-8 落地当时的口径；实测现行 `scripts/pipeline-editor-smoke.mjs` 为 **63/63**（断言随后续迭代扩充）。按「只追加」铁律，上文「41/41」历史行保留不改写，当前口径以本条为准。
+
+---
+
+## 附 K：实现落地记录 —— 原型缺口补齐轮（2026-10-08，仅原型；console 实现未动）
+
+> 承接附 G/H/I/J。本轮性质与前几轮**相反**：不是"文档写了、代码补齐"，而是**原型先补齐、实现后跟进**——
+> 2026-10-08 的缺口分析（运行域「看得到状态、执行不了动作」+ 平台管理占位）当轮在 `CONSOLE-UI-原型.html`（2562 → 约 2860 行）落齐。
+> 设计规格增量见 ui-05 **§7.13**；新增依赖见 ui-09 **附 A 补充**（N-16/N-17）。
+
+### K.1 落地清单（原型侧，全部带 handler，无装饰控件）
+
+| 域 | 落地物 |
+| --- | --- |
+| 运行详情页 | 新页面 `pageRunDetail`（PAGES 注册 `rundetail` + 面包屑段 + 左栏高亮归属运行中心）：stage/task 时间线 + 任务日志块 + phase 感知动作区（终止 / 重跑 / 仅失败任务） |
+| 审批 | `openApproval`：批准 / 驳回 + 意见 → 改 run 状态 + 写审计（`approval.approve/reject`）；`waiting` 表行与详情页双入口 |
+| 终止 | `openCancelRun` 强确认；`PH` 增 `canceled ⊘ 已终止` 徽章 |
+| 触发 | `openTriggerModal`（环境 / 参数 / 版本）接编辑器「▶ 触发」与列表「运行」；确认后真实插入 RUNS 并写审计 |
+| 灰度 | `openCanaryCtrl`：步宽 10/25/50/100% + 暂停 / 晋级 / 回滚，真实改 RELEASES + 写审计 |
+| 平台管理 | 「用户与权限」重写（组映射编辑 ROLE_MAP + 平台用户表 + 审计日志表 + 导出）；「接入管理」（注册 K8s 集群 / 登记主机真实进注册表、Runner 安装/升级、凭据轮转 / 新建） |
+| 通知 | 顶栏铃铛 + 未读角标 + 下拉（待审批 / 失败运行 / 目标异常，条目按 todoCard 同语义直达） |
+| 运行中心 | 分页（`page/pageSize`）+ 时间范围筛选（RUNS_AGO 分钟前 mock）+ 行动作 详情 / 审批 |
+| 其他 | 个人中心 / 退出弹窗（原 toast 占位补齐）；制品页「版本矩阵」（`GET /package-versions` 消费 UI）；流水线运行历史弹窗行加「详情」直达 |
+
+### K.2 与真实实现的映射与**显式差异**（记账，实现跟进时逐条对齐）
+
+1. **三个动作已有现成桩，无新后端依赖**：终止 → `runApi.cancel`（`src/api/run.ts:149`）；审批 → `decision`（`run.ts:124`）；仅失败任务重跑 → `redispatch`（`run.ts:112`）。D.1 表缺 cancel 登记，已在 ui-09 附 A 补充段补记。
+2. **`canceled` vs `Cancelled`**：原型 `PH.canceled` 为自造键；hub `PipelineRunPhase` 枚举是 `Cancelled`。实现版状态徽章必须用真实枚举值直传（§7.6「两层命名」铁律同源），不得照抄原型键名。
+3. **mock 数据边界**：`RUN_DETAILS`（stage/task/日志）、`RUNS_AGO`（时间筛选）、`NOTIFICATIONS`、`PLATFORM_USERS`、`AUDIT_LOGS`、`VERSION_MATRIX`、`ROLE_MAP` 均为原型内存 mock；实现版分别接 `GET /runs/:id` + `stage-progress`、`?createdAfter=`（N-1 已落地）、前端聚合（N-17）、审计端点（N-16，待立项）、`GET /package-versions`。
+4. **审批 UX 未展开项**：§7.9 的**防自审**（申请人禁批）与**历史决策留痕展示**，原型审批弹窗未含——留待实现版，不在原型伪装。
+5. **运行详情 URL 形态未裁决**（§7.13 ③【待拍板】）：`/runs/:id` 独立路由 vs 运行视图 drawer；原型为内存页面态。
+6. **通知未读状态不持久**：无后端已读语义，角标数为 mock 常量；N-17 立项前不接受"跨设备已读"类需求。
+7. **版本矩阵按钮落点**：放「制品」页工具栏为原型裁决（版本是制品域信息）；若实现版认为归属「环境」页可再议，属可逆调整。
+
+### K.3 门禁与验证
+
+```
+awk 提取内联 <script> → node --check         ✅
+DOM stub 无头冒烟（vm.runInThisContext）     ✅
+  ├─ 全部页面渲染（runs 含分页/时间筛选/两视图、rundetail × 3 phase 分支、admin-perm、admin-target × 3 Tab、artifacts、logs、editor）
+  ├─ 全部 11 个新弹窗打开
+  └─ 状态变更回调真实生效（审批批准 → phase=running；审计头 = approval.approve）
+```
+
+冒烟**抓出真 bug 1 个**：`pageRunDetail` 引用未声明的 `meta`/`sp`（编辑时漏带两行声明）——`node --check` 抓不住（标识符在模板字符串内），靠运行时冒烟兜住，已修。
+（stub 要点备忘：`document.body` / `createElement` / **裸 `matchMedia`** 必须有——boot 用的是裸调用而非 `window.matchMedia`；toast 走 createElement+appendChild。）
+
+### K.4 本轮仍未做（如实标注，勿误读为已完成）
+
+1. **403/404 错误页与全局路由守卫错误态**（§7.9「权限不足错误态」原型仍未展开）；
+2. **日志实时流指示**（WS/SSE 连接态）、下载日志、按 task 折叠分组（现平铺合并展示）；
+3. 运行详情的阶段级时序视图（现仅列表化时间线）；
+4. ~~console 实现侧跟进~~ → 已由 **附 L** 落地（2026-10-08 下午）。
+
+---
+
+## 附 L：console 实现侧落地记录（2026-10-08，接 K.4 第 4 条）
+
+按 §7.13 把原型缺口落到 console 仓真实代码。**落码前先逐项核对了仓内现状**（Explore 全仓映射），结论与 K.2 的预期不同，如实记录：
+
+### L.1 核对结论：K.1 列的多数 P0 缺口**仓内已实现**，无需落码
+
+| K.1 缺口 | 仓内现状 |
+|---|---|
+| 单次运行详情页 | **已有** `RunMonitorView.vue`（`/pipelines/:pipelineId/runs/:runId`，DAG 横向流 + 任务详情 + 3s 轮询 + 日志面板） |
+| 审批操作 | **已有**（`runApi.approve` → RunMonitorView 审批弹窗，意见 + 批准/拒绝） |
+| 取消 / 重跑 | **已有**（`cancel` 两段式内联确认、`redispatch`、单任务 `rerunTask`；相位判定在 `utils/run.ts`，由 run-control smoke 钉住） |
+| 带参触发对话框 | **已有** `TriggerRunDialog.vue`（MOD-4：目标/命名空间/参数 KV/版本 picker/409 策略拒绝渲染） |
+| 分页 | **已有** `PaginationBar.vue`（RunCenter / RunList 消费，URL query 化） |
+| 通知中心 | **已有基础版**（铃铛 + 面板 + link 直达）；本轮补轮询（见 L.2） |
+| Runner 安装/升级 | **已有** `AgentOpsView.vue`（SSE 实时输出 + 台账） |
+| 灰度控制 | **已有** pause/promote/rollback（`runApi.rollout`，G4）；步宽调节依赖 runner CurrentWeight 回流（协议级缺口），不做假 UI |
+
+### L.2 本轮实际落码（console 仓）
+
+1. **时间范围筛选**（§7.13 ⑤，全链路）：
+   - `constants/runCenter.ts`：`RunCenterQuery` 增 `time` 字段；`RUN_TIME_RANGES`（''/1h/24h/7d）+ `timeToCreatedAfter()`（key → ISO，下推 hub `GET /runs?createdAfter=`，**hub 端点已支持**，核对过 `pipeline_run.go:141`）；
+   - `RunCenterView.vue`：工具栏时间按钮组（与 phase 筛选并排）+ `buildQuery()` 统一 query 组装（setPhase/setTime/setPage 共用，切筛选回第 1 页）；
+   - `runcenter-url-smoke.mjs`：16 → **21** 断言（time 归一化 / 非法 key 丢弃 / createdAfter 换算 / 幂等）。
+2. **注册接入目标**（§7.13 ⑦）：`PlatformAdminView` targets section 加「＋ 注册目标」Modal —— k8s（kubeconfig `parseKubeconfig` 预检，**明确标注不随目标保存**）+ host 两分支；成功后展示一次性 `enrollToken`（hub `POST /targets/:id/enroll-token` 已有，`api/target.ts` 补封装）；`Target` 类型补 `targetKind`（hub 模型本来就有，console 侧一直缺）；targets 表加「类型」列。
+3. **显式凭据轮转**（§7.13 ⑦）：`CredentialsView` 行操作加「轮转」——与编辑共用表单但**值必填**（留空 = 保留旧密文 = 没轮转），标题/按钮文案随 rotateMode 变化；openCreate/openEdit 重置 rotateMode 防状态残留。
+4. **版本矩阵消费**（`GET /package-versions` 已有）：新建 `api/packageversion.ts`；`AgentOpsView` 页头展示 hub/runner 目标版本（install/upgrade 排队的版本来源可见）。落点与 K.2 第 7 条「制品页工具栏」不同：核对后发现该端点是**平台自身三版本**（console/hub/runner 部署时常量），语义属 Runner 安装域而非制品域。
+5. **个人中心**：MainLayout user-chip 改下拉（姓名/用户名/邮箱/sub/realm 角色，hub 无用户表，只展示 Keycloak profile）；退出按钮保留。
+6. **通知轮询**：MainLayout 通知 30s setInterval（此前仅 onMounted 拉一次），onBeforeUnmount 清理；无已读端点前 unread = 列表长度（与 N-17 前端聚合一致）。
+
+### L.3 门禁（全绿）
+
+```
+pnpm build（vue-tsc --noEmit + vite build）   ✅（抓出 2 个类型错并修复：Target 缺 targetKind、reactive 字面量推宽）
+pnpm test（7 个 smoke 脚本）                   ✅ 全过
+  └─ runcenter-url：16 → 21 断言
+```
+
+### L.4 落码后仍 open（B 类 / 后端依赖，未做假实现）
+
+1. **平台审计日志**（N-16）：hub 已有 `audit_log` 表 + `AuditLogRepository.Recent()`（`middleware/audit.go` 只写不读），**无查询 HTTP 端点** —— 前端无端点可接，不落假 UI；下一步小改（hub 加 `GET /audit-logs`）即可解锁整个 console 消费端。
+2. **灰度步宽调节**：依赖 runner CurrentWeight 回传 TaskRun（已知唯一协议级回流缺口），现状步进为写死 10%→50%→100% 近似。
+3. **通知已读语义 / assignee=me**（N-2/N-17 后端侧）。
+4. 403/404 错误页（K.4 第 1 条延续）。
+
+### L.5 2026-10-08 追加轮：L.4 四项中三项收口（状态以 STATUS.md 为准）
+
+1. **审计日志 ✅**：hub `GET /audit-logs` 落地（`AuditLogRepository.Query` 六维 filter，挂 platformGroup 过平台级 `user:manage`，DryRun 查询形状回归 + 路由测试）；console `api/audit.ts` + `/admin/audit` section（`PlatformAdminView.vue`）。
+2. **通知已读 ✅（console 半边）**：`MainLayout.vue` localStorage 按 token sub 存 `lastReadAt`（60s skew 容忍），打开面板推进游标，修「角标恒亮」；hub 半边设计入 `runner-reflux-spec.md` §6。
+3. **403/404 ✅**：`ErrorView.vue`（双语义）+ router catch-all + `api/http.ts` 响应拦截器（403 → `/forbidden`，`skip403Redirect` 豁免 + 防循环；400/404/409 仍就地呈现）。
+4. **灰度步宽**：协议设计定稿（同 spec §3），实现 gate 真流量环境，未落码。
+
+### L.6 2026-10-08 P2 落实轮（灰度步宽收口 + P2 五项全落码）
+
+1. **灰度步宽 ✅（runner→hub 回流协议落码）**：`ReleaseDetailView.vue` 轮询 `releaseApi.listByRun`（GET /releases?pipelineRunId=），活跃行 `currentWeight` 优先、无快照退回任务完成数近似 `approxPercent`；协议见 `runner-reflux-spec.md` §3（v3：§4 Artifacts 降为协议预留）。
+2. **日志面板三件 ✅**：`RunMonitorView.vue` —— 下载（Blob 本地导出 `runId-task.log`）、折叠（>8000 字符默认只渲染尾部 + 展开全部）、流式指示（`● 实时` live-dot，运行活跃时显示）。
+3. **⌘K 非组件直达 ✅**：`utils/search.ts` 增 `nav` 类型（id=路由 path）；`useGlobalSearch.ts` 客户端静态池 `NAV_HITS`（总览/服务树/运行中心/平台管理四 section），不依赖资源索引与服务端 /search；结果追加在资源命中之后、整体截 SEARCH_LIMIT。
+4. **表格窄屏 ✅**：`styles/tokens.css` `@media (max-width: 768px)`——`.card overflow-x: auto`（容器横向滚动，不裁列）+ 单元格收紧 + toolbar 换行 + 栅格单列。
+5. **运行中心组件/触发人筛选 ✅**：hub `FindAll` 5 参（+`triggeredBy`，`GET /runs?triggeredBy=`）；console `RunCenterView` 工具栏组件下拉（`index.components` 供选）+ 触发人输入框；URL 契约 `RunCenterQuery` 增 `componentId`/`triggeredBy`（runcenter-url-smoke 21 → **22** 断言，新增深链往返用例）。
+6. **门禁**：`pnpm build`（vue-tsc + vite）✅；`pnpm test` 7 smoke 全绿（runcenter 22/22、theme-and-search 26/26（+nav 直达断言）、service-tree 63/63（类型标签断言修正为「服务端三型 + nav 仅客户端」）、run-control 22/22）。

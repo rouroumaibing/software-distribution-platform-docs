@@ -13,7 +13,7 @@
 
 > 裁定语义：目录位置表达的是**文档的治理范围主张**（这份内容属于整个平台），不是变更流程的镜像。防腐不靠位置，靠本 README 的维护纪律 + STATUS 指针协议 + 各域 index 交叉引用。
 
-## 当前住户（8）
+## 当前住户（11）
 
 | 文件 | 横跨范围 |
 | --- | --- |
@@ -25,6 +25,9 @@
 | [KEYCLOAK.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/KEYCLOAK.md) | 认证子系统：keycloakx 部署（hub chart）+ console/hub 交互 + 账号改密 |
 | [CERTIFICATES.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/CERTIFICATES.md) | 平台 TLS 证书：env 仓生成器 + 各组件 secret 引用契约（hub/console/网关） |
 | [ADR-dispatch-durable-queue.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-dispatch-durable-queue.md) | hub↔runner WS 线协议决策：变更需两端同步 |
+| [runner-reflux-spec.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/runner-reflux-spec.md) | runner→hub 执行态回流协议（灰度权重/产物/agent_version/通知已读）：runner 发、hub 落、console 消费（跨三端永久设计文档） |
+| [install-upgrade-executor-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/install-upgrade-executor-design.md) | agent_ops install/upgrade 执行器：runner 自升级 Job + hub enroll 对账，台账终态闭环（跨三端永久设计文档） |
+| [alerting-rules-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/alerting-rules-design.md) | 离线告警规则：hub/runner 指标 → Prometheus rules（env 仓部署）→ 通知流（跨三端永久设计文档） |
 
 ## 维护纪律
 

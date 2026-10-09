@@ -340,6 +340,12 @@ textarea.input{min-height:92px;resize:vertical;font-family:"SF Mono",ui-monospac
           <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
           搜索组件 / 流水线…<span class="kbd" style="margin-left:auto">⌘K</span>
         </div>
+        <div id="notifWrap" style="position:relative">
+          <button class="tbtn" id="notifBtn" title="通知中心（待审批 / 失败运行 / 目标异常）" style="position:relative">🔔
+            <span id="notifDot" style="position:absolute;top:-4px;right:-4px;background:var(--fail-fg);color:#fff;font-size:10px;font-weight:700;border-radius:9px;padding:0 4px;line-height:13px"></span>
+          </button>
+          <div id="notifDrop" hidden style="position:absolute;right:0;top:38px;width:340px;background:var(--surface);border:1px solid var(--hairline);border-radius:10px;box-shadow:var(--shadow);z-index:60;overflow:hidden"></div>
+        </div>
         <button class="tbtn" id="noteBtn" title="显示/隐藏设计备注（后端依赖与待确认项，仅评审用）">ⓘ 设计备注</button>
         <button class="tbtn" id="themeBtn" title="切换明/暗主题"></button>
         <button class="tbtn" id="grayBtn" title="灰阶模式（验证状态是否仍可辨）">灰阶</button>
@@ -424,6 +430,10 @@ const S = {
   runTab:'runs', runFilter:'all',
   /* 「接入管理」页内的视图：K8s 集群 / 主机 / 凭据 */
   adminTab:'k8s',
+  /* —— 运行域闭环补充（2026-10-08）：单次运行详情 / 分页 / 时间范围 / 通知 —— */
+  runDetail:null,               /* 运行详情页作用域：当前 run id（GET /runs/:id） */
+  runsPage:1, runsPageSize:5,   /* 运行中心分页（后端 page/pageSize，本原型前端切片模拟） */
+  runsTime:'all',               /* 时间范围筛选：all / 1h / 24h / 7d（真实由 GET /runs?since= 过滤） */
 };
 
 /* ============ 流水线编排：编辑器状态（阶段可前后移动、子任务上下移动、并行↔串行切换） ============ */
@@ -596,7 +606,7 @@ const ADMIN_NAV = [['admin-perm','用户与权限','shield'],['admin-target','�
 
 function renderRail(){
   const rail = document.getElementById('rail');
-  const navActive = (k)=>S.page===k?'active':'';
+  const navActive = (k)=>((k==='runs' && S.page==='rundetail') || S.page===k)?'active':'';
   rail.className = 'rail'+(S.collapsed?' collapsed':'');
   rail.innerHTML = `
     <div class="rail-head">
@@ -701,20 +711,35 @@ const RUN_FILTERS = {runs:[['all','全部'],['running','运行中'],['failed','�
 function pageRuns(){
   const tab = S.runTab;
   const filters = RUN_FILTERS[tab];
+  /* 时间范围筛选（2026-10-08 补）：真实由 GET /runs?since= 服务端过滤；原型用 RUNS_AGO 分钟前模拟 */
+  const timeFilters = [['all','全部时间'],['1h','近 1 小时'],['24h','近 24 小时'],['7d','近 7 天']];
+  const timeCutMin = {'1h':60,'24h':24*60,'7d':7*24*60}[S.runsTime]||Infinity;
+  const byTime = (id)=> (RUNS_AGO[id]??0) <= timeCutMin;
   const rows = tab==='releases' ? RELEASES.filter(r=>S.runFilter==='all'||r.phase===S.runFilter)
-             : RUNS.filter(r=>S.runFilter==='all'||r.phase===S.runFilter);
-  const colN = tab==='runs'?7:6;
+             : RUNS.filter(r=>(S.runFilter==='all'||r.phase===S.runFilter) && byTime(r.id));
+  /* 分页（2026-10-08 补）：后端 GET /runs 支持 page/pageSize，前端切片模拟同形态 */
+  const total = rows.length, pages = Math.max(1, Math.ceil(total/S.runsPageSize));
+  S.runsPage = Math.min(Math.max(1,S.runsPage), pages);
+  const view = rows.slice((S.runsPage-1)*S.runsPageSize, S.runsPage*S.runsPageSize);
+  const colN = tab==='runs'?8:6;
   let head, body;
   if(tab==='releases'){
     head = `<tr><th>组件</th><th>环境</th><th>灰度步骤</th><th>健康度</th><th>状态</th><th></th></tr>`;
-    body = rows.map(r=>`<tr><td><b>${r.comp}</b></td><td><span class="chip">${r.env}</span></td><td>${r.step}</td><td>${r.health}</td><td>${badge(r.phase)}</td>
-        <td style="text-align:right"><button class="link">控制 →</button></td></tr>`).join('');
+    body = view.map(r=>`<tr><td><b>${r.comp}</b></td><td><span class="chip">${r.env}</span></td><td>${r.step}</td><td>${r.health}</td><td>${badge(r.phase)}</td>
+        <td style="text-align:right"><button class="link" data-act="canary-ctrl" data-comp="${r.comp}" data-env="${r.env}">控制 →</button></td></tr>`).join('');
   } else {
-    head = `<tr><th>流水线</th><th>流水线ID</th><th>组件</th><th>触发人</th><th>状态</th><th>耗时</th><th>开始时间</th></tr>`;
-    body = rows.map(r=>{ const sp=r.pipeline.split(' / '); const comp=sp[0], pname=sp[1];
-      return `<tr><td><a class="link" data-act="open-pl-runs" data-pname="${pname}" data-pid="${r.pid}">${pname}</a></td><td class="mono">${r.pid}</td><td>${comp}</td><td>${r.by}</td><td>${badge(r.phase)}</td><td>${r.dur}</td><td class="mono">${r.at}</td></tr>`; }).join('');
+    head = `<tr><th>流水线</th><th>流水线ID</th><th>组件</th><th>触发人</th><th>状态</th><th>耗时</th><th>开始时间</th><th></th></tr>`;
+    body = view.map(r=>{ const sp=r.pipeline.split(' / '); const comp=sp[0], pname=sp[1];
+      const acts = `${r.phase==='waiting'?`<button class="link" data-act="approve-run" data-rid="${r.id}">审批</button> · `:''}`+
+        `<button class="link" data-act="open-run" data-rid="${r.id}">详情</button>`;
+      return `<tr><td><a class="link" data-act="open-pl-runs" data-pname="${pname}" data-pid="${r.pid}">${pname}</a></td><td class="mono">${r.pid}</td><td>${comp}</td><td>${r.by}</td><td>${badge(r.phase)}</td><td>${r.dur}</td><td class="mono">${r.at}</td><td style="text-align:right;white-space:nowrap">${acts}</td></tr>`; }).join('');
   }
   const noHit = `<tr><td colspan="${colN}" style="color:var(--text-sub);padding:22px 14px">无匹配记录</td></tr>`;
+  const pager = total>S.runsPageSize || pages>1 ? `<div class="toolbar2" style="margin-top:10px">
+      <span class="hint">共 ${total} 条 · 第 ${S.runsPage} / ${pages} 页</span><div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm" data-act="runs-page" data-p="${S.runsPage-1}" ${S.runsPage<=1?'disabled':''}>← 上一页</button>
+      <button class="btn btn-ghost btn-sm" data-act="runs-page" data-p="${S.runsPage+1}" ${S.runsPage>=pages?'disabled':''}>下一页 →</button>
+    </div>` : '';
   return `<div class="wrap">
     <div class="row" style="align-items:flex-end">
       <div><div class="title">运行中心</div><div class="sub">跨组件巡视 · 运行 / 发布</div></div>
@@ -722,12 +747,14 @@ function pageRuns(){
     <div class="toolbar2" style="margin-top:18px">
       <span class="seg">${RUN_VIEWS.map(([k,l])=>`<button class="${tab===k?'on':''}" data-run-tab="${k}">${l}</button>`).join('')}</span>
       ${filters?`<span class="seg">${filters.map(([k,l])=>`<button class="${S.runFilter===k?'on':''}" data-run-filter="${k}">${l}</button>`).join('')}</span>`:''}
-      <div class="spacer"></div><span class="hint">共 ${rows.length} 条</span>
+      <span class="seg">${timeFilters.map(([k,l])=>`<button class="${S.runsTime===k?'on':''}" data-act="runs-time" data-t="${k}">${l}</button>`).join('')}</span>
+      <div class="spacer"></div><span class="hint">共 ${total} 条</span>
     </div>
     <div class="card flush"><table class="table">
       <thead>${head}</thead>
-      <tbody>${rows.length?body:noHit}</tbody>
+      <tbody>${view.length?body:noHit}</tbody>
     </table></div>
+    ${pager}
   </div>`;
 }
 
@@ -1060,6 +1087,77 @@ const SSH_CREDS = [
 ];
 /* 凭据库统一视图（「目标 → 凭据」页数据源） */
 const CREDS = KUBE_CREDS.concat(SSH_CREDS);
+
+/* ============ 运行域闭环补充（2026-10-08 轮，均为 mock） ============
+   RUN_DETAILS = 单次运行详情（GET /runs/:id）：stage[] → task[]（状态 / 耗时 / 日志行）；
+   供「运行详情页」渲染。真实实现按 hub pipeline_stages → pipeline_task_templates → task_runs 聚合。 */
+const RUN_DETAILS = {
+  'run-8f21':{ stages:[
+    {name:'构建', mode:'parallel', tasks:[
+      {name:'compile & test', image:'toolchain/go:1.22', status:'succeeded', dur:'1m02s',
+       lines:['$ go build ./...','build ok (12s)','$ go test ./... -count=1','ok  \tpkg/api\t0.9s','14 tests passed (41s)']},
+      {name:'docker build', image:'docker:24', status:'succeeded', dur:'58s',
+       lines:['Step 6/9 : RUN make build','Successfully built 7c1e9f2a11bb','pushed harbor.sdpworkflow.com/sdp/comp-web:1.4.2']}]},
+    {name:'测试', mode:'parallel', tasks:[
+      {name:'pytest -q', image:'toolchain/python:3.12', status:'succeeded', dur:'14s', lines:['14 passed in 12.31s']}]},
+  ]},
+  'run-7c04':{ stages:[
+    {name:'发布', mode:'parallel', tasks:[
+      {name:'helm upgrade production', image:'helm:3', status:'running', dur:'52s',
+       lines:['Release sdp-comp-api has been upgraded.','Waiting for rollout: 2 of 5 updated replicas are available…']}]},
+  ]},
+  'run-6b90':{ stages:[
+    {name:'构建', mode:'parallel', tasks:[
+      {name:'compile & test', image:'toolchain/go:1.22', status:'succeeded', dur:'1m10s', lines:['build ok']},
+      {name:'docker build', image:'docker:24', status:'succeeded', dur:'61s', lines:['Successfully built 55d3a1b0cf22']}]},
+    {name:'归档', mode:'serial', tasks:[
+      {name:'helm upgrade staging', image:'helm:3', status:'failed', dur:'—',
+       lines:['Error: UPGRADE FAILED: timed out waiting for the condition','deployments.apps "comp-worker" rollout timeout (5m)']}]},
+  ]},
+  'run-5a11':{ stages:[
+    {name:'发布', mode:'parallel', tasks:[
+      {name:'人工卡点 (release-manager)', image:'—', status:'waiting', dur:'—',
+       lines:['等待审批：release-manager 组任一成员批准后继续','已等待 10m']},
+      {name:'helm upgrade production', image:'helm:3', status:'pending', dur:'—', lines:['排队中：前置审批通过后执行']}]},
+  ]},
+  'run-4e77':{ stages:[
+    {name:'构建', mode:'serial', tasks:[
+      {name:'etl build', image:'toolchain/python:3.12', status:'succeeded', dur:'2m55s', lines:['build ok']}]},
+  ]},
+};
+/* 运行时刻（分钟前，mock）——供时间范围筛选演示；真实实现由 GET /runs?since= 服务端过滤 */
+const RUNS_AGO = {'run-8f21':12, 'run-7c04':8, 'run-6b90':35, 'run-5a11':50, 'run-4e77':110};
+/* 通知中心（顶栏铃铛）：act = [page, runTab, runFilter]（点条目直达，与 todoCard 同一跳转语义） */
+const NOTIFICATIONS = [
+  {icon:'⏳', cls:'b-warn', title:'run-5a11 待你审批', desc:'comp-web / 转测流水线 · production 卡点', at:'10m 前', act:['runs','runs','waiting']},
+  {icon:'✕', cls:'b-fail', title:'run-6b90 运行失败', desc:'comp-worker / 版本归档 · helm upgrade 超时', at:'1h 前', act:['runs','runs','failed']},
+  {icon:'⚠', cls:'b-warn', title:'集群离线', desc:'kind-e2e-02 · Runner 心跳丢失 6h', at:'6h 前', act:['admin-target']},
+];
+/* 平台用户（「用户与权限」页）：Keycloak 组 → platform_role 映射的成员视图 */
+const PLATFORM_USERS = [
+  {name:'张三', mail:'zhangsan@sdp.local', kcGroup:'sdp-admins', role:'platform-admin', last:'09-14 19:02'},
+  {name:'李四', mail:'lisi@sdp.local',      kcGroup:'sdp-admins', role:'platform-admin', last:'09-14 18:40'},
+  {name:'王五', mail:'wangwu@sdp.local',    kcGroup:'sdp-devs',   role:'platform-user',  last:'09-14 17:22'},
+  {name:'赵六', mail:'zhaoliu@sdp.local',   kcGroup:'sdp-devs',   role:'platform-user',  last:'09-13 10:05'},
+];
+/* 平台审计日志（手动诊断 / 审批 / 凭据轮转等敏感操作逐条留痕；手动执行宣称"逐条审计"的落点） */
+const AUDIT_LOGS = [
+  {at:'09-14 19:20', who:'张三', act:'cancel_run',        target:'run-7c04',              detail:'POST /runs/run-7c04/cancel'},
+  {at:'09-14 18:47', who:'系统', act:'exec',              target:'edge-01.internal',      detail:'POST /environments/:id/exec · 手动诊断（systemctl status）'},
+  {at:'09-14 18:12', who:'赵六', act:'trigger',           target:'comp-etl / 日常流水线', detail:'POST /pipelines/:id/runs'},
+  {at:'09-14 17:30', who:'李四', act:'credential.rotate', target:'cred-ssh-edge',         detail:'凭据轮转（hub 侧 Secret 换值）'},
+];
+/* 版本矩阵（GET /package-versions，console 消费 UI 落点）：组件 × 环境的当前部署版本 */
+const VERSION_MATRIX = {
+  comps:['comp-web','comp-api','comp-worker'],
+  envs:['staging','alpha','production'],
+  cell:{'comp-web|staging':'1.4.2','comp-web|alpha':'1.4.2','comp-web|production':'1.3.9',
+        'comp-api|staging':'2.0.0-rc2','comp-api|alpha':'—','comp-api|production':'1.9.4',
+        'comp-worker|staging':'0.7.1','comp-worker|alpha':'—','comp-worker|production':'0.6.9'},
+};
+/* 审计追加（审批 / 取消 / 触发等动作复用） */
+function audit(who, act, target, detail){ AUDIT_LOGS.unshift({at:'刚刚', who, act, target, detail}); }
+
 const blankKube = ()=>({ source:'ref', credRef:'', server:'', caSet:false, insecure:false, auth:'token', credSet:false, ctx:'', parsed:null, parseErr:'' });
 const blankSsh  = ()=>({ sudo:false, targets:[] });
 const ENV = {};
@@ -1296,12 +1394,38 @@ function pageEditor(){
 }
 
 function pageAdminPerm(){
-  return `<div class="wrap"><div class="title">用户与平台权限</div><div class="sub">Keycloak 组 → platform_role 映射（仅平台管理员可见）</div>
-    <div class="card flush" style="margin-top:18px"><table class="table">
-      <thead><tr><th>Keycloak 组</th><th>平台角色</th><th>成员</th><th></th></tr></thead><tbody>
-      <tr><td><span class="chip">sdp-admins</span></td><td>platform-admin</td><td>3</td><td style="text-align:right"><button class="link">编辑</button></td></tr>
-      <tr><td><span class="chip">sdp-devs</span></td><td>platform-user</td><td>18</td><td style="text-align:right"><button class="link">编辑</button></td></tr>
-      </tbody></table></div></div>`;
+  /* 组映射（ROLE_MAP，可编辑）+ 平台用户视图 + 审计日志（2026-10-08 补齐：原页只有只读两行） */
+  const mapRows = ROLE_MAP.map(m=>`<tr>
+      <td><span class="chip mono">${esc(m.grp)}</span></td>
+      <td><b>${esc(m.role)}</b></td><td class="mono">${m.members}</td>
+      <td style="text-align:right"><button class="link" data-act="perm-map-edit" data-grp="${esc(m.grp)}">编辑</button></td></tr>`).join('');
+  const userRows = PLATFORM_USERS.map(u=>`<tr>
+      <td><b>${esc(u.name)}</b></td><td class="hint mono">${esc(u.mail)}</td>
+      <td><span class="chip mono">${esc(u.kcGroup)}</span></td>
+      <td><b>${esc(u.role)}</b></td><td class="mono hint">${esc(u.last)}</td></tr>`).join('');
+  const auditRows = AUDIT_LOGS.map(a=>`<tr>
+      <td class="mono hint" style="white-space:nowrap">${esc(a.at)}</td><td>${esc(a.who)}</td>
+      <td><span class="chip mono">${esc(a.act)}</span></td>
+      <td class="mono">${esc(a.target)}</td><td class="hint" style="white-space:normal">${esc(a.detail)}</td></tr>`).join('');
+  return `<div class="wrap">
+    <div class="title">用户与平台权限</div>
+    <div class="sub">Keycloak 只做身份，hub 唯一权限权威（主体 = token sub）；角色写顶层 roles claim。仅平台管理员可见。</div>
+    <div class="h2" style="margin-top:18px">Keycloak 组 → platform_role 映射</div>
+    <div class="card flush"><table class="table">
+      <thead><tr><th>Keycloak 组</th><th>平台角色</th><th>成员</th><th></th></tr></thead>
+      <tbody>${mapRows}</tbody></table></div>
+    <div class="h2" style="margin-top:18px">平台用户 <span class="hint">（只读视图：成员来自 Keycloak 组，console 不维护口令）</span></div>
+    <div class="card flush"><table class="table">
+      <thead><tr><th>用户</th><th>邮箱</th><th>Keycloak 组</th><th>平台角色</th><th>最近活跃</th></tr></thead>
+      <tbody>${userRows}</tbody></table></div>
+    <div class="h2" style="margin-top:18px">平台审计日志 <span class="spacer"></span>
+      <a class="link" data-act="audit-export" style="font-size:12.5px;font-weight:500">导出 CSV →</a></div>
+    <div class="card flush"><table class="table">
+      <thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>详情</th></tr></thead>
+      <tbody>${auditRows}</tbody></table></div>
+    <div class="infobar" style="margin-top:14px"><div class="infobar-h">审计范围</div>
+      <div class="infobar-b">审批（批准 / 驳回）、运行取消、手动执行（<span class="mono">POST /environments/:id/exec</span>，一次一条、逐条审计、需 <span class="mono">target:exec</span>）、凭据轮转 / 创建、目标注册、组映射变更——以上操作在 hub 侧逐条留痕，本页为统一查询视图。</div></div>
+  </div>`;
 }
 /* 「平台管理 → 接入管理」= 接入目标的统一注册表（K8s 集群 + 主机 + 凭据）。
    层级关系：目标（注册表里的一行）→ 环境（引用一行 + ns / 主机列表）。
@@ -1339,7 +1463,7 @@ function pageAdminTarget(){
         <td><span class="mono">${esc(c.host)}</span></td>
         <td class="mono">${c.used} 个环境</td>
         <td class="mono">${esc(c.rotated)}</td>
-        <td style="text-align:right"><button class="link" data-act="target-note">轮转</button></td></tr>`).join('');
+        <td style="text-align:right"><button class="link" data-act="cred-rotate" data-ref="${esc(c.ref)}">轮转</button></td></tr>`).join('');
     info = `<div class="infobar"><div class="infobar-h">凭据只出现引用名，明文永不返回</div>
       <div class="infobar-b">沿用 <span class="mono">components.repo_secret_ref</span> / <span class="mono">component_configs.secret_ref</span> 的同一套规则：
       平台 DB 只存<b>引用名</b>，明文在 hub 侧 Secret；接口回显 <span class="mono">xxxSet:true</span> 布尔而永不返回明文。
@@ -1355,7 +1479,7 @@ function pageAdminTarget(){
         <td class="mono">${esc(c.hb)}</td>
         <td class="mono">${c.refs} 个环境</td>
         <td>${c.mode==='agent'?'<span class="hint">Runner 心跳</span>':'<span class="hint">连接测试</span>'}</td>
-        <td style="text-align:right"><button class="link" data-act="target-note">详情</button></td></tr>`).join('');
+        <td style="text-align:right"><button class="link" data-act="target-note">详情</button>${c.mode==='agent'?` · <button class="link" data-act="runner-inst" data-tid="${c.id}">Runner</button>`:''}</td></tr>`).join('');
     info = `<div class="infobar"><div class="infobar-h">单机版：平台底座所在集群也在本表</div>
       <div class="infobar-b">平台底座所在集群也在这张表里——它既是<b>平台底座</b>（hub / console 跑在里面），
       也是<b>被发布目标</b>（本地 Runner 回连、流水线在本地集群执行）。这只是<b>部署位置</b>的巧合；Gen0 安装是<b>一体化</b>的（console / hub / runner 同批装齐），故本行<b>天然已装 runner</b>（表内 <span class="mono">agent=v0.4.2</span> 即此义），动作为<b>升级</b>；
@@ -1368,7 +1492,9 @@ function pageAdminTarget(){
     <div class="sub">接入目标的统一注册表 —— <b>环境只是"引用其中一行"</b>。K8s 集群靠 Runner Agent 回连或 hub 直连 apiserver；
       <b>主机</b>（物理机 / VM / 裸金属 / 归档机）只有 SSH 一条通道，且凭据由 hub 侧持有。</div>
     <div class="toolbar2" style="margin-top:18px">${seg}<div class="spacer"></div>
-      <button class="btn btn-primary btn-sm" data-act="target-note">${addBtn}</button></div>
+      ${tab==='creds'
+        ? '<button class="btn btn-primary btn-sm" data-act="cred-create">＋ 新建凭据</button>'
+        : `<button class="btn btn-primary btn-sm" data-act="reg-target" data-kind="${tab==='hosts'?'host':'k8s'}">${addBtn}</button>`}</div>
     <div class="card flush"><table class="table"><thead>${head}</thead><tbody>${rows}</tbody></table></div>
     <div style="margin-top:14px">${info}</div>
   </div>`;
@@ -1390,7 +1516,7 @@ function openTargetNote(){
     '<div class="modal-foot"><button class="btn btn-primary" data-close>知道了</button></div>');
 }
 
-const PAGES = {dashboard:pageDashboard, runs:pageRuns,
+const PAGES = {dashboard:pageDashboard, runs:pageRuns, rundetail:pageRunDetail,
   catalog:pageCatalog, component:pageComponent, editor:pageEditor, 'admin-perm':pageAdminPerm, 'admin-target':pageAdminTarget};
 
 /* ============ crumb（唯一面包屑；中间层可点，不再在内容区重复一条） ============ */
@@ -1399,6 +1525,7 @@ function renderCrumb(){
   let segs;
   if(S.page==='component')      segs = [['服务树','catalog'],[`${S.comp} · <span class="mono">${curUuid()}</span>`]];
   else if(S.page==='editor')    segs = [[S.comp,'component'],['交付'],[S.editorName]];
+  else if(S.page==='rundetail') segs = [['运行中心','runs'],[`运行详情 · <span class="mono">${S.runDetail||''}</span>`]];
   else if(S.page==='runs')      segs = S.runTab==='runs' ? [['运行中心']]
                                       : [['运行中心','runs'],[(RUN_VIEWS.find(v=>v[0]===S.runTab)||[])[1]||'']];
   else if(S.page==='admin-perm')    segs = [['平台管理'],['用户与权限']];
@@ -1717,7 +1844,7 @@ document.getElementById('content').addEventListener('click', (e)=>{
   else if(a==='open-pl-runs') openPipelineRuns(act.dataset.pname);
   else if(a==='new-pl') newPipeline();
   else if(a==='open-pl'){ enterEditor(name||'日常流水线'); }
-  else if(a==='run-pl') toast('已提交运行「'+(name||'日常流水线')+'」（示意）');
+  else if(a==='run-pl') openTriggerModal(name||'日常流水线');
   else if(a==='del-pl') delPipeline(name||S.editorName);
   else if(a==='back-pl') backFromEditor();
   else if(a==='save-pl'){ savePipelineDraft(); openRequestModal(); }
@@ -1779,7 +1906,7 @@ document.getElementById('content').addEventListener('click', (e)=>{
       e.check={items}; e.status = bad ? 'paused' : 'succeeded'; e.lastTest='刚刚';
       toast(bad ? ('连接测试完成：'+bad+' 项未通过') : '连接测试全部通过', !!bad); render(); } }
   else if(a==='remote-exec') openRemoteExec(act.dataset.kind);
-  else if(a==='trigger') toast('已提交运行（触发对话框示意）');
+  else if(a==='trigger') openTriggerModal(S.editorName);
   else if(a==='preview-req') openRequestModal();
   else if(a==='mv-stage'){ const si=+act.dataset.si, dir=act.dataset.dir, j=dir==='left'?si-1:si+1; if(j>=0&&j<S.editorStages.length){ const x=S.editorStages.splice(si,1)[0]; S.editorStages.splice(j,0,x); if(S.editorSel&&S.editorSel.si===si) S.editorSel.si=j; render(); } }
   else if(a==='toggle-mode'){ const si=+act.dataset.si; S.editorStages[si].mode = S.editorStages[si].mode==='parallel'?'serial':'parallel'; S.editorDirty=true; render(); }
@@ -1801,6 +1928,24 @@ document.getElementById('content').addEventListener('click', (e)=>{
   else if(a==='log-search'){ UI.logQ=(document.getElementById('logQ')||{}).value||''; render(); }
   else if(a==='log-refresh') logRefresh();
   else if(a==='log-retry'){ S.logState='success'; render(); }
+  /* —— 运行域闭环（2026-10-08 补充：详情 / 审批 / 取消 / 重跑 / 灰度控制 / 分页 / 时间筛选）—— */
+  else if(a==='open-run'){ S.runDetail=act.dataset.rid; S.plState='success'; go('rundetail'); }
+  else if(a==='approve-run') openApproval(act.dataset.rid);
+  else if(a==='cancel-run') openCancelRun(act.dataset.rid);
+  else if(a==='rerun-run'){ const r=RUNS.find(x=>x.id===act.dataset.rid);
+    openTriggerModal(r?(r.pipeline.split(' / ')[1]||''):''); }
+  else if(a==='canary-ctrl') openCanaryCtrl(act.dataset.comp, act.dataset.env);
+  else if(a==='runs-time'){ S.runsTime=act.dataset.t; S.runsPage=1; render(); }
+  else if(a==='runs-page'){ S.runsPage=+act.dataset.p; render(); }
+  /* —— 接入管理补充（注册目标 / Runner 安装升级 / 凭据轮转）—— */
+  else if(a==='reg-target') openRegisterTarget(act.dataset.kind);
+  else if(a==='runner-inst') openRunnerInst(act.dataset.tid);
+  else if(a==='cred-rotate') openCredRotate(act.dataset.ref);
+  else if(a==='ver-matrix') openVersionMatrix();
+  /* —— 平台管理补充（组映射编辑 / 审计导出）—— */
+  else if(a==='perm-map-edit') openPermMapEdit(act.dataset.grp);
+  else if(a==='cred-create') openCredCreate();
+  else if(a==='audit-export') toast('审计日志导出 CSV（示意，POST /audit/export）');
 });
 
 /* 配置导入 / 导出 / 新建分组 / 新建环境 的弹窗与工具 */
@@ -2317,11 +2462,12 @@ function setPath(obj, path, val){
 /* 点击流水线名称 → 查看该流水线的运行情况详情（按 pipeline 名称聚合 RUNS，示意） */
 function openPipelineRuns(pname){
   const list = RUNS.filter(r=>(r.pipeline.split(' / ')[1]||'')===pname);
-  const rows = list.length ? list.map(r=>`<tr><td>${badge(r.phase)}</td><td>${r.by}</td><td class="mono">${r.dur}</td><td class="mono">${r.at}</td></tr>`).join('')
-    : `<tr><td colspan="4" style="color:var(--text-sub);padding:14px">无运行记录</td></tr>`;
+  const rows = list.length ? list.map(r=>`<tr><td>${badge(r.phase)}</td><td>${r.by}</td><td class="mono">${r.dur}</td><td class="mono">${r.at}</td>
+      <td style="text-align:right"><button class="link" data-act="open-run" data-rid="${r.id}">详情</button></td></tr>`).join('')
+    : `<tr><td colspan="5" style="color:var(--text-sub);padding:14px">无运行记录</td></tr>`;
   openModal(`<h3>流水线运行情况：${pname}</h3>
-    <div class="mb">该流水线的运行历史（示意，数据来自 RUNS 模拟）。</div>
-    <div class="card flush" style="box-shadow:none"><table class="table"><thead><tr><th>状态</th><th>触发人</th><th>耗时</th><th>开始时间</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="mb">该流水线的运行历史（示意，数据来自 RUNS 模拟）。点「详情」进入单次运行详情页（阶段 / 任务 / 日志 / 审批 / 取消 / 重跑）。</div>
+    <div class="card flush" style="box-shadow:none"><table class="table"><thead><tr><th>状态</th><th>触发人</th><th>耗时</th><th>开始时间</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="modal-foot"><button class="btn btn-primary" data-close>关闭</button></div>`, null);
 }
 
@@ -2376,8 +2522,8 @@ document.getElementById('userDrop').addEventListener('click', (e)=>{
   if(!it) return;
   document.getElementById('userDrop').hidden=true;
   const act=it.dataset.userAct;
-  if(act==='profile') toast('个人中心（原型占位）');
-  else if(act==='logout') toast('已退出登录（原型占位）');
+  if(act==='profile') openProfile();
+  else if(act==='logout') openLogout();
 });
 document.addEventListener('click', ()=>{ const d=document.getElementById('userDrop'); if(d) d.hidden=true; });
 
@@ -2474,7 +2620,8 @@ function pageArtifacts(){
       <td class="mono">${a.size}</td>
     </tr>`).join('')}</tbody></table>`;
   return `${ARCHIVE_INFO}
-    <div class="toolbar2"><span class="hint">组件级制品（uuid 作用域，只读）</span><div class="spacer"></div>${seg}</div>
+    <div class="toolbar2"><span class="hint">组件级制品（uuid 作用域，只读）</span><div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm" data-act="ver-matrix" title="组件 × 环境当前部署版本（GET /package-versions）">版本矩阵</button>${seg}</div>
     <div class="card flush">${inner}</div>`;
 }
 /* 制品库为只读展示：版本包 = 签名 URL 超链接；无上传 / 删除 / 下载弹窗逻辑（删除与清理由 GC + 过期策略处理）。 */
@@ -2557,6 +2704,269 @@ function pageLogs(){
 }
 function logColor(l){ return l==='error'?'var(--fail-fg)':l==='warn'?'var(--warn-fg)':'var(--text)'; }
 function logRefresh(){ toast('已刷新日志（示意）'); }
+
+/* ============ 运行域闭环补充（2026-10-08）：此前"看得到状态、执行不了动作"的整体补齐 ============ */
+PH.canceled = ['b-pend','⊘','已终止'];   /* 终止态徽章（hub: phase=Canceled） */
+
+/* ---------- 单次运行详情页（GET /runs/:id）：stage/task 时间线 + 任务日志 + 动作区 ---------- */
+function pageRunDetail(){
+  const rid = S.runDetail; const r = RUNS.find(x=>x.id===rid);
+  if(!r) return `<div class="wrap"><div class="card"><div class="empty"><span class="big">◍</span>运行不存在或已被清理（GC / 过期策略）</div></div></div>`;
+  const d = RUN_DETAILS[rid] || {stages:[]};
+  const sp = r.pipeline.split(' / ');
+  const meta = `<div class="sub" style="margin-top:4px"><span class="mono">${esc(r.pid)}</span> · ${esc(sp[0])} / ${esc(sp[1]||'')} · 触发人 ${esc(r.by)} · 耗时 ${esc(r.dur)} · 开始 ${esc(r.at)}</div>`;
+  const acts = [];
+  if(r.phase==='running'||r.phase==='waiting')
+    acts.push(`<button class="btn btn-danger btn-sm" data-act="cancel-run" data-rid="${rid}">■ 终止运行</button>`);
+  if(r.phase==='succeeded'||r.phase==='failed'||r.phase==='canceled')
+    acts.push(`<button class="btn btn-primary btn-sm" data-act="rerun-run" data-rid="${rid}">↻ 重跑</button>`);
+  if(r.phase==='failed')
+    acts.push(`<button class="btn btn-ghost btn-sm" data-act="rerun-run" data-rid="${rid}" title="单任务重跑：仅重跑失败任务（hub 已落地）">↻ 仅失败任务</button>`);
+  const appr = r.phase==='waiting' ? `<div class="warnbox" style="display:flex;align-items:center;gap:12px;margin-top:14px">
+      <div style="flex:1">⏳ 运行停在<b>人工卡点</b>（<span class="mono">release-manager</span> 组任一成员审批后继续）——生产环境强制审批（§7.9）。</div>
+      <button class="btn btn-primary btn-sm" data-act="approve-run" data-rid="${rid}">✓ 审批</button></div>` : '';
+  const stages = d.stages.map((st,si)=>`<div class="card" style="margin-bottom:14px">
+      <div class="row" style="gap:9px;margin-bottom:10px"><span class="stage-no">${si+1}</span><b>${esc(st.name)}</b><span class="chip">${st.mode==='parallel'?'并行':'串行'}</span></div>
+      ${st.tasks.map(t=>`<div style="border:1px solid var(--hairline-2);border-radius:9px;padding:11px 13px;margin-bottom:9px">
+        <div class="row" style="gap:10px;align-items:center">${badge(t.status)}<b style="font-size:13.5px">${esc(t.name)}</b>
+          <span class="chip mono">${esc(t.image||'—')}</span><div class="spacer"></div><span class="hint mono">${esc(t.dur)}</span></div>
+        <div class="code-block mono" style="margin-top:8px;max-height:150px;font-size:12px">${(t.lines||[]).map(l=>esc(l)).join('<br>')}</div>
+      </div>`).join('')}
+    </div>`).join('') || `<div class="card"><div class="empty"><span class="big">⌛</span>阶段明细尚未回流（runner → hub 的任务级回流为已知协议缺口，测试时勿依赖）</div></div>`;
+  return `<div class="wrap">
+    <div class="row" style="align-items:flex-end">
+      <div><div class="title">${rid} ${badge(r.phase)}</div>${meta}</div>
+      <div class="spacer"></div><div class="row" style="gap:8px">${acts.join('')}</div>
+    </div>
+    ${appr}
+    <div class="h2" style="margin-top:18px">阶段与任务 <span class="hint">（GET /runs/:id · stage 内 executionMode 决定并行/串行）</span></div>
+    ${stages}
+  </div>`;
+}
+
+/* ---------- 审批操作（批准 / 驳回 + 意见；写入审计） ---------- */
+function openApproval(rid){
+  const r = RUNS.find(x=>x.id===rid); if(!r) return;
+  openModal(`<h3>审批 · ${esc(rid)}</h3>
+    <div class="mb"><b>${esc(r.pipeline)}</b> · 触发人 ${esc(r.by)} · ${badge('waiting')}<br>
+      卡点：<span class="mono">release-manager</span> 组任一成员批准后继续（需 <span class="mono">approval:approve</span> 权限）。</div>
+    <div class="field"><label>审批意见（可选，写入审计）</label><textarea id="ap-note" class="input" rows="3" placeholder="例如：已核对发布单，同意放量"></textarea></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>关闭</button>
+      <button class="btn btn-danger" id="ap-rej">驳回</button>
+      <button class="btn btn-primary" id="ap-ok">批准并继续</button></div>`, null);
+  const done = (verdict)=>{
+    const note = (document.getElementById('ap-note')||{}).value || '';
+    r.phase = verdict==='approved' ? 'running' : 'failed';
+    audit('张三', verdict==='approved'?'approval.approve':'approval.reject', rid,
+      (verdict==='approved'?'批准继续':'驳回')+(note?(' · 意见：'+note):''));
+    closeModal();
+    toast(verdict==='approved'?'已批准，运行继续（示意）':'已驳回，运行标记失败（示意）', verdict!=='approved');
+    render();
+  };
+  document.getElementById('ap-ok').onclick = ()=>done('approved');
+  document.getElementById('ap-rej').onclick = ()=>done('rejected');
+}
+
+/* ---------- 终止运行（POST /runs/:id/cancel，hub 已落地；须走注解非 handler 直写） ---------- */
+function openCancelRun(rid){
+  openModal(`<h3>终止运行 ${esc(rid)}？</h3>
+    <div class="mb">终止后运行标记为 <span class="mono">canceled</span>，已完成阶段不回滚；runner 侧任务收到取消信号后停止。
+      <span class="mono">POST /runs/:id/cancel</span>（取消运行中流水线须走注解，非 handler 直写）。</div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>返回</button><button class="btn btn-danger" data-ok>确认终止</button></div>`,
+    ()=>{ const r=RUNS.find(x=>x.id===rid); if(r) r.phase='canceled';
+      audit('张三','cancel_run',rid,'POST /runs/:id/cancel');
+      toast('已提交终止（示意）'); });
+}
+
+/* ---------- 带参触发对话框（POST /pipelines/:id/runs，返回列表取 data[0].id） ---------- */
+function openTriggerModal(pname){
+  const pl = pname || S.editorName || '日常流水线';
+  const envs = allEnvs(envModel(S.comp)).map(e=>e.name);
+  const opts = (envs.length?envs:['staging','production']).map(n=>`<option>${esc(n)}</option>`).join('');
+  openModal(`<h3>触发运行 · ${esc(pl)}</h3>
+    <div class="mb">当前组件 <b class="mono">${esc(S.comp)}</b>。<span class="mono">POST /pipelines/:id/runs</span>（响应为列表，取 <span class="mono">data[0].id</span>）。</div>
+    <div class="field"><label>运行环境</label><select id="tg-env" class="input">${opts}</select></div>
+    <div class="field"><label>运行参数（YAML / key=value，可选）</label><textarea id="tg-params" class="input mono" rows="3" placeholder="VERSION=1.4.3&#10;rollback_on_fail: true"></textarea></div>
+    <div class="field"><label>制品版本（可选，缺省取最新构建）</label><input id="tg-ver" class="input mono" placeholder="1.4.2" /></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>▶ 触发</button></div>`,
+    ()=>{ const id='run-'+Math.random().toString(16).slice(2,6);
+      RUNS.unshift({id, pid:'pl-'+Math.random().toString(16).slice(2,14), pipeline:S.comp+' / '+pl, by:'张三', phase:'running', dur:'0s', at:'刚刚'});
+      RUN_DETAILS[id]={stages:[]}; audit('张三','trigger',S.comp+' / '+pl,'POST /pipelines/:id/runs · env='+document.getElementById('tg-env').value);
+      S.runDetail=id; toast('已提交运行 '+id+'（示意）'); });
+}
+
+/* ---------- 灰度控制台（发布视图「控制 →」）：步宽 / 暂停 / 继续 / 晋级 / 回滚 ---------- */
+function openCanaryCtrl(comp, env){
+  const r = RELEASES.find(x=>x.comp===comp && x.env===env); if(!r) return;
+  const stepBtns = ['10%','25%','50%','100%'].map(s=>`<button class="mini" id="cv-step" data-s="${s}" ${r.step===s?'disabled':''}>${s}</button>`).join(' ');
+  openModal(`<h3>灰度控制 · ${esc(comp)} / ${esc(env)}</h3>
+    <div class="mb">当前步宽 <b>${esc(r.step)}</b> · 健康度 ${esc(r.health)} · ${badge(r.phase)}<br>
+      晋级前自动核对健康度；回滚 = <span class="mono">helm rollback</span>（runner 执行）。Paused 是 Rollout 任务级状态，逐 run 拉 tasks 判定（附 A · N-3）。</div>
+    <div class="field"><label>步宽（当前 → 目标）</label><div class="row" style="gap:6px">${stepBtns}</div></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>关闭</button>
+      <button class="btn btn-danger" id="cv-rollback">↩ 回滚</button>
+      <button class="btn btn-ghost" id="cv-pause">⏸ 暂停</button>
+      <button class="btn btn-primary" id="cv-advance">▶ 继续 / 晋级</button></div>`, null);
+  const upd=(step,phase,msg)=>{ if(step!==null) r.step=step; if(phase!==null) r.phase=phase;
+    audit('张三','canary.'+msg, comp+' / '+env, '灰度'+msg+' → '+r.step); closeModal(); toast(msg+'（示意）'); render(); };
+  document.getElementById('cv-advance').onclick = ()=>upd('100%','succeeded','晋级');
+  document.getElementById('cv-pause').onclick   = ()=>upd(null,'paused','暂停');
+  document.getElementById('cv-rollback').onclick= ()=>upd('0%','failed','回滚');
+  document.querySelectorAll('#cv-step').forEach(b=>b.onclick=()=>upd(b.dataset.s,'running','步宽调整'));
+}
+
+/* ---------- 注册目标 / 登记主机（POST /targets，已落地；kubeconfig 服务端 parse-kubeconfig 校验） ---------- */
+function openRegisterTarget(kind){
+  const isK8s = kind!=='host';
+  openModal(`<h3>${isK8s?'注册 K8s 集群':'登记主机（SSH）'}</h3>
+    <div class="mb">${isK8s
+      ? 'agent 通道 = 平台零凭据（Runner 回连）；kubeconfig 通道 = hub 持凭据直连 apiserver。注册后需在集群内安装 Runner（注册表行「Runner」动作）。'
+      : '主机无常驻 Agent：状态只反映「上次连接测试结果」，需主动测试刷新。凭据只存引用名，明文在 hub 侧 Secret。'}</div>
+    <div class="field"><label>${isK8s?'集群名':'主机名'}</label><input id="rt-name" class="input mono" placeholder="${isK8s?'tx-staging-bj':'edge-03.internal'}" /></div>
+    ${isK8s
+      ? `<div class="row" style="gap:8px"><div class="field" style="flex:1"><label>厂商</label><input id="rt-vendor" class="input" placeholder="tencent / aliyun / self-hosted" /></div>
+         <div class="field" style="flex:1"><label>地域</label><input id="rt-region" class="input" placeholder="gz" /></div></div>
+         <div class="field"><label>接入通道</label><select id="rt-mode" class="input"><option value="agent">agent（Runner 回连 · 平台零凭据）</option><option value="kubeconfig">kubeconfig（hub 直连 · 持凭据）</option></select></div>
+         <div class="field"><label>kubeconfig 内容（YAML · 服务端 parse-kubeconfig 校验；注意 (?m) clusters 正则缺陷已修）</label><textarea id="rt-kube" class="input mono" rows="4" placeholder="apiVersion: v1&#10;clusters:&#10;- cluster:&#10;    server: https://…"></textarea></div>`
+      : `<div class="row" style="gap:8px"><div class="field" style="flex:1"><label>地址</label><input id="rt-addr" class="input mono" placeholder="10.20.3.13" /></div>
+         <div class="field" style="flex:1"><label>登录用户（建议非 root + sudo）</label><input id="rt-user" class="input mono" placeholder="deploy" /></div></div>
+         <div class="field"><label>凭据引用（hub 侧 Secret 名）</label><input id="rt-ref" class="input mono" placeholder="cred-ssh-edge" /></div>`}
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>注册</button></div>`,
+    ()=>{
+      const name=(document.getElementById('rt-name')||{}).value||'';
+      if(!name){ toast('请填写名称', true); return false; }
+      const id=(isK8s?'c':'h')+(TARGETS.length+1);
+      const t = isK8s
+        ? {id, kind:'k8s', name, vendor:(document.getElementById('rt-vendor')||{}).value||'—', region:(document.getElementById('rt-region')||{}).value||'—',
+           mode:(document.getElementById('rt-mode')||{}).value||'agent', status:'unknown', agent:'—', hb:'—', refs:0}
+        : {id, kind:'host', name, vendor:'—', region:'—', mode:'ssh', status:'unknown', agent:'—', hb:'—', refs:0,
+           addr:(document.getElementById('rt-addr')||{}).value||'', user:(document.getElementById('rt-user')||{}).value||''};
+      TARGETS.push(t); (isK8s?K8S_TARGETS:HOSTS).push(t);
+      audit('张三','target.register',name,'POST /targets（'+kind+'）');
+      toast('已注册 '+name+'（示意，状态=未验证）');
+    });
+}
+
+/* ---------- Runner 安装 / 升级（POST /targets/:id/install|upgrade，hub 已落地·执行器 §9.9） ---------- */
+function openRunnerInst(tid){
+  const t = TARGETS.find(x=>x.id===tid); if(!t) return;
+  const installed = t.agent && t.agent!=='—';
+  openModal(`<h3>Runner 管理 · ${esc(t.name)}</h3>
+    <div class="mb">当前版本 <b class="mono">${esc(t.agent)}</b> · 接入通道 <span class="chip">${esc((CHANNEL_INFO[t.mode]||{}).label||t.mode)}</span> · 心跳 ${esc(t.hb)}<br>
+      ${installed?'升级 = 滚动替换目标集群内 Runner Deployment（Pending 任务重放保护）。':'该目标尚无 Runner：安装后经一次性 enroll-token 引导回连 hub（现网关为全局共享 token + runner 自报目标名，属已知缺口 ⚠️）。'}</div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>关闭</button>
+      <button class="btn btn-primary" id="ri-go">${installed?'升级 Runner':'安装 Runner'}</button></div>`, null);
+  document.getElementById('ri-go').onclick = ()=>{
+    audit('张三', installed?'runner.upgrade':'runner.install', t.name, 'POST /targets/:id/'+(installed?'upgrade':'install'));
+    closeModal(); toast((installed?'升级':'安装')+'指令已下发（执行器 §9.9 待补，示意）');
+  };
+}
+
+/* ---------- 凭据轮转（在凭据库换值，引用它的环境无需改动；明文单向 xxxSet） ---------- */
+function openCredRotate(ref){
+  const c = CREDS.find(x=>x.ref===ref); if(!c) return;
+  openModal(`<h3>轮转凭据 · <span class="mono">${esc(c.ref)}</span></h3>
+    <div class="mb">${esc(c.label)} · 明文位置 <span class="mono">${esc(c.host)}</span> · 被 <b>${c.used}</b> 个环境引用<br>
+      轮转 = 在凭据库换值，所有引用它的环境<b>无需改动</b>——这正是「只存引用名」的收益。接口只回 <span class="mono">valueSet:true</span>，永不回显明文。</div>
+    <div class="field"><label>新值（提交后即清空输入框，不落 console 状态）</label><input id="cr-val" type="password" class="input mono" placeholder="kubeconfig 内容 / SSH 私钥 / 新密码" /></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>换值并轮转</button></div>`,
+    ()=>{ c.rotated='2026-10-08';
+      audit('张三','credential.rotate',c.ref,'凭据轮转（hub 侧 Secret 换值）');
+      toast('已轮转 '+c.ref+'（示意）'); render(); });
+}
+
+/* ---------- 版本矩阵（GET /package-versions，console 消费 UI 落点） ---------- */
+function openVersionMatrix(){
+  const m = VERSION_MATRIX;
+  openModal(`<h3>版本矩阵</h3>
+    <div class="mb">组件 × 环境的当前部署版本（<span class="mono">GET /package-versions</span>，hub 已落地）。「—」= 该环境未部署。</div>
+    <div class="card flush" style="box-shadow:none"><table class="table">
+      <thead><tr><th>组件 \\ 环境</th>${m.envs.map(e=>`<th>${esc(e)}</th>`).join('')}</tr></thead>
+      <tbody>${m.comps.map(c=>`<tr><td><b>${esc(c)}</b></td>${m.envs.map(e=>`<td class="mono">${esc(m.cell[c+'|'+e]||'—')}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table></div>
+    <div class="modal-foot"><button class="btn btn-primary" data-close>关闭</button></div>`, null);
+}
+
+/* ---------- 平台组映射编辑（Keycloak 组 → platform_role） ---------- */
+const ROLE_MAP = [
+  {grp:'sdp-admins', role:'platform-admin', members:3},
+  {grp:'sdp-devs',   role:'platform-user',  members:18},
+];
+function openPermMapEdit(grp){
+  const m = ROLE_MAP.find(x=>x.grp===grp); if(!m) return;
+  openModal(`<h3>编辑映射 · <span class="mono">${esc(m.grp)}</span></h3>
+    <div class="mb">Keycloak 组 <span class="mono">${esc(m.grp)}</span>（${m.members} 名成员）→ 平台角色。角色只做平台级能力（Org / Service / Component 管理），组件内权限走 <span class="mono">component_role_bindings</span>。</div>
+    <div class="field"><label>平台角色</label><select id="pm-role" class="input">
+      <option value="platform-admin" ${m.role==='platform-admin'?'selected':''}>platform-admin（平台管理员）</option>
+      <option value="platform-user" ${m.role==='platform-user'?'selected':''}>platform-user（普通用户）</option>
+      <option value="platform-readonly">platform-readonly（只读）</option></select></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>保存映射</button></div>`,
+    ()=>{ m.role=document.getElementById('pm-role').value;
+      audit('张三','platform_role.map',m.grp,'组映射 → '+m.role);
+      toast('已更新映射：'+m.grp+' → '+m.role); render(); });
+}
+
+/* ---------- 个人中心 / 退出登录（原 toast 占位补齐为真实形态） ---------- */
+function openProfile(){
+  openModal(`<h3>个人中心</h3>
+    <div class="row" style="gap:12px;align-items:center;margin-bottom:12px">
+      <span class="avatar" style="width:44px;height:44px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:16px;font-weight:700">ZS</span>
+      <div><b style="font-size:16px">张三</b><div class="hint">zhangsan@sdp.local · platform-admin</div></div></div>
+    <div class="field"><label>所属 Keycloak 组</label><input class="input" value="sdp-admins" readonly /></div>
+    <div class="field"><label>平台角色</label><input class="input" value="platform-admin（Keycloak 组映射，只读）" readonly /></div>
+    <div class="hint">身份由 Keycloak 签发，权限权威在 hub（主体 = token sub）；个人资料不在 console 维护。</div>
+    <div class="modal-foot"><button class="btn btn-primary" data-close>关闭</button></div>`, null);
+}
+function openLogout(){
+  openModal(`<h3>退出登录？</h3>
+    <div class="mb">将结束当前会话并跳转 Keycloak 登录页（<span class="mono">issuer</span> 服务短名 · 默认端口剥除，一字不差）。</div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-danger" data-ok>退出</button></div>`,
+    ()=>toast('已退出登录（原型示意，真实跳转 Keycloak）'));
+}
+
+/* ---------- 新建凭据（POST /credentials，AES-GCM 加密落库、仅回 valueSet） ---------- */
+function openCredCreate(){
+  openModal(`<h3>新建凭据</h3>
+    <div class="mb">平台 DB 只存<b>引用名</b>，明文 AES-GCM 加密落在 hub 侧 Secret；接口只回 <span class="mono">valueSet:true</span>，永不返回明文。</div>
+    <div class="field"><label>引用名（全局唯一，环境里引用它）</label><input id="cc-ref" class="input mono" placeholder="cred-ssh-edge-02" /></div>
+    <div class="row" style="gap:8px">
+      <div class="field" style="flex:1"><label>显示名称</label><input id="cc-label" class="input" placeholder="边缘节点部署账号 02" /></div>
+      <div class="field" style="flex:1"><label>适用目标</label><select id="cc-kind" class="input">
+        <option value="ssh-key">主机 · SSH 密钥</option><option value="ssh-password">主机 · SSH 密码</option>
+        <option value="kubeconfig">K8s 集群 · kubeconfig</option></select></div></div>
+    <div class="field"><label>明文值（提交后即清空，不落 console 状态）</label><input id="cc-val" type="password" class="input mono" placeholder="私钥 / 密码 / kubeconfig 内容" /></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>创建</button></div>`,
+    ()=>{
+      const ref=(document.getElementById('cc-ref')||{}).value||'';
+      if(!ref){ toast('请填写引用名', true); return false; }
+      CREDS.push({ref, label:(document.getElementById('cc-label')||{}).value||ref, kind:(document.getElementById('cc-kind')||{}).value, used:0, host:'hub Secret · '+ref, rotated:'2026-10-08'});
+      audit('张三','credential.create',ref,'POST /credentials（AES-GCM 落库）');
+      toast('已创建凭据 '+ref+'（示意）'); render();
+    });
+}
+
+/* ---------- 通知中心（顶栏铃铛）：待审批 / 失败运行 / 目标异常，点条目直达 ---------- */
+function renderNotif(){
+  const dot=document.getElementById('notifDot'), drop=document.getElementById('notifDrop');
+  if(!dot || !drop) return;
+  dot.textContent = NOTIFICATIONS.length ? String(NOTIFICATIONS.length) : '';
+  drop.innerHTML = `<div style="padding:10px 14px;border-bottom:1px solid var(--hairline-2);font-weight:700;font-size:13px">通知 <span class="hint">（未读 ${NOTIFICATIONS.length}）</span></div>` +
+    (NOTIFICATIONS.map(n=>`<div data-nav="${n.act[0]}"${n.act[1]?` data-run-tab="${n.act[1]}"`:''}${n.act[2]?` data-run-filter="${n.act[2]}"`:''}
+        style="display:flex;gap:9px;padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--hairline-2)">
+        <span class="badge ${n.cls}" style="flex:0 0 auto">${n.icon}</span>
+        <div style="min-width:0"><div style="font-size:13px;font-weight:600">${esc(n.title)}</div>
+          <div class="hint" style="white-space:normal">${esc(n.desc)} · ${esc(n.at)}</div></div></div>`).join('')
+      || '<div class="empty" style="padding:18px">无通知</div>');
+}
+(function(){
+  const btn=document.getElementById('notifBtn'), drop=document.getElementById('notifDrop');
+  if(!btn || !drop) return;
+  btn.addEventListener('click',(e)=>{ e.stopPropagation(); renderNotif(); drop.hidden=!drop.hidden; });
+  drop.addEventListener('click',(e)=>{ e.stopPropagation();
+    if(e.target.closest('[data-nav]')) drop.hidden=true; });
+  document.addEventListener('click',()=>{ drop.hidden=true; });
+  renderNotif();
+})();
 </script>
 </body>
 </html>

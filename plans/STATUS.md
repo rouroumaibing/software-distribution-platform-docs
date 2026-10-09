@@ -20,7 +20,7 @@
 | 日志/监控 | 实时日志落库（runner 侧抓取在 `pkg/logstream`，hub 侧接收在 `internal/gateway/gateway.go:313-314` 的 `MessageLogChunk` → `logH`）；hub `GET /metrics`（`internal/metrics`） | audit §5.1 T-U6 |
 | agent_ops | exec 全链路（派发→目标集群 Job→状态/日志回传→SSE `GET /agent-ops/:id/stream` + 台账 + 轮询）；install/upgrade 台账受理（202 句柄） | `internal/target/*` + `cmd/hub/agentop_dispatcher.go`；migration 0018 |
 | 制品 | 签名下载（presigned / Local HMAC）；`expires_at` 保留期 GC + 孤儿对账（仅报告） | B-16；`DELETE-CONTRACT` §6.6-4 |
-| 账号权限 | Keycloak 身份 + hub 唯一权限权威（D1–D6 闭，D3 删 users 表）；两层 RBAC + 平台/组件自定义角色；四张权限表 + 审计 + 权限申请审批 + 到期回收；组织 claim 接入 + 资源归属强制点；`§10 #14` 403 缺口修复；**权限对账 conformance gate 脚本化**（§10 门禁，#17） | `ACCOUNT-PERMISSION-MODEL.md`；UNIMPLEMENTED §8/§9/§12/§14 |
+| 账号权限 | Keycloak 身份 + hub 唯一权限权威（D1–D6 闭，D3 删 users 表）；两层 RBAC + 平台/组件自定义角色；四张权限表 + 审计 + 权限申请审批 + 到期回收；组织 claim 接入 + 资源归属强制点；`§10 #14` 403 缺口修复；**权限对账 conformance gate 脚本化**（§10 门禁，#17）；**审计日志查询端点 `GET /audit-logs`**（#19 收口，2026-10-08：`AuditLogRepository.Query` 六维 filter + limit 钳制，挂 platformGroup 过 `RequirePlatformPermission(user:manage)`，DryRun 查询形状回归 + 路由注册测试） | `ACCOUNT-PERMISSION-MODEL.md`；UNIMPLEMENTED §8/§9/§12/§14；`permission/handler/audit.go`、`permission/repository/audit_log.go` |
 | 通知中心 | **通知中心端点 + 顶栏铃铛**（#7）：`GET /notifications` 聚合待审批运行（`pipeline_approvals.status='Pending'`）为通知流，前端铃铛展示未读数 + 下拉跳转运行详情 | `internal/notification`；`MainLayout.vue` 铃铛 |
 | 工具/文档 | **swagger 全端点再生成**（cancel/rerun/agent-ops/exec/install/upgrade 等 22 path 入文档，#11）；schema SSOT 双校验（AutoMigrate + migrations 手工层）；Artifact GC | `docs/swagger.json`；`DATA-MODEL.md` §9.0 |
 | 凭据 | AES-GCM 信封加密 + `10_credentials.sql` 幂等种子；Update 空值覆盖密文 bug 已修 | audit §5.1 T-U8 |
@@ -51,6 +51,7 @@
 | 凭据 | 凭据管理 UI（平台管理第 3 Tab，T-U8） | `CredentialsView.vue` |
 | 认证 | Keycloak 登录 + 路由守卫双模；`/login-hint` 临时密码说明页；**token 静默刷新**（`automaticSilentRenew`，oidc-client-ts iframe 续期，#6） | `stores/auth.ts`、`LoginHintView.vue` |
 | 权限 UI | 平台权限页（PlatformAdminView）+ 组件 PermissionsTab；敏感配置打码 | C-10/B-11 消费端 |
+| 平台管理收口（2026-10-08） | **审计日志消费端**（#19 收口：`api/audit.ts` + `/admin/audit` section，action 前缀/主体筛选，403 走拦截器）；**通知已读游标**（#20 console 半边收口：localStorage 按 sub 存 `lastReadAt` + 60s skew 容忍，修「角标恒亮」负 UX 债；hub 端点见 RUNNER-REFLUX-SPEC §6）；**403/404 全局错误态**（#21 收口：`ErrorView.vue` + router catch-all + http 拦截器 403 统一跳 `/forbidden`，带 `skip403Redirect` 豁免口；入口按权限隐藏仍待产品拍板，移 §3） | `PlatformAdminView.vue`、`MainLayout.vue`、`ErrorView.vue`、`api/http.ts`；console 门禁 build + 171 断言全绿 |
 
 ### 1.4 跨组件验证
 
@@ -62,6 +63,8 @@
 | console↔Keycloak E2E | ✅ auth ON 全链（401/200/组预置/临时密码拦截） |
 | 三流水线整体 E2E（构建/日常/发布，2026-09-26） | ✅ 三条流水线 + 审批 + 409 反向全通；揪出 G-1~G-12 共 12 缺口 |
 | E2E 缺口补齐轮（2026-09-26 第二批） | ✅ G-1~G-12 全部修复，回归中另发现 G-13（RBAC 授予权限不足）/G-14（RegisterProduced 非幂等）并修复；kind 回归 11/11 通过（审批闭环/通知/审计/409/G-6 两阶段 produces→consumes 交接/参数双通道/特权开关/签名存储）。gate：hub/runner `go build/vet/test`+gofmt 全绿，console `pnpm build`+`test` 全绿。证据：`plans/E2E-THREE-PIPELINES-2026-09-26.md` §9 |
+| kind 全栈部署验证（2026-10-08） | ✅ harbor→postgres/keycloak→三组件（自 harbor 拉镜像）→sdp-gateway 全栈 5 pod Running；hub API auth ON（/orgs 401）+ console 200；**runner WS 回连** `sdp_hub_gateway_connected_targets{target="local-dev"} 1` + **身份帧落库** `targets.agent_version='dev'`（#8/#2/#5 指标与协议的服务器侧真集群验证）；promtool test rules SUCCESS |
+| target 注册认证化 + 3 连绿回归锁定（2026-10-09） | ✅ deploy-local.sh stage_components：auth ON 下经 sdp-console password grant（admin）拿 token 自动注册 target（hub azp 校验=clientID，client_credentials 不可用）；访问面自管（短命 port-forward，消除对 platform 段 disown 进程依赖）；注册前 GET 查重幂等（hub 撞名 500 为已知 follow-up）。**全量 5 段连续 3 轮全绿**（EXIT=0 ×15、409 ok、gateway handshake OK ×3、5 pod Running）；本地 run-to-green 契约成立。双环境分工决策 + 保真度差异清单见 `plans/FIDELITY-KIND-VS-CLOUD-2026-10-09.md` |
 | gate | hub/runner `go build/vet/test`+gofmt 全绿；console `vue-tsc/build`+7 套冒烟全绿 |
 
 ---
@@ -72,21 +75,24 @@
 
 | # | 项 | 性质 | 阻塞点 / 双向钢人结论 |
 | --- | --- | --- | --- |
-| 1 | **install/upgrade 执行器**（§9.9 接入引导） | 设计裁定留守 | 台账已受理（queued）。正方：可以先落「队列消费 + 幂等 Job 创建」骨架；反方：执行器依赖 enroll-token 凭据流转 + runner 自升级 SA 权限两个产品级前置，骨架先落会在前置变化时返工。**拍板：留守**，与 #3 同项立项 |
-| 2 | **Agent 版本兼容性检查 / per-target 身份** | 登记（前置缺口） | 版本矩阵已落（`GET /package-versions`），但 **runner 未上报 `agent_version`**（全仓 grep 零命中），且 runner→hub 状态回流通道本身不完整（见 #8）。正方：先给 WS 握手加 agent_version 字段；反方：兼容性判定规则（什么版本算不兼容、拒绝还是告警）无产品定义，先上报也只是存着。**拍板：等 #8 回流通道落地后随通道一并上报，规则另立产品裁定** |
+| 1 | **install/upgrade 执行器**（§9.9 接入引导） | **代码侧完成（2026-10-08 落实）** | upgrade 派发通道放行（exec+upgrade）、`BuildUpgradeJobSpec`（幂等 Job 名 + opID 标签）+ 单测；hub 侧 agent_info 版本对账终态（WS 中断是预期）+ install enroll 对账（首连即成功）+ 15min 超时对账器；runner chart 开关 `runner.selfUpgrade.enabled`（默认 false，disabled 注入 `SDP_UPGRADE_DISABLED=true` → runner 对 upgrade op 显式回 failed，不静默兜底）+ 双态 template 验证（helm lint 过）。RBAC 无需新增（ClusterRole 已含 deployments patch）。E2E 升级实跑留待下一轮（镜像 tag 升级演练） |
+| 2 | **Agent 版本兼容性检查 / per-target 身份** | **实现完成（2026-10-08）** | `MessageAgentInfo` 身份帧（agentVersion/os/arch/capabilities + TargetName 防串号校验：帧内与连接身份不符记审计+拒写）已落 runner/hub 双端；**kind 实测**：runner 握手帧 → `targets.agent_version='dev'` + 心跳落库（2026-10-08 部署验证）。兼容性判定初版：只落库+展示不阻断。spec：`shared/runner-reflux-spec.md` §5 |
 | 3 | **平台自升级审批流 + 到期回收**（E2E P6 残留） | 设计裁定留守 | 与 #1 同域（§9.9）；C-10 已提供平台 RBAC 表达能力。依赖 #1 执行器先行，否则审批通过后无执行体 |
 | 4 | **Casbin / 复杂策略引擎**（B-19） | 条件未触发 | 复核结论：现存全部策略（平台/组件两层 RBAC + 资源归属强制点 + 审批角色）均可由 `resource:action` + 角色绑定表达，**未出现无法表达的策略**。按 `ACCOUNT-PERMISSION-MODEL` §5.2 判据，引入条件不成立；首条出现时再立项 |
-| 5 | **集群离线告警规则 + 降级开关预发/灰度验证** | 运维环境项 | 埋点已接入（hub+runner `/metrics`）；告警规则与灰度验证属部署环境（Prometheus/Alertmanager 规则文件），非代码仓可独立完成。#7 通知中心已备好消费端（离线告警可挂进 `internal/notification` 同一通知流） |
-| 8 | **canary 精确权重回传**（`Rollout.Status.CurrentWeight` → console） | 登记（协议缺口） | 核实：runner 侧已有 `RolloutStatus.CurrentWeight`（0-100）产出；hub DTO 已序列化 `currentWeight`；**缺口 = hub 无 runner→hub rollout 状态回流通道**（`internal/dispatch` 只承载 hub→runner 控制命令，runner 不写 hub 表、不 import hub）。正方：随 TaskRun 状态回流捎带；反方：§16.5 wire-format 纪律要求协议消息单独立项评审。**拍板：按 §16.5 立项「rollout 状态回流」后再接权重**，console 端零改动（DTO 字段已备） |
-| 10 | **金丝雀 P4 真流量回 0% / P5 全链路灰度** | 验证项 | 需目标集群带真实 workload + 流量入口（Ingress controller + 真实服务），本地 kind 单节点无法产生有意义流量切分。P1-P3（步骤器/暂停/晋升）已真集群验证 |
-| 16 | **TaskRun 产物/结果落库**（`ResultRef`/`ArtifactRefs`） | 登记（跨模块） | 需 TaskRun 字段 + 协议 payload 扩展 + runner 补发三处联动（ADR-dispatch-durable-queue §6 D 项）。与 #8 同属「runner→hub 数据回流」域，**建议与 #8 的回流通道合并一次立项**，避免协议两次扩展 |
+| 5 | **集群离线告警规则 + 降级开关分级验证** | **规则文件落地 + promtool 真验证（2026-10-08）** | env 仓 `local-kind-dev/alerting/sdp-alerts.yaml`：critical（RunnerOffline/TargetDown/HubErrorSpike）+ warning（RunnerFlapping/PipelineFailBurst）两组分级启用，每条带 runbook annotation；指标名与两仓代码逐一对源。`sdp-alert-test.yaml` 5 规则 fire/恢复用例 **promtool test rules SUCCESS**（docker prom/prometheus:v3.4.1 实跑；$value 模板断言按 rate 外推实测值校准）。通知流消费端已有（#7）；Prometheus 部署进 kind + Alertmanager webhook 端点属运维部署项，单独立项 |
+| 8 | **canary 精确权重回传**（`Rollout.Status.CurrentWeight` → console） | **实现完成（2026-10-08）** | `TaskRunStatusSummary.Rollout`（omitempty）+ runner Reconcile 按 `sdp.io/pipeline-run` 标签列 Rollout 出快照 → hub `ApplyStatus` upsert `rollout_runs`（step_history jsonb 追加，落库失败不断状态回写）→ console `ReleaseDetailView` 轮询 `GET /releases?pipelineRunId=` 显示精确权重（无快照退回任务数近似）。**kind 部署验证**：5 pod Running + `sdp_hub_gateway_connected_targets{target="local-dev"} 1`（WS 通路真实生效）。⬜ canary 真流量 E2E（demo workload + 权重快照断言）见 #10，gate 不再阻塞代码侧 |
+| 10 | **金丝雀 P4 真流量回 0% / P5 全链路灰度** | **验证项（环境已就绪）** | ~~本地 kind 单节点无法产生有意义流量切分~~ → 2026-10-08 sdp 全栈已部署进 kind（harbor/postgres/keycloak/hub/runner/console 5 pod Running + hub API auth ON + console 200 + runner WS 回连 gauge=1）。剩余：ingress-nginx + 双版本 demo workload + 合成流量跑 release 流水线，断言 canary 权重快照回流（#8 实现已完成，纯验证步骤） |
+| 16 | **TaskRun 产物/结果落库**（`ResultRef`/`ArtifactRefs`） | **协议预留（v3 裁定，2026-10-08）** | 落实阶段核对实际代码：既有 `artifacts` 表已带 `task_run_id`，上传链路（G-2/G-6/G-14 `RegisterProduced` 幂等登记）完备——spec §4 原设计的独立 `task_run_artifacts` 新表**重复**，裁定不建；回流通道 `Artifacts` 字段保留协议预留（omitempty，不实现生产者）；digest/size 元数据增强归制品上传协议扩展（挂 #22② Build→Harbor 立项时一并拍板）。spec v3 变更记录见 `shared/runner-reflux-spec.md` §4/§12 |
 | 17 | **软件包版本选择 / 制品→发布联动**（E2E G-3） | 登记（**最小版已落地**） | ✅ **最小版（2026-09-26 第三批）**：触发对话框加「从制品库选版本」picker（列组件已登记制品版本，选中即填 VERSION 参数），依赖 G-2/G-5/G-14 修复真实生效；kind 实测 UI 触发（picker 选 v0.0.4 → run WaitingApproval → approve → Succeeded）一次通过。同批顺带修复 **G-15**：`runApi.trigger` 未按 hub 列表契约取 `data[0]` → toast 显示 undefined。⬜ **完整联动留守**：选版本同时联动 Release chartVersion/manifest 引用属产品语义，等版本 picker 产品形态定稿后单独立项 |
 | 18 | **专用构建环境模板**（E2E G-4 完整版） | 登记（最小版已落地） | 任务级 privileged 开关已贯通（G-4 最小版），dind/cind 镜像 + privileged 即可构建；「linux/dind/cind 预置构建环境」作为模板库属产品功能，等构建场景真实需求出现再立项 |
+| 22 | **HARBOR 集成余量**（`HARBOR-REGISTRY-INTEGRATION-2026-09-28.md`） | **①③ 收口；五镜像入库 ✅（2026-10-08）** | ✅ **① 代码**：runner 任务默认镜像五件改 `harbor.sdpworkflow.com/sdp/*` 扁平命名（SDP_JOB_IMAGE_*/SDP_AGENT_EXEC_IMAGE 覆盖位不变）。✅ **五镜像入库**：postgres:16-alpine / keycloak:26.7.4 / hub / runner / console 全部经节点 containerd 推入 harbor（`node_push_to_harbor`：docker save → ctr import → ctr tag → ctr push --plain-http；多架构 index 用 `docker save --platform linux/amd64` 单架构导出解决 blob 缺失）→ 全栈 5 pod 自 harbor 拉取 Running（2026-10-08 部署验证）。✅ **③**：`DATA-MODEL.md` §9.3/§9.10 补 harbor 地址对应。⬜ **② Build→Harbor 对接留守**：registry 配置入口 + `REGISTRY_*` 注入 + docker login 凭据 + image 制品命名约定 —— 等首个真实构建推送需求出现再拍板 scope |
+| 23 | **Console P2 体验层**（五项） | **五项全落码（2026-10-08）** | ①日志下载/折叠（>8000 字符渲染尾部）/流式指示（●实时）；②⌘K 非组件直达（`SearchKind 'nav'`，客户端静态池 NAV_HITS，不依赖索引/服务端可用性）；③表格窄屏（@media 768：容器横向滚动不裁列）；④运行中心组件筛选 UI（下拉自资源索引）+ 触发人筛选（hub `GET /runs?triggeredBy=` 5 参 FindAll 链路 + URL 契约 componentId/triggeredBy，smoke 21→22）；⑤通知已读 + 403/404 已于 §1.3 收口。门禁：pnpm build + 7 smoke 全绿（runcenter 22/26/63/22…）。**URL 形态钢人裁定：维持嵌套 `/pipelines/:pid/runs/:rid`**（登记为裁定不做） |
 
 ## 3. 刻意不做 / 裁定保留
 
 | 项 | 裁定 |
 | --- | --- |
+| **平台管理入口按权限降级隐藏**（原 #21 子项） | 产品决策未拍板：403/404 页已落（§1.3），入口隐藏与否改变导航信息架构，拍板前保持全量展示 + 越权跳 Forbidden |
 | DAG 自由画布编辑器（C-08） | `CONSOLE-UI-DESIGN` §4.2：DependsOn 需求明确后评估 vue-flow |
 | 产物自动删除策略 | 对账刻意只报告（防误删进行中的上传）；`expires_at` GC 已覆盖清理 |
 | 拖拽式流水线编排 | 列表式编排已落地；拖拽待 DependsOn 拍板 |

@@ -8,7 +8,7 @@
 | 文件 | 说明 |
 | --- | --- |
 | [CONSOLE-UI-DESIGN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) | **前端设计唯一事实源**（索引 stub）：§0 修订史索引 + §0.4 章节→文件映射表。1686 行原文已于 2026-09-24 按章节拆入 `features/`，章节号不变、只追加铁律随文件下放 |
-| [CONSOLE-UI-原型.html](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-原型.html) | IA v3 可交互原型（单文件） |
+| [CONSOLE-UI-原型.html](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-原型.html) | IA v3 可交互原型（单文件；**2026-10-08 缺口补齐**：单次运行详情 / 审批 / 终止重跑 / 灰度控制台 / 带参触发 / 分页与时间筛选 / 通知中心 / 平台管理弹窗 / 版本矩阵，见 [ui-11 附 K](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-11-implementation-records.md) 与 [ui-05 §7.13](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-05-page-layouts.md)） |
 
 ## features/（已完成 / 既成设计事实，一主题一文件，各自只追加）
 
@@ -41,3 +41,4 @@
 - 权限与审批 UX 的后端权威：[shared/ACCOUNT-PERMISSION-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCOUNT-PERMISSION-MODEL.md)（**权威在 hub**）
 - 删除入口契约：[shared/DELETE-CONTRACT.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md)（`409 + {reasons}`，**权威在 hub**）
 - 端点契约：[shared/API-REFERENCE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/API-REFERENCE.md)
+- runner→hub 回流协议消费端（灰度快照/服务端已读游标/agent_version）：[shared/runner-reflux-spec.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/runner-reflux-spec.md)

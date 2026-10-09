@@ -677,7 +677,7 @@ exec 的两条执行路径（runner `internal/agentops`）：`agent` access 用 
 **数据流（全部在 hub 侧）**
 
 1. console 提交"接入一个目标" → `POST /targets` 预注册 + 提交 kubeconfig（`POST /credentials`，**只存 ref**）。
-2. hub 从**版本矩阵 CM**（§9.10）取 runner 版本 → 向目标集群下发安装（helm chart + 镜像）。
+2. hub 从**版本矩阵 CM**（§9.10）取 runner 版本 → 向目标集群下发安装（helm chart + 镜像）。镜像统一取自**平台 harbor**：`harbor.sdpworkflow.com/sdp/*`（2026-10-08 镜像全切裁定，STATUS #22；含 runner 任务默认镜像 `git`/`curl`/`helm`/`kubectl`/`busybox` 五件，扁平命名映射见 runner `pkg/executor/job_builder.go`）。
 3. runner 起来后**出站回连** hub 网关，`Heartbeat` 置 `online`；**kubeconfig 使命就此结束**。
 4. 升级：比对 CM 里的 runner 版本 vs `targets.agent_version`，有差异则执行升级。
 
@@ -696,7 +696,7 @@ exec 的两条执行路径（runner `internal/agentops`）：`agent` access 用 
 
 ### 9.10 版本矩阵（`package-versions` ConfigMap，**2026-09-21 二次裁定**）
 
-**机制**：部署平台时把**指定版本**的 console / hub / runner 镜像**一并推入镜像仓库**；三者的版本对应关系由一份 **ConfigMap** 维护，**集成在 hub 的 chart 内**随 hub 一起分发。接入管理的安装 / 升级**按该 CM 取值**。
+**机制**：部署平台时把**指定版本**的 console / hub / runner 镜像**一并推入镜像仓库**；三者的版本对应关系由一份 **ConfigMap** 维护，**集成在 hub 的 chart 内**随 hub 一起分发。接入管理的安装 / 升级**按该 CM 取值**。镜像仓库 = **平台 harbor**（`harbor.sdpworkflow.com`，sdp project，443 无显式端口；2026-10-08 起为平台唯一镜像事实源，`localhost:5000` 仅作 harbor 未起时的 bootstrap 中转——详见 env 仓 `harbor/` 与 STATUS #22）。
 
 | 要点 | 约定 |
 | --- | --- |

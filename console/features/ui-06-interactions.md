@@ -117,3 +117,47 @@
 > 判据：**一个导航项如果可以被表达为某个已有页面的一个筛选/视图，它就不该是导航项。** 反之，如果它是"用户来这里的理由"（总览、巡视、看资源、管平台），才配占一行。另：**分组标签是给"一组"用的**，只有一个成员时不加标签。
 
 ---
+
+## 8.x P2 体验层设计（2026-10-08 收口，STATUS #23）
+
+> 来源：原 `console/plans/CONSOLE-P2-UX-DESIGN-2026-10-08.md`（2026-10-08），闭环后折叠入本文件；运行详情页 URL 形态裁定另见 [ui-10 附 B.x](ui-10-decision-records.md)。状态以 STATUS §2 #23 为准。
+
+### 8.x.1 日志下载 + 按 task 折叠 + 流式指示（RunMonitorView）
+
+- **下载**：`runApi.logs` 全量拉取 → Blob → `a[download]`，文件名 `pipelinerun-<runId>-<task>.log`。
+- **按 task 折叠**：日志面板按 task 分组折叠（默认展开失败任务、折叠成功任务；>8000 字符默认只渲染尾部 + 展开全部）。
+- **流式指示**：轮询期间 task 行显示 `● 实时` live-dot（运行活跃时显示）；「跟随刷新」开关（关闭即冻结视图便于复制）。真实权重/产物经 runner→hub 回流协议（`shared/runner-reflux-spec.md`）回流，前端不自行拼装流。
+
+### 8.x.2 ⌘K 非组件资源直达
+
+`utils/search.ts` 增 `nav` 类型（id = 路由 path）；`useGlobalSearch.ts` 客户端静态池 `NAV_HITS`（总览/服务树/运行中心/平台管理四 section），不依赖资源索引与服务端 `/search`；结果追加在资源命中之后、整体截 `SEARCH_LIMIT`。无法直达详情的资源明确提示「前往 <类型> 列表」而非静默无结果。
+
+### 8.x.3 表格窄屏适配（CSS-only）
+
+`styles/tokens.css` `@media (max-width: 768px)`——`.card { overflow-x: auto }`（容器横向滚动，不裁列）+ 单元格收紧 + toolbar 换行 + 栅格单列。首列 `position: sticky; left: 0` 冻结关键列。不引入响应式断点重构。
+
+### 8.x.4 运行中心组件筛选 + 触发人筛选
+
+- **组件筛选**：下拉数据源 `useResourceMap`，拼进 `buildQuery()` → `componentId`（URL `?component=` 同步，延续 runCenter URL 契约）。
+- **触发人筛选**：hub `GET /runs` 增 `triggeredBy` 参数（`FindAll` 5 参，对齐既有 `createdAfter` 模式），console 出输入框 → `?triggeredBy=`。
+
+### 8.x.5 数据结构 / 接口（扩展点）
+
+```ts
+// console —— 既有模块扩展，无新组件文件
+runApi.listAll: (p?: { ...; componentId?: string; triggeredBy?: string })  // 参数扩展（componentId 已存在）
+RUN_CENTER_QUERY_KEYS += 'component' | 'triggeredBy'                       // URL 契约键扩展
+RunMonitorView: logGroups = task[] → { name, phase, lines, collapsed }      // 折叠分组视图状态
+// hub —— GET /runs 增参：handler c.Query("triggeredBy") → repo filter（列已存在，无迁移）
+```
+
+### 8.x.6 一致性校验
+
+| 维度 | 结论 |
+| --- | --- |
+| 概念一致性 | 「折叠分组/跟随刷新/URL 契约键」沿既有 runCenter 契约命名 |
+| 状态完备性 | 下载失败（空日志）toast；筛选组合（phase+time+component+triggeredBy）在 buildQuery 单点组装，无旁路；⌘K 未命中类型有兜底提示 |
+| 接口完备性 | 五项均有落点（§8.x.1–§8.x.4）；hub 端 triggeredBy 与既有 createdAfter 同模式 |
+| 层次一致性 | 日志内容仍由 hub REST 提供，console 不自行拼装流；权限上下文不因 URL 形态裁定变化 |
+
+---
