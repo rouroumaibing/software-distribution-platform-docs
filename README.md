@@ -47,7 +47,7 @@ software-distribution-platform-docs/
 ├── console/
 │   ├── index.md                   # console 域文档索引（入口）
 │   ├── CONSOLE-UI-DESIGN.md       # 前端设计**唯一事实源索引 stub**（§0 修订史 + §0.4 章节→文件映射；1686 行原文已拆入 features/）
-│   ├── CONSOLE-UI-原型.html        # IA v3 可交互原型
+│   ├── CONSOLE-UI-prototype.html        # IA v3 可交互原型
 │   ├── features/                  # 前端设计事实（一主题一文件，各自只追加，章节号与原文一致）
 │   │   ├── ui-01-goals-users-competitors.md   # §1–§3 目标/场景/竞品
 │   │   ├── ui-02-scope.md                     # §4 范围与功能清单
@@ -59,9 +59,10 @@ software-distribution-platform-docs/
 │   │   ├── ui-08-testing-acceptance.md        # §10 + 附 F 测试与验收
 │   │   ├── ui-09-backend-deps-api-contract.md # 附 A + 附 D 后端依赖与 API 契约
 │   │   ├── ui-10-decision-records.md          # 附 B + 附 C 决策记录
-│   │   └── ui-11-implementation-records.md    # 附 E + 附 G/H/I 实现落地记录
-│   └── plans/                     # 活跃计划（只收带实施路径与 Gate 的进行中项）
-│       └── PIPELINE-LIFECYCLE-PLAN.md         # 流水线全生命周期 UI 迭代（已收口：A/B/C/D 节全部落地，登记 STATUS §1.3）
+│   │   ├── ui-11-implementation-records.md    # 附 E + 附 G/H/I 实现落地记录
+│   │   ├── ui-12-console-completion-design.md # 补全设计权威：四期工作项 + 修订 R2/R3 落地记录（原 plans 契约/spec/钢人已并入后删除）
+│   │   ├── CONSOLE-FRONTEND-FIVES-STATES-2026-10-11.md # 共享五态规范（含 403 按钮规则；2026-10-11 自根 plans/ 迁入）
+│   │   └── （PIPELINE-LIFECYCLE-PLAN 已删除：纯实施清单，A/B/C/D 全部落地，无留存设计内容）
 ├── hub/
 │   ├── index.md                   # hub 域文档索引（入口；横切文档已迁 shared/）
 │   ├── STORY-hub-implementation.md
@@ -82,12 +83,13 @@ software-distribution-platform-docs/
 │   ├── ACCOUNT-PERMISSION-MODEL.md # 账号与权限规范：三条不动式（KC 只做身份 / hub 唯一权限权威 / 前端只展示）+ 鉴权两段式 + 审计 + 权限申请审批 + 现状对账
 │   ├── CERTIFICATES.md            # 平台 TLS 证书：统一生成与引用契约（cert-build 占位证书单一真源）
 │   ├── KEYCLOAK.md                # 认证子系统：keycloakx 子 chart + realm 预置 + 与 console/hub 交互
-│   └── ADR-dispatch-durable-queue.md # 下发持久队列 ADR（hub↔runner 线协议）
+│   ├── ADR-dispatch-durable-queue.md # 下发持久队列 ADR（hub↔runner 线协议）
+│   ├── ADR-0001-runner-first-connect-enrollment.md # Runner 首连自注册 ADR（2026-10-07 已采纳；2026-10-11 自根 plans/ 迁入）
+│   └── E2E-THREE-PIPELINES-2026-09-26.md # 三流水线整体 E2E 权威记录（场景 / 流程 / 缺口 G-1~G-14；2026-10-11 自根 plans/ 迁入）
 └── plans/
-    ├── STATUS.md                   # **平台状态总览（唯一状态权威 + 全局总索引）**：已完成清单（§1）/ 未完成清单（§2，10 项）/ 刻意不做（§3）
-    ├── ADR-0001-runner-first-connect-enrollment.md  # Runner 首连自注册 ADR（2026-10-07 已采纳）
-    ├── E2E-THREE-PIPELINES-2026-09-26.md  # 三流水线整体 E2E 权威记录（场景 / 流程 / 缺口 G-1~G-14）
-    ├── HARBOR-REGISTRY-INTEGRATION-2026-09-28.md  # Harbor 镜像仓库对接盘点（2026-10-08 全切已落地）
+    ├── STATUS.md                   # **平台状态总览（唯一状态权威 + 全局总索引）**：已完成清单（§1）/ 未完成清单（§2）/ 刻意不做（§3）
+    ├── FIDELITY-KIND-VS-CLOUD-2026-10-09.md # 保真度差异清单 kind vs 云上（活跃：云上验收 gate 未跑，#10 依赖）
+    ├── HARBOR-REGISTRY-INTEGRATION-2026-09-28.md # Harbor 对接盘点（①③收口；② Build→Harbor 留守 open）
     ├── e2e-smoke.sh                # 按页面真实操作顺序的 API 冒烟脚本（走 console ingress）
     └── e2e-cancel-rerun.sh         # 取消运行 / 单任务重跑的 API 冒烟脚本
 ```
@@ -100,8 +102,7 @@ software-distribution-platform-docs/
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------- | ---------------------------------------------------------------- |
 | [console/index.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/index.md) | console | **console 域入口索引**（事实源 stub / features 11 篇 / plans / 跨域引用） | —— |
 | [console/CONSOLE-UI-DESIGN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) | console | **前端设计唯一事实源（索引 stub）**：§0 修订史索引 + §0.4 章节→文件映射 | §1 目标/4 类流水线模式 → `features/ui-01`、§5 IA → `ui-03`、§6 执行模型 → `ui-04`、§7.9 权限 UX → `ui-05`、§8.2 四态 → `ui-06`、§10.2/§10.3 验收 → `ui-08` |
-| [console/CONSOLE-UI-原型.html](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-原型.html)                           | console | IA v3 可交互原型         | ——                                                               |
-| [console/plans/PIPELINE-LIFECYCLE-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/plans/PIPELINE-LIFECYCLE-PLAN.md) | console | 流水线全生命周期 UI 迭代计划（**已收口 2026-09-25**：A/B/C/D 节全部落地，登记见 STATUS §1.3；#18 现指 STATUS §2 专用构建环境模板，另有所指） | §1 目标与验收 Gate / §2 现状事实基线 / §4 逐文件改动清单 / §5 Gate 与验证 |
+| [console/CONSOLE-UI-prototype.html](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-prototype.html)                           | console | IA v3 可交互原型         | ——                                                               |
 | [hub/index.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/index.md) | hub | **hub 域入口索引**（自有 Story + 消费的 shared 住户清单 + 按需建立 features/plans 的约定） | —— |
 | [shared/DATA-MODEL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)                                         | 跨组件 | 领域关系链 + 执行/授权模型（hub 写 / runner 写 / console 读）     | §6 下发与进展回收（含 §6.6 取消/重跑裁定）、§7 授权模型、§9 接入拓扑（§9.11 平台自身升级裁决） |
 | [shared/API-REFERENCE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/API-REFERENCE.md) | 跨组件 | **REST API 权威端点清单** + old→new 映射 + 设计钢人论证 | 全部 hub 端点（按资源分组）、old 接口组成、合理性论证 |

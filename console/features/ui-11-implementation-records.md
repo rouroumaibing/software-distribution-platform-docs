@@ -215,7 +215,7 @@ hub 侧新增 `internal/search/repository/search_dryrun_test.go`：**DB-free 查
 ## 附 K：实现落地记录 —— 原型缺口补齐轮（2026-10-08，仅原型；console 实现未动）
 
 > 承接附 G/H/I/J。本轮性质与前几轮**相反**：不是"文档写了、代码补齐"，而是**原型先补齐、实现后跟进**——
-> 2026-10-08 的缺口分析（运行域「看得到状态、执行不了动作」+ 平台管理占位）当轮在 `CONSOLE-UI-原型.html`（2562 → 约 2860 行）落齐。
+> 2026-10-08 的缺口分析（运行域「看得到状态、执行不了动作」+ 平台管理占位）当轮在 `CONSOLE-UI-prototype.html`（2562 → 约 2860 行）落齐。
 > 设计规格增量见 ui-05 **§7.13**；新增依赖见 ui-09 **附 A 补充**（N-16/N-17）。
 
 ### K.1 落地清单（原型侧，全部带 handler，无装饰控件）
@@ -323,3 +323,10 @@ pnpm test（7 个 smoke 脚本）                   ✅ 全过
 4. **表格窄屏 ✅**：`styles/tokens.css` `@media (max-width: 768px)`——`.card overflow-x: auto`（容器横向滚动，不裁列）+ 单元格收紧 + toolbar 换行 + 栅格单列。
 5. **运行中心组件/触发人筛选 ✅**：hub `FindAll` 5 参（+`triggeredBy`，`GET /runs?triggeredBy=`）；console `RunCenterView` 工具栏组件下拉（`index.components` 供选）+ 触发人输入框；URL 契约 `RunCenterQuery` 增 `componentId`/`triggeredBy`（runcenter-url-smoke 21 → **22** 断言，新增深链往返用例）。
 6. **门禁**：`pnpm build`（vue-tsc + vite）✅；`pnpm test` 7 smoke 全绿（runcenter 22/22、theme-and-search 26/26（+nav 直达断言）、service-tree 63/63（类型标签断言修正为「服务端三型 + nav 仅客户端」）、run-control 22/22）。
+
+### M.1 2026-10-12 原型路线图落地轮（仅原型，console 实现仓未动）
+
+1. **范围**：`CONSOLE-UI-prototype.html` 内联 JS，路线图（`plans/CONSOLE-UI-PROTOTYPE-ROADMAP-2026-10-12.md`，已删，权威入 ui-12 R5）P0–P2 全部收口：4.2 版本一等对象 + 指定版本回滚（append 新 release 记录；目标版本来源 = 新契约 `GET /components/:id/versions`，N-33）、4.1 版本 diff + 变更说明、4.4 三处高危操作原因必填（配置保存 / 审批 / 凭据轮转）、4.3 触发器 Tab 切换 + cron 校验预览 + 写回 `TRIGGERS`、5.1 审批策略卡 + 时间线、5.2 订阅规则（事件 × 渠道）。
+2. **顺带**：原型 5 项代码小修（TDZ / 审计分类 / 角标 / PAT 安全 / 配置版本 v5）+ 文件名实际落盘改名（文档 §0.2 #11 早已按新名记录，磁盘迟至今日对齐）+ 版本矩阵语义勘误（`GET /package-versions` = 平台自身三版本，组件级矩阵改引 N-33）。
+3. **门禁**：`node --check` 抽 `<script>` SYNTAX_OK；纯函数冒烟（cronParse/cronNext/diffLines）**20/20**——抓出并修复 `*/15` 步长 cron 解析 bug；内容复核 51 个新标记在盘 / 3 个旧模式清零。
+4. **B 类登记**：`GET /components/:id/versions`（hub 侧待立项，N-33）；环境覆盖档执行路径维持 R4 结论（本文不重复登记）。

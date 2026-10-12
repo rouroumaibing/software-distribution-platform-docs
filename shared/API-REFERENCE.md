@@ -102,6 +102,9 @@
 - `GET /pipelines/:id/versions/:version/diff?against=<基准版号>`（以 `against` 为基准看 `:version` 改了什么；**方向性**：`:version` 更旧时 added/removed 互换。两者都必填）
 - `POST /pipelines/:id/versions/:version/rollback`（把**结构**回填到该版，并**记为新的一版**）
 
+### 组件可部署版本（4.2 指定版本回滚目标来源，2026-10-12 登记 · 待立项）
+- `GET /components/:id/versions`（暂名）：组件全部可部署版本（新→旧；版本号 / 构建时间 / 大小 / SHA256）——console 灰度控制台「回滚到指定版本」的目标来源。与上方 `GET /pipelines/:id/versions` **同构不同体**：前者制品/部署版本，后者结构快照。契约见 [ui-09 附 A · N-33](../console/features/ui-09-backend-deps-api-contract.md)
+
 **语义（与实现一致，勿按其它工具的心智模型推断）**
 - 版本在**结构性保存**时自动留档：阶段 / 子任务的增删改都会触发快照；只改元信息（name/kind/description）不产生新版本。
 - **唯一**的版本号推进点是该服务；body 与上一版**逐字相同**时**去重**（console 一次「保存」会发多条 no-op PUT，不去重会刷出一串空版本）。
@@ -125,7 +128,7 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 - **新建**：`POST /pipelines`（body 不含 `id`）
 - **更新**：`PUT /pipelines/:id`（body 同结构；`:id` 取 `GET /pipelines` 返回的流水线主键）
 
-该 contract 由 `console/CONSOLE-UI-原型.html` 的 `buildPipelineRequest()` 生成（JSON / YAML 可切换预览），字段名与 `internal/pipeline/models`（pipeline.go / stage.go / task_template.go）对齐。
+该 contract 由 `console/CONSOLE-UI-prototype.html` 的 `buildPipelineRequest()` 生成（JSON / YAML 可切换预览），字段名与 `internal/pipeline/models`（pipeline.go / stage.go / task_template.go）对齐。
 
 **请求体字段**
 

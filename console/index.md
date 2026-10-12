@@ -8,7 +8,7 @@
 | 文件 | 说明 |
 | --- | --- |
 | [CONSOLE-UI-DESIGN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) | **前端设计唯一事实源**（索引 stub）：§0 修订史索引 + §0.4 章节→文件映射表。1686 行原文已于 2026-09-24 按章节拆入 `features/`，章节号不变、只追加铁律随文件下放 |
-| [CONSOLE-UI-原型.html](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-原型.html) | IA v3 可交互原型（单文件；**2026-10-08 缺口补齐**：单次运行详情 / 审批 / 终止重跑 / 灰度控制台 / 带参触发 / 分页与时间筛选 / 通知中心 / 平台管理弹窗 / 版本矩阵，见 [ui-11 附 K](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-11-implementation-records.md) 与 [ui-05 §7.13](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-05-page-layouts.md)） |
+| [CONSOLE-UI-prototype.html](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-prototype.html) | IA v3 可交互原型（单文件；**2026-10-08 缺口补齐**：单次运行详情 / 审批 / 终止重跑 / 灰度控制台 / 带参触发 / 分页与时间筛选 / 通知中心 / 平台管理弹窗 / 版本矩阵，见 [ui-11 附 K](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-11-implementation-records.md) 与 [ui-05 §7.13](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-05-page-layouts.md)；**2026-10-11 补全集成**：四期 14 工作项分布嵌入原有页面（运行中心审批视图 / 接入管理 Runner Tab / 组件「变量与密钥」Tab / 配置版本历史 / 触发器 / 高危原因 / 状态枚举扩展 / 审计筛选 / 通知中心 / PAT / 全局制品库 / 服务树治理 / 实时日志徽章），落点对账见 [ui-12 附 A](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-12-console-completion-design.md)） |
 
 ## features/（已完成 / 既成设计事实，一主题一文件，各自只追加）
 
@@ -25,14 +25,12 @@
 | [ui-09-backend-deps-api-contract.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-09-backend-deps-api-contract.md) | 附 A + 附 D | 后端依赖与待确认（N 系列编号）、API 契约与三层数据模型 |
 | [ui-10-decision-records.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-10-decision-records.md) | 附 B + 附 C | 决策记录：运行中心 URL 形态（`?view=`）、服务树节点删除前后端分工 |
 | [ui-11-implementation-records.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-11-implementation-records.md) | 附 E + 附 G/H/I | 实现落地记录：C-01/02（搜索+主题）、C-12（流水线全生命周期）、R-8（服务树规模化）及显式差异记账 |
+| [ui-12-console-completion-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-12-console-completion-design.md) | 计划 §4.1–§4.5 | 前端设计补全计划（四期 15 工作项）逐项落实：入口/关键交互/权限矩阵（基于 hub `role.go` §7 词表）/五态引用/后端契约引用/决策挂钩；配套契约/spec 文档已并入本文（修订 R3）后删除 |
+| [CONSOLE-FRONTEND-FIVES-STATES-2026-10-11.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/CONSOLE-FRONTEND-FIVES-STATES-2026-10-11.md) | 计划 §1.1 / §4.1 | 共享五态规范（空/加载/错误/成功/无权限）+ 403 按钮三策略；被 ui-12 各工作项引用（2026-10-11 自根 plans/ 迁入） |
 
 ## plans/（活跃计划，只收带实质设计内容的进行中项）
 
-| 文件 | 说明 |
-| --- | --- |
-| [PIPELINE-LIFECYCLE-PLAN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/plans/PIPELINE-LIFECYCLE-PLAN.md) | 流水线全生命周期 UI 迭代（**A 节已实施（2026-10-08 状态更新）**：P0-2 落地——`pipelineApi.listGlobal` 直取 `GET /pipelines`（`src/api/pipeline.ts:191-196`），前端「组织→服务→组件→流水线」四级聚合 stopgap 已下线；B 节 hold；C/D 已实施）——登记 STATUS §2 #18 |
-
-> 裸待办条目不进本目录，只登记在 [STATUS §2](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md)；本目录文件必须是「有实施路径与验收 Gate 的活跃计划」。
+当前无活跃计划。已完成计划（A/B/C/D 节全部落地者）按指针协议迁 `features/`，裸待办条目只登记在 [STATUS §2](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md)，不进本目录。
 
 ## 跨域引用（住户在 shared/，完整清单见 [shared/README.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/README.md)）
 

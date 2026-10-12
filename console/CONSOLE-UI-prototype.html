@@ -359,6 +359,7 @@ textarea.input{min-height:92px;resize:vertical;font-family:"SF Mono",ui-monospac
               <div><div class="um-name">张三</div><div class="um-mail">zhangsan@sdp.local</div></div>
             </div>
             <div class="um-item" data-user-act="profile">个人中心</div>
+            <div class="um-item" data-user-act="pat">个人访问令牌</div>
             <div class="um-sep"></div>
             <div class="um-item danger" data-user-act="logout">退出</div>
           </div>
@@ -412,12 +413,24 @@ const PIPELINES = [
   {id:'p4', name:'转测流水线', comp:'comp-web', kind:'custom', ver:1, last:'09-14 18:31'},
 ];
 const RELEASES = [
-  {id:'r1', comp:'comp-api', env:'production', step:'50%', health:'良好', phase:'paused'},
-  {id:'r2', comp:'comp-web', env:'staging', step:'100%', health:'良好', phase:'succeeded'},
-  {id:'r3', comp:'comp-worker', env:'production', step:'10%', health:'波动', phase:'running'},
+  {id:'r1', comp:'comp-api', env:'production', step:'50%', health:'良好', phase:'paused', ver:'1.9.4'},
+  {id:'r2', comp:'comp-web', env:'staging', step:'100%', health:'良好', phase:'succeeded', ver:'1.4.2'},
+  {id:'r3', comp:'comp-worker', env:'production', step:'10%', health:'波动', phase:'running', ver:'0.6.9'},
+  {id:'r4', comp:'comp-api', env:'staging', step:'100%', health:'良好', phase:'rolled_back', ver:'2.0.0-rc2'},
 ];
+/* 4.2 版本一等对象（2026-10-12）：release 记录 ver = 当前部署版本；回滚 = append 新 release 记录（不覆盖历史）。
+   历史版本来源 = 新契约 GET /components/:id/versions（ui-09 附 A 新增），返回组件全部可部署版本、最新在前。 */
+const RELEASE_VERSIONS = {
+  'comp-web':   ['1.4.2','1.4.1','1.3.9'],
+  'comp-api':   ['1.9.4','1.9.3','1.8.0','1.7.5'],
+  'comp-worker':['0.7.1','0.6.9','0.6.8'],
+};
+const curRelease = (comp, env)=> RELEASES.find(x=>x.comp===comp && x.env===env);   /* append 顺序：新记录 unshift 在前，find 即当前 */
+/* 4.5 状态枚举（已与 hub 对齐）：Environment.Status 后端已是 4 值独立枚举（unconfigured|configured_unverified|verified|failed），
+   "paused 混用"在模型层不成立；真正缺口在 RolloutPhase 缺终态 Failed/RolledBack —— 此处补 rolled_back 终态演示（决策 #7）。 */
 const PH = {succeeded:['b-succ','✓','成功'], running:['b-run','●','运行中'], failed:['b-fail','✕','失败'],
-  waiting:['b-warn','⏳','待审批'], pending:['b-pend','○','待执行'], paused:['b-warn','⏸','已暂停']};
+  waiting:['b-warn','⏳','待审批'], pending:['b-pend','○','待执行'], paused:['b-warn','⏸','已暂停'],
+  rolled_back:['b-pend','↩','已回滚'], verified:['b-succ','✓','已验证'], configuring:['b-warn','◌','配置中']};
 const badge = (p)=>{const m=PH[p]||PH.pending;return `<span class="badge ${m[0]}"><span class="g">${m[1]}</span>${m[2]}</span>`};
 
 /* ============ state ============ */
@@ -433,6 +446,7 @@ const S = {
   /* —— 运行域闭环补充（2026-10-08）：单次运行详情 / 分页 / 时间范围 / 通知 —— */
   runDetail:null,               /* 运行详情页作用域：当前 run id（GET /runs/:id） */
   runsPage:1, runsPageSize:5,   /* 运行中心分页（后端 page/pageSize，本原型前端切片模拟） */
+  auditFilter:'all',            /* 审计日志筛选（5.4） */
   runsTime:'all',               /* 时间范围筛选：all / 1h / 24h / 7d（真实由 GET /runs?since= 过滤） */
 };
 
@@ -704,7 +718,7 @@ const todoCard = (ic,bg,fg,count,title,desc,to,toTab,toFilter)=>`<div class="car
   <div style="margin-left:auto;color:var(--text-sub)">→</div></div>`;
 
 /* 运行中心 = 跨组件巡视的唯一入口，内含三个视图；左栏不再为「流水线 / 发布」各占一项 */
-const RUN_VIEWS = [['runs','运行'],['releases','发布']];
+const RUN_VIEWS = [['runs','运行'],['releases','发布'],['approve','审批']];
 const RUN_FILTERS = {runs:[['all','全部'],['running','运行中'],['failed','失败'],['waiting','待我审批']],
   releases:[['all','全部'],['running','进行中'],['paused','已暂停'],['succeeded','成功']]};
 
@@ -716,17 +730,22 @@ function pageRuns(){
   const timeCutMin = {'1h':60,'24h':24*60,'7d':7*24*60}[S.runsTime]||Infinity;
   const byTime = (id)=> (RUNS_AGO[id]??0) <= timeCutMin;
   const rows = tab==='releases' ? RELEASES.filter(r=>S.runFilter==='all'||r.phase===S.runFilter)
+             : tab==='approve' ? RUNS.filter(r=>r.phase==='waiting')
              : RUNS.filter(r=>(S.runFilter==='all'||r.phase===S.runFilter) && byTime(r.id));
   /* 分页（2026-10-08 补）：后端 GET /runs 支持 page/pageSize，前端切片模拟同形态 */
   const total = rows.length, pages = Math.max(1, Math.ceil(total/S.runsPageSize));
   S.runsPage = Math.min(Math.max(1,S.runsPage), pages);
   const view = rows.slice((S.runsPage-1)*S.runsPageSize, S.runsPage*S.runsPageSize);
-  const colN = tab==='runs'?8:6;
+  const colN = tab==='runs'?8:((tab==='approve'||tab==='releases')?7:6);
   let head, body;
   if(tab==='releases'){
-    head = `<tr><th>组件</th><th>环境</th><th>灰度步骤</th><th>健康度</th><th>状态</th><th></th></tr>`;
-    body = view.map(r=>`<tr><td><b>${r.comp}</b></td><td><span class="chip">${r.env}</span></td><td>${r.step}</td><td>${r.health}</td><td>${badge(r.phase)}</td>
+    head = `<tr><th>组件</th><th>环境</th><th>版本</th><th>灰度步骤</th><th>健康度</th><th>状态</th><th></th></tr>`;
+    body = view.map(r=>`<tr><td><b>${r.comp}</b>${r===curRelease(r.comp,r.env)?'':' <span class="hint">（历史）</span>'}</td><td><span class="chip">${r.env}</span></td><td class="mono">${esc(r.ver||'—')}</td><td>${r.step}</td><td>${r.health}</td><td>${badge(r.phase)}</td>
         <td style="text-align:right"><button class="link" data-act="canary-ctrl" data-comp="${r.comp}" data-env="${r.env}">控制 →</button></td></tr>`).join('');
+  } else if(tab==='approve'){
+    head = `<tr><th>流水线</th><th>流水线ID</th><th>组件</th><th>触发人</th><th>状态</th><th>停留</th><th></th></tr>`;
+    body = view.map(r=>{ const sp=r.pipeline.split(' / '); return `<tr><td>${sp[1]}</td><td class="mono">${r.pid}</td><td>${sp[0]}</td><td>${r.by}</td><td>${badge(r.phase)}</td><td class="hint">${r.at}</td>
+        <td style="text-align:right"><button class="link" data-act="approve-run" data-rid="${r.id}">审批 →</button></td></tr>`; }).join('');
   } else {
     head = `<tr><th>流水线</th><th>流水线ID</th><th>组件</th><th>触发人</th><th>状态</th><th>耗时</th><th>开始时间</th><th></th></tr>`;
     body = view.map(r=>{ const sp=r.pipeline.split(' / '); const comp=sp[0], pname=sp[1];
@@ -907,6 +926,7 @@ function pageCatalog(){
                :`<tr><td style="color:var(--text-sub)">节点类型</td><td>${kind}</td></tr>
                <tr><td style="color:var(--text-sub)">子节点</td><td>${(node.children||[]).length} 个</td></tr>`}
              </tbody></table>`; })()}
+            ${nodeGovernanceHtml(node)}
       </div>
     </div>
   </div>`;
@@ -972,7 +992,7 @@ const ComponentAPI = {
 
 function pageComponent(){
   const uuid = curUuid();                       // 当前组件 uuid：详情页所有查询的作用域主键
-  const mainTabs = [['overview','概览'],['delivery','交付'],['configure','配置'],['env','环境'],['artifacts','制品'],['permissions','权限'],['logs','日志']];
+  const mainTabs = [['overview','概览'],['delivery','交付'],['configure','配置'],['env','环境'],['artifacts','制品'],['permissions','权限'],['logs','日志'],['vars','变量与密钥']];
   const subs = {delivery:[['pipelines','流水线'],['runs','运行'],['releases','发布']]};
   const tabBtn = ([k,l])=>`<div class="tab ${S.compTab===k?'active':''}" data-ctab="${k}">${l}${subs[k]?'<span class="caret">▾</span>':''}</div>`;
   let body='';
@@ -1001,6 +1021,8 @@ function pageComponent(){
     body = pagePermissions();
   } else if(S.compTab==='logs'){
     body = pageLogs();
+  } else if(S.compTab==='vars'){
+    body = pageVarsSecrets();
   } else {
     body = `<div class="card"><div class="empty"><span class="big">◍</span>「${mainTabs.find(t=>t[0]===S.compTab)[1]}」Tab 占位——结构同旧版，本原型聚焦重设计项。</div></div>`;
   }
@@ -1147,7 +1169,8 @@ const AUDIT_LOGS = [
   {at:'09-14 18:12', who:'赵六', act:'trigger',           target:'comp-etl / 日常流水线', detail:'POST /pipelines/:id/runs'},
   {at:'09-14 17:30', who:'李四', act:'credential.rotate', target:'cred-ssh-edge',         detail:'凭据轮转（hub 侧 Secret 换值）'},
 ];
-/* 版本矩阵（GET /package-versions，console 消费 UI 落点）：组件 × 环境的当前部署版本 */
+/* 版本矩阵（原型 mock）：GET /package-versions 实为平台自身三版本（console/hub/runner ConfigMap 常量，ui-11 已勘误）；
+   组件 × 环境部署版本矩阵改由新契约 GET /components/:id/versions 承担（4.2 回滚目标来源），本 mock 仅演示网格形态。 */
 const VERSION_MATRIX = {
   comps:['comp-web','comp-api','comp-worker'],
   envs:['staging','alpha','production'],
@@ -1157,6 +1180,47 @@ const VERSION_MATRIX = {
 };
 /* 审计追加（审批 / 取消 / 触发等动作复用） */
 function audit(who, act, target, detail){ AUDIT_LOGS.unshift({at:'刚刚', who, act, target, detail}); }
+
+/* 高危操作原因输入（4.4，2026-10-12）：配置保存 / 审批 / 凭据轮转 / 灰度控制共用，必填、写入审计。
+   内联字段用 requireReason 校验；无既有弹窗的动作用 openReasonModal 先收集原因再执行。 */
+const requireReason = id=>{ const el=document.getElementById(id); const v=el?el.value.trim():''; if(!v){ toast('高危操作必须填写原因', true); return false; } return v; };
+function openReasonModal(title, onOk){
+  openModal(`<h3>${esc(title)}</h3>
+    <div class="mb">高危操作必须填写原因，随审计留痕。</div>
+    <div class="field"><label>操作原因（必填）</label><textarea id="rm-reason" class="input" rows="2" placeholder="例如：变更单 #1287，已通过评审"></textarea></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>确认</button></div>`,
+    ()=>{ const v=requireReason('rm-reason'); if(v===false) return false; onOk(v); });
+}
+
+/* cron 校验 + 下次执行预览（4.3，2026-10-12）：五段式（分 时 日 月 周），支持 * , - / */
+const cronParse = expr=>{ const p=String(expr||'').trim().split(/\s+/); if(p.length!==5) return null;
+  const seg=(s,lo,hi)=>{ if(s==='*') return null; const ok=[];
+    for(const part of s.split(',')){
+      let base=part, st=1;
+      if(part.includes('/')){ const seg2=part.split('/'); base=seg2[0]; st=parseInt(seg2[1],10); if(!/^\d+$/.test(seg2[1])||st<1) return false; }
+      let a,b;
+      if(base==='*'){ a=lo; b=hi; }
+      else { const m=base.match(/^(\d+)(?:-(\d+))?$/); if(!m) return false; a=+m[1]; b=m[2]?+m[2]:a; }
+      if(a<lo||b>hi||a>b) return false;
+      for(let v=a;v<=b;v+=st) ok.push(v); }
+    return ok; };
+  const f=[seg(p[0],0,59),seg(p[1],0,23),seg(p[2],1,31),seg(p[3],1,12),seg(p[4],0,6)];
+  return f.some(x=>x===false)?null:f; };
+const cronNext = (f, from)=>{ if(!f) return null; const d=new Date(from||Date.now()); d.setSeconds(0,0); d.setMinutes(d.getMinutes()+1);
+  for(let i=0;i<525600;i++){ if((!f[0]||f[0].includes(d.getMinutes()))&&(!f[1]||f[1].includes(d.getHours()))&&
+      (!f[2]||f[2].includes(d.getDate()))&&(!f[3]||f[3].includes(d.getMonth()+1))&&(!f[4]||f[4].includes(d.getDay()))) return d;
+    d.setMinutes(d.getMinutes()+1); } return null; };
+
+/* 行级 diff（4.1，2026-10-12）：LCS 对齐，返回带 +/- 前缀、已 esc 的行数组 */
+const diffLines = (A,B)=>{ const n=A.length,m=B.length; const dp=Array.from({length:n+1},()=>new Uint16Array(m+1));
+  for(let i=n-1;i>=0;i--) for(let j=m-1;j>=0;j--) dp[i][j]=A[i]===B[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
+  const out=[]; let i=0,j=0;
+  while(i<n&&j<m){ if(A[i]===B[j]){ out.push('  '+esc(A[i])); i++; j++; }
+    else if(dp[i+1][j]>=dp[i][j+1]){ out.push('- '+esc(A[i])); i++; }
+    else { out.push('+ '+esc(B[j])); j++; } }
+  while(i<n) out.push('- '+esc(A[i++]));
+  while(j<m) out.push('+ '+esc(B[j++]));
+  return out; };
 
 const blankKube = ()=>({ source:'ref', credRef:'', server:'', caSet:false, insecure:false, auth:'token', credSet:false, ctx:'', parsed:null, parseErr:'' });
 const blankSsh  = ()=>({ sudo:false, targets:[] });
@@ -1242,6 +1306,7 @@ function pageConfigure(){
       <div class="spacer"></div>
       <button class="btn btn-ghost btn-sm" data-act="yaml-import">导入</button>
       <button class="btn btn-ghost btn-sm" data-act="yaml-export">导出</button>
+      <button class="btn btn-ghost btn-sm" data-act="cfg-version" title="配置版本历史（整环境快照 + diff + 回滚）">⟳ 版本历史</button>
       ${editing
         ? `<button class="btn btn-ghost btn-sm" data-act="yaml-cancel">取消</button><button class="btn btn-primary btn-sm" data-act="yaml-save">保存</button>`
         : `<button class="btn btn-ghost btn-sm" data-act="yaml-edit">编辑</button>`}
@@ -1381,6 +1446,7 @@ function pageEditor(){
       <button class="btn btn-ghost btn-sm" data-act="back-pl">← 返回</button>
       <div class="title" style="font-size:20px">${esc(S.editorName)} <span class="chip" style="vertical-align:middle">${S.editorKind}</span></div>
       <div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm" data-act="triggers" title="触发器配置（手动 / Cron / Webhook / 事件）">⚙ 触发器</button>
       <button class="btn btn-ghost btn-sm" data-act="preview-req">查看请求体</button>
       <button class="btn btn-ghost btn-sm" data-act="trigger">▶ 触发</button>
       <button class="btn btn-primary btn-sm" data-act="save-pl">保存</button>
@@ -1403,7 +1469,9 @@ function pageAdminPerm(){
       <td><b>${esc(u.name)}</b></td><td class="hint mono">${esc(u.mail)}</td>
       <td><span class="chip mono">${esc(u.kcGroup)}</span></td>
       <td><b>${esc(u.role)}</b></td><td class="mono hint">${esc(u.last)}</td></tr>`).join('');
-  const auditRows = AUDIT_LOGS.map(a=>`<tr>
+  const AUDIT_CAT = {all:'全部', approval:'审批', run:'运行', credential:'凭据', target:'目标', role:'权限'};
+  const auditCatOf = a => /approval/.test(a.act)?'approval':/target|runner/.test(a.act)?'target':/cancel|trigger|rerun|canary|run/.test(a.act)?'run':/credential/.test(a.act)?'credential':/role|perm|map/.test(a.act)?'role':'other';
+  const auditRows = AUDIT_LOGS.filter(a=>S.auditFilter==='all'||auditCatOf(a)===S.auditFilter).map(a=>`<tr>
       <td class="mono hint" style="white-space:nowrap">${esc(a.at)}</td><td>${esc(a.who)}</td>
       <td><span class="chip mono">${esc(a.act)}</span></td>
       <td class="mono">${esc(a.target)}</td><td class="hint" style="white-space:normal">${esc(a.detail)}</td></tr>`).join('');
@@ -1418,7 +1486,10 @@ function pageAdminPerm(){
     <div class="card flush"><table class="table">
       <thead><tr><th>用户</th><th>邮箱</th><th>Keycloak 组</th><th>平台角色</th><th>最近活跃</th></tr></thead>
       <tbody>${userRows}</tbody></table></div>
-    <div class="h2" style="margin-top:18px">平台审计日志 <span class="spacer"></span>
+    <div class="toolbar2" style="margin-top:18px">
+      <span class="h2" style="margin:0">平台审计日志</span>
+      <span class="seg">${Object.entries(AUDIT_CAT).map(([k,l])=>`<button class="${S.auditFilter===k?'on':''}" data-act="audit-filter" data-f="${k}">${l}</button>`).join('')}</span>
+      <div class="spacer"></div>
       <a class="link" data-act="audit-export" style="font-size:12.5px;font-weight:500">导出 CSV →</a></div>
     <div class="card flush"><table class="table">
       <thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>详情</th></tr></thead>
@@ -1432,7 +1503,7 @@ function pageAdminPerm(){
    两者是**引用关系**而非从属：同一集群可被多个组件的多个环境引用，所以注册表在平台管理下、环境在组件详情下。 */
 function pageAdminTarget(){
   const tab = S.adminTab || 'k8s';
-  const tabs = [['k8s','K8s 集群',K8S_TARGETS.length],['hosts','主机（SSH）',HOSTS.length],['creds','凭据',CREDS.length]];
+  const tabs = [['k8s','K8s 集群',K8S_TARGETS.length],['hosts','主机（SSH）',HOSTS.length],['runner','Runner',RUNNERS.length],['creds','凭据',CREDS.length]];
   const seg = `<span class="seg">${tabs.map(([k,l,n])=>`<button class="${tab===k?'on':''}" data-act="admin-tab" data-tab="${k}">${l} <span class="mono">${n}</span></button>`).join('')}</span>`;
   const TSTAT = { online:'<span class="badge b-succ">在线</span>', offline:'<span class="badge b-fail">离线</span>', unknown:'<span class="badge b-pend">未验证</span>' };
   const tstat = s => TSTAT[s] || TSTAT.unknown;
@@ -1468,6 +1539,18 @@ function pageAdminTarget(){
       <div class="infobar-b">沿用 <span class="mono">components.repo_secret_ref</span> / <span class="mono">component_configs.secret_ref</span> 的同一套规则：
       平台 DB 只存<b>引用名</b>，明文在 hub 侧 Secret；接口回显 <span class="mono">xxxSet:true</span> 布尔而永不返回明文。
       轮转 = 在凭据库换值，所有引用它的环境<b>无需改动</b>——这正是"只存引用名"的收益，也是这里唯一该展示凭据的地方。</div></div>`;
+  } else if(tab==='runner'){
+    head = '<tr><th>Runner</th><th>版本</th><th>绑定目标</th><th>队列</th><th>健康</th><th>最近心跳</th><th></th></tr>';
+    rows = RUNNERS.map(r=>`<tr>
+        <td><span class="mono">${esc(r.name)}</span></td>
+        <td class="mono">${esc(r.version)}</td>
+        <td><span class="chip">${esc(r.target)}</span></td>
+        <td>${r.queued} 待执行 / ${r.running} 执行中</td>
+        <td>${r.status==='online'?'<span class="badge b-succ">在线</span>':r.status==='offline'?'<span class="badge b-fail">离线</span>':'<span class="badge b-pend">未知</span>'}</td>
+        <td class="mono">${esc(r.hb)}</td>
+        <td style="text-align:right"><button class="link" data-act="runner-detail" data-rid="${esc(r.name)}">详情</button></td></tr>`).join('');
+    info = `<div class="infobar"><div class="infobar-h">Runner = 接入侧代理（身份与部署形态无关）</div>
+      <div class="infobar-b">Runner 在目标集群内回连 hub，承接构建 / 发布 / 执行任务；队列与心跳来自 Runner 自身上报。升级 = <span class="mono">POST /targets/:id/upgrade</span>（hub 已落地，执行器待补 §9.9）；安装 = <span class="mono">POST /targets/:id/install</span>。canary 的 CurrentWeight / agent_version / TaskRun 产物三项回流为 runner→hub 已知协议缺口（联调勿依赖）。</div></div>`;
   } else {
     head = '<tr><th>目标</th><th>厂商 / 地域</th><th>接入通道</th><th>状态</th><th>Runner</th><th>最近心跳</th><th>被引用</th><th>健康依据</th><th></th></tr>';
     rows = K8S_TARGETS.map(c=>`<tr>
@@ -1486,7 +1569,7 @@ function pageAdminTarget(){
       <b>runner 是独立接入代理，其身份与部署形态无关</b>（docs/hub/DATA-MODEL.md §9.3）。另：<span class="mono">ali-test-sh</span> 与 <span class="mono">主机</span>都<b>不在</b>
       「平台管理 → 接入管理」的 Runner 心跳口径内——它们的健康靠连接测试，走的是直连通道（凭据由 hub 持有）。</div></div>`;
   }
-  const addBtn = tab==='creds' ? '＋ 新建凭据' : (tab==='hosts' ? '＋ 登记主机' : '＋ 注册目标');
+  const addBtn = tab==='creds' ? '＋ 新建凭据' : (tab==='hosts' ? '＋ 登记主机' : (tab==='runner' ? '' : '＋ 注册目标'));
   return `<div class="wrap">
     <div class="title">接入管理</div>
     <div class="sub">接入目标的统一注册表 —— <b>环境只是"引用其中一行"</b>。K8s 集群靠 Runner Agent 回连或 hub 直连 apiserver；
@@ -1494,6 +1577,8 @@ function pageAdminTarget(){
     <div class="toolbar2" style="margin-top:18px">${seg}<div class="spacer"></div>
       ${tab==='creds'
         ? '<button class="btn btn-primary btn-sm" data-act="cred-create">＋ 新建凭据</button>'
+        : tab==='runner'
+        ? ''
         : `<button class="btn btn-primary btn-sm" data-act="reg-target" data-kind="${tab==='hosts'?'host':'k8s'}">${addBtn}</button>`}</div>
     <div class="card flush"><table class="table"><thead>${head}</thead><tbody>${rows}</tbody></table></div>
     <div style="margin-top:14px">${info}</div>
@@ -1517,7 +1602,8 @@ function openTargetNote(){
 }
 
 const PAGES = {dashboard:pageDashboard, runs:pageRuns, rundetail:pageRunDetail,
-  catalog:pageCatalog, component:pageComponent, editor:pageEditor, 'admin-perm':pageAdminPerm, 'admin-target':pageAdminTarget};
+  catalog:pageCatalog, component:pageComponent, editor:pageEditor, 'admin-perm':pageAdminPerm, 'admin-target':pageAdminTarget,
+  notif:pageNotifCenter, pat:pagePat, 'artifacts-global':pageGlobalArtifacts};
 
 /* ============ crumb（唯一面包屑；中间层可点，不再在内容区重复一条） ============ */
 function renderCrumb(){
@@ -1530,6 +1616,9 @@ function renderCrumb(){
                                       : [['运行中心','runs'],[(RUN_VIEWS.find(v=>v[0]===S.runTab)||[])[1]||'']];
   else if(S.page==='admin-perm')    segs = [['平台管理'],['用户与权限']];
   else if(S.page==='admin-target') segs = [['平台管理'],['接入管理']];
+  else if(S.page==='notif')         segs = [['通知中心']];
+  else if(S.page==='pat')           segs = [['个人中心'],['个人访问令牌']];
+  else if(S.page==='artifacts-global') segs = [['平台管理'],['全局制品库']];
   else segs = [[{dashboard:'总览',runs:'运行中心',catalog:'服务树'}[S.page]||'']];
   const html = segs.map(([label,to],i)=>{
     const last = i===segs.length-1;
@@ -1853,7 +1942,16 @@ document.getElementById('content').addEventListener('click', (e)=>{
   else if(a==='sel-group'){ S.envGroup=name; const ci=S.collapsedGroups.indexOf(name); if(ci>=0) S.collapsedGroups.splice(ci,1); const g=envModel(S.comp).groups.find(x=>x.name===name); if(g&&g.envs[0]) S.envName=g.envs[0].name; render(); }
   else if(a==='yaml-edit'){ S.envEdit=true; render(); }
   else if(a==='yaml-cancel'){ S.envEdit=false; render(); }
-  else if(a==='yaml-save'){ const ta=document.querySelector('[data-env-yaml]'); if(ta) envModel(S.comp).yaml[S.envName]=ta.value; S.envEdit=false; toast('配置已保存（'+S.envName+'）'); render(); }
+  else if(a==='yaml-save'){ openReasonModal('保存配置 · '+S.comp+' / '+S.envName, reason=>{
+      const ta=document.querySelector('[data-env-yaml]'); if(ta) envModel(S.comp).yaml[S.envName]=ta.value;
+      S.envEdit=false;
+      const vs=configVersionsOf(S.comp, S.envName);
+      const maxN=Math.max(0,...vs.map(x=>parseInt((x.v||'v0').slice(1),10)||0));
+      const nv='v'+(maxN+1);
+      const full=String(envModel(S.comp).yaml[S.envName]||'');
+      vs.unshift({v:nv, at:'刚刚', who:'张三', note:reason, changed:0, full, preview: full.split('\n').slice(0,6).map(l=>'<div>'+esc(l)+'</div>').join('')});
+      audit('张三','config.save', S.comp+' / '+S.envName, '配置保存 · '+reason+' → '+nv);
+      toast('配置已保存（'+S.envName+'）→ 新版本 '+nv); render(); }); }
   else if(a==='yaml-import'){ openYamlImport(); }
   else if(a==='yaml-export'){ exportYaml(S.comp, S.envName); }
   else if(a==='add-group'){ openAddGroup(); }
@@ -1928,6 +2026,11 @@ document.getElementById('content').addEventListener('click', (e)=>{
   else if(a==='log-search'){ UI.logQ=(document.getElementById('logQ')||{}).value||''; render(); }
   else if(a==='log-refresh') logRefresh();
   else if(a==='log-retry'){ S.logState='success'; render(); }
+  /* —— 前端补全计划（2026-10-11）接入：配置版本 / 触发器 / 审计筛选 / Runner 详情 —— */
+  else if(a==='cfg-version') openConfigVersionDrawer();
+  else if(a==='triggers') openTriggerConfig();
+  else if(a==='audit-filter'){ S.auditFilter=act.dataset.f; render(); }
+  else if(a==='runner-detail') openRunnerDetail(act.dataset.rid);
   /* —— 运行域闭环（2026-10-08 补充：详情 / 审批 / 取消 / 重跑 / 灰度控制 / 分页 / 时间筛选）—— */
   else if(a==='open-run'){ S.runDetail=act.dataset.rid; S.plState='success'; go('rundetail'); }
   else if(a==='approve-run') openApproval(act.dataset.rid);
@@ -2523,16 +2626,20 @@ document.getElementById('userDrop').addEventListener('click', (e)=>{
   document.getElementById('userDrop').hidden=true;
   const act=it.dataset.userAct;
   if(act==='profile') openProfile();
+  else if(act==='pat') go('pat');
   else if(act==='logout') openLogout();
 });
 document.addEventListener('click', ()=>{ const d=document.getElementById('userDrop'); if(d) d.hidden=true; });
 
 /* ============ boot ============ */
+/* 首屏渲染延迟到整段脚本加载完成后，避免 TDZ：GOVERNANCE / RUNNERS / NOTIF_READ / TRIGGERS
+   等 const 在下方才声明，若默认页或 URL 恢复页为服务树 / 接入管理 / 通知中心，render() 会在
+   这些 const 初始化前被同步调用而抛 ReferenceError。setTimeout(0) 让首屏渲染排到脚本末尾执行。 */
 (function(){
   const sysDark = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
   S.theme = sysDark?'dark':'light';
   document.documentElement.dataset.theme = S.theme;
-  render();
+  setTimeout(render, 0);
 })();
 
 /* ============ 组件详情：制品 / 权限 / 日志 三 Tab（原型同步设计，2026-09-21） ============
@@ -2621,6 +2728,7 @@ function pageArtifacts(){
     </tr>`).join('')}</tbody></table>`;
   return `${ARCHIVE_INFO}
     <div class="toolbar2"><span class="hint">组件级制品（uuid 作用域，只读）</span><div class="spacer"></div>
+      <a class="link" data-nav="artifacts-global" style="font-size:12.5px;font-weight:500">查看全局制品库 →</a>
       <button class="btn btn-ghost btn-sm" data-act="ver-matrix" title="组件 × 环境当前部署版本（GET /package-versions）">版本矩阵</button>${seg}</div>
     <div class="card flush">${inner}</div>`;
 }
@@ -2698,7 +2806,7 @@ function pageLogs(){
       <select class="input" style="width:auto" data-sel="logLevel"><option value="all">全部级别</option><option value="info">info</option><option value="warn">warn</option><option value="error">error</option></select>
       <input id="logQ" class="input" style="width:200px" placeholder="搜索日志…" value="${esc(UI.logQ)}" />
       <button class="btn btn-ghost btn-sm" data-act="log-search">搜索</button>
-      <div class="spacer"></div>${seg}<button class="btn btn-ghost btn-sm" data-act="log-refresh">刷新</button>
+      <div class="spacer"></div><span class="badge b-succ" title="SSE / WS 实时回流（runner→hub 协议缺口：CurrentWeight / agent_version / TaskRun 产物三项尚未回传，实时流为前端轮询兜底）">● 实时流</span>${seg}<button class="btn btn-ghost btn-sm" data-act="log-refresh">刷新</button>
     </div>
     <div class="card flush" style="padding:0">${panel}</div>`;
 }
@@ -2747,18 +2855,25 @@ function pageRunDetail(){
 /* ---------- 审批操作（批准 / 驳回 + 意见；写入审计） ---------- */
 function openApproval(rid){
   const r = RUNS.find(x=>x.id===rid); if(!r) return;
+  const tl = AUDIT_LOGS.filter(x=>/^approval\./.test(x.act) && x.target===rid).slice(0,6)
+    .map(x=>`<div class="row" style="gap:8px;padding:6px 0;border-bottom:1px solid var(--hairline-2)"><span class="hint mono" style="white-space:nowrap">${esc(x.at)}</span><span class="badge ${/approve/.test(x.act)?'b-succ':'b-fail'}">${/approve/.test(x.act)?'批准':'驳回'}</span><span style="min-width:0">${esc(x.who)} · ${esc(x.detail)}</span></div>`).join('');
   openModal(`<h3>审批 · ${esc(rid)}</h3>
     <div class="mb"><b>${esc(r.pipeline)}</b> · 触发人 ${esc(r.by)} · ${badge('waiting')}<br>
       卡点：<span class="mono">release-manager</span> 组任一成员批准后继续（需 <span class="mono">approval:approve</span> 权限）。</div>
-    <div class="field"><label>审批意见（可选，写入审计）</label><textarea id="ap-note" class="input" rows="3" placeholder="例如：已核对发布单，同意放量"></textarea></div>
+    <div class="card" style="padding:12px;margin-bottom:12px;box-shadow:none">
+      <div class="infobar-h">审批策略（5.1）</div>
+      <div style="font-size:12.5px">组件默认：${esc(APPROVAL_POLICY.default.note)}<br>环境覆盖：production → ${esc(APPROVAL_POLICY.envOverride.production.note)}</div></div>
+    <div class="field"><label>审批时间线</label><div class="card" style="padding:8px 12px;box-shadow:none">${tl||'<div class="hint">暂无审批记录（批准 / 驳回后显示）</div>'}</div></div>
+    <div class="field"><label>审批意见（必填 · 写入审计）</label><textarea id="ap-note" class="input" rows="3" placeholder="例如：已核对发布单，同意放量"></textarea></div>
     <div class="modal-foot"><button class="btn btn-ghost" data-close>关闭</button>
       <button class="btn btn-danger" id="ap-rej">驳回</button>
       <button class="btn btn-primary" id="ap-ok">批准并继续</button></div>`, null);
   const done = (verdict)=>{
-    const note = (document.getElementById('ap-note')||{}).value || '';
+    const el=document.getElementById('ap-note'); const note=el?el.value.trim():'';
+    if(!note){ toast('审批必须填写意见（高危操作写入审计）', true); return; }
     r.phase = verdict==='approved' ? 'running' : 'failed';
     audit('张三', verdict==='approved'?'approval.approve':'approval.reject', rid,
-      (verdict==='approved'?'批准继续':'驳回')+(note?(' · 意见：'+note):''));
+      (verdict==='approved'?'批准继续':'驳回')+' · 意见：'+note);
     closeModal();
     toast(verdict==='approved'?'已批准，运行继续（示意）':'已驳回，运行标记失败（示意）', verdict!=='approved');
     render();
@@ -2795,23 +2910,36 @@ function openTriggerModal(pname){
       S.runDetail=id; toast('已提交运行 '+id+'（示意）'); });
 }
 
-/* ---------- 灰度控制台（发布视图「控制 →」）：步宽 / 暂停 / 继续 / 晋级 / 回滚 ---------- */
+/* ---------- 灰度控制台（发布视图「控制 →」）：步宽 / 暂停 / 继续 / 晋级 / 指定版本回滚 ----------
+   4.2（2026-10-12）：版本一等对象 + 指定版本回滚。回滚 = append 一条新 release 记录（不覆盖历史），
+   目标版本来源 = 新契约 GET /components/:id/versions（RELEASE_VERSIONS 模拟），不再「置 0%」。 */
 function openCanaryCtrl(comp, env){
-  const r = RELEASES.find(x=>x.comp===comp && x.env===env); if(!r) return;
+  const r = curRelease(comp, env); if(!r) return;
+  const vers = (RELEASE_VERSIONS[comp]||[r.ver]).filter(v=>v!==r.ver);
+  const verOpts = vers.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
   const stepBtns = ['10%','25%','50%','100%'].map(s=>`<button class="mini" id="cv-step" data-s="${s}" ${r.step===s?'disabled':''}>${s}</button>`).join(' ');
   openModal(`<h3>灰度控制 · ${esc(comp)} / ${esc(env)}</h3>
-    <div class="mb">当前步宽 <b>${esc(r.step)}</b> · 健康度 ${esc(r.health)} · ${badge(r.phase)}<br>
-      晋级前自动核对健康度；回滚 = <span class="mono">helm rollback</span>（runner 执行）。Paused 是 Rollout 任务级状态，逐 run 拉 tasks 判定（附 A · N-3）。</div>
+    <div class="mb">当前版本 <b class="mono">${esc(r.ver||'—')}</b> · 步宽 <b>${esc(r.step)}</b> · 健康度 ${esc(r.health)} · ${badge(r.phase)}<br>
+      晋级前自动核对健康度；回滚 = <span class="mono">helm rollback</span> 到指定版本（runner 执行），<b>append 新 release 记录、不覆盖历史</b>。Paused 是 Rollout 任务级状态，逐 run 拉 tasks 判定（附 A · N-3）。</div>
     <div class="field"><label>步宽（当前 → 目标）</label><div class="row" style="gap:6px">${stepBtns}</div></div>
+    <div class="field"><label>回滚到指定版本（来源 <span class="mono">GET /components/:id/versions</span>）</label>
+      <select id="cv-ver" class="input">${verOpts||'<option value="">（无历史版本）</option>'}</select></div>
+    <div class="field"><label>操作原因（必填 · 高危操作写入审计）</label><textarea id="cc-reason" class="input" rows="2" placeholder="例如：发布单 #1287，已通过变更评审"></textarea></div>
     <div class="modal-foot"><button class="btn btn-ghost" data-close>关闭</button>
-      <button class="btn btn-danger" id="cv-rollback">↩ 回滚</button>
+      <button class="btn btn-danger" id="cv-rollback">↩ 回滚到所选版本</button>
       <button class="btn btn-ghost" id="cv-pause">⏸ 暂停</button>
       <button class="btn btn-primary" id="cv-advance">▶ 继续 / 晋级</button></div>`, null);
   const upd=(step,phase,msg)=>{ if(step!==null) r.step=step; if(phase!==null) r.phase=phase;
     audit('张三','canary.'+msg, comp+' / '+env, '灰度'+msg+' → '+r.step); closeModal(); toast(msg+'（示意）'); render(); };
-  document.getElementById('cv-advance').onclick = ()=>upd('100%','succeeded','晋级');
+  const needReason = ()=>{ const el=document.getElementById('cc-reason'); if(!el || !el.value.trim()){ toast('高危操作必须填写原因', true); return false; } return el.value.trim(); };
+  document.getElementById('cv-advance').onclick = ()=>{ const rs=needReason(); if(rs===false) return; upd('100%','succeeded','晋级 · '+rs); };
   document.getElementById('cv-pause').onclick   = ()=>upd(null,'paused','暂停');
-  document.getElementById('cv-rollback').onclick= ()=>upd('0%','failed','回滚');
+  document.getElementById('cv-rollback').onclick= ()=>{ const rs=needReason(); if(rs===false) return;
+    const to=(document.getElementById('cv-ver')||{}).value; if(!to){ toast('请选择目标版本', true); return; }
+    const from=r.ver||'—';
+    RELEASES.unshift({id:'r'+Math.random().toString(16).slice(2,6), comp, env, ver:to, step:'100%', health:'良好', phase:'rolled_back', from});
+    audit('张三','canary.rollback', comp+' / '+env, '回滚 '+from+' → '+to+'（append 新 release 记录）· '+rs);
+    closeModal(); toast('已回滚 '+from+' → '+to+'（append 新记录，示意）'); render(); };
   document.querySelectorAll('#cv-step').forEach(b=>b.onclick=()=>upd(b.dataset.s,'running','步宽调整'));
 }
 
@@ -2869,9 +2997,11 @@ function openCredRotate(ref){
     <div class="mb">${esc(c.label)} · 明文位置 <span class="mono">${esc(c.host)}</span> · 被 <b>${c.used}</b> 个环境引用<br>
       轮转 = 在凭据库换值，所有引用它的环境<b>无需改动</b>——这正是「只存引用名」的收益。接口只回 <span class="mono">valueSet:true</span>，永不回显明文。</div>
     <div class="field"><label>新值（提交后即清空输入框，不落 console 状态）</label><input id="cr-val" type="password" class="input mono" placeholder="kubeconfig 内容 / SSH 私钥 / 新密码" /></div>
+    <div class="field"><label>操作原因（必填 · 高危操作写入审计）</label><textarea id="cr-reason" class="input" rows="2" placeholder="例如：例行轮转 / 疑似泄露更换"></textarea></div>
     <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>换值并轮转</button></div>`,
-    ()=>{ c.rotated='2026-10-08';
-      audit('张三','credential.rotate',c.ref,'凭据轮转（hub 侧 Secret 换值）');
+    ()=>{ const reason=requireReason('cr-reason'); if(reason===false) return false;
+      c.rotated='2026-10-12';
+      audit('张三','credential.rotate',c.ref,'凭据轮转（hub 侧 Secret 换值）· '+reason);
       toast('已轮转 '+c.ref+'（示意）'); render(); });
 }
 
@@ -2879,7 +3009,7 @@ function openCredRotate(ref){
 function openVersionMatrix(){
   const m = VERSION_MATRIX;
   openModal(`<h3>版本矩阵</h3>
-    <div class="mb">组件 × 环境的当前部署版本（<span class="mono">GET /package-versions</span>，hub 已落地）。「—」= 该环境未部署。</div>
+    <div class="mb">组件 × 环境的部署版本（原型 mock；真实端点 <span class="mono">GET /package-versions</span> 为平台自身三版本，组件级版本矩阵见 <span class="mono">GET /components/:id/versions</span>）。「—」= 该环境未部署。</div>
     <div class="card flush" style="box-shadow:none"><table class="table">
       <thead><tr><th>组件 \\ 环境</th>${m.envs.map(e=>`<th>${esc(e)}</th>`).join('')}</tr></thead>
       <tbody>${m.comps.map(c=>`<tr><td><b>${esc(c)}</b></td>${m.envs.map(e=>`<td class="mono">${esc(m.cell[c+'|'+e]||'—')}</td>`).join('')}</tr>`).join('')}</tbody>
@@ -2887,6 +3017,12 @@ function openVersionMatrix(){
     <div class="modal-foot"><button class="btn btn-primary" data-close>关闭</button></div>`, null);
 }
 
+/* 5.1 审批策略（2026-10-12）：组件默认 + 环境覆盖两档（hub ApprovalPolicy 已落地，console 为展示 / 配置面）。
+   执行路径只解析组件默认；环境覆盖档因 run↔environment 无直连已登记为 B 类（ui-12 R2），此处按策略展示。 */
+const APPROVAL_POLICY = {
+  default: {group:'release-manager', any:true, note:'release-manager 组任一成员批准后继续（需 approval:approve）'},
+  envOverride: {'production': {group:'platform-admin', any:false, note:'platform-admin 双人批准'}},
+};
 /* ---------- 平台组映射编辑（Keycloak 组 → platform_role） ---------- */
 const ROLE_MAP = [
   {grp:'sdp-admins', role:'platform-admin', members:3},
@@ -2949,14 +3085,16 @@ function openCredCreate(){
 function renderNotif(){
   const dot=document.getElementById('notifDot'), drop=document.getElementById('notifDrop');
   if(!dot || !drop) return;
-  dot.textContent = NOTIFICATIONS.length ? String(NOTIFICATIONS.length) : '';
-  drop.innerHTML = `<div style="padding:10px 14px;border-bottom:1px solid var(--hairline-2);font-weight:700;font-size:13px">通知 <span class="hint">（未读 ${NOTIFICATIONS.length}）</span></div>` +
+  const unread = NOTIFICATIONS.filter((_,i)=>!NOTIF_READ[i]).length;
+  dot.textContent = unread ? String(unread) : '';
+  drop.innerHTML = `<div style="padding:10px 14px;border-bottom:1px solid var(--hairline-2);font-weight:700;font-size:13px">通知 <span class="hint">（未读 ${unread}）</span></div>` +
     (NOTIFICATIONS.map(n=>`<div data-nav="${n.act[0]}"${n.act[1]?` data-run-tab="${n.act[1]}"`:''}${n.act[2]?` data-run-filter="${n.act[2]}"`:''}
         style="display:flex;gap:9px;padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--hairline-2)">
         <span class="badge ${n.cls}" style="flex:0 0 auto">${n.icon}</span>
         <div style="min-width:0"><div style="font-size:13px;font-weight:600">${esc(n.title)}</div>
           <div class="hint" style="white-space:normal">${esc(n.desc)} · ${esc(n.at)}</div></div></div>`).join('')
-      || '<div class="empty" style="padding:18px">无通知</div>');
+      || '<div class="empty" style="padding:18px">无通知</div>') +
+    `<div style="padding:9px 14px;border-top:1px solid var(--hairline-2);text-align:center"><a class="link" data-nav="notif">查看全部通知 →</a></div>`;
 }
 (function(){
   const btn=document.getElementById('notifBtn'), drop=document.getElementById('notifDrop');
@@ -2967,6 +3105,304 @@ function renderNotif(){
   document.addEventListener('click',()=>{ drop.hidden=true; });
   renderNotif();
 })();
+
+/* ============================================================================
+   前端补全计划（2026-10-11）落位实现
+   原则：保持左栏恒 5 项；新能力分布到原有页面对应位置（增强类内嵌、新顶级页走链接/下拉）。
+   与 plans/CONSOLE-P0/P1/P2-BACKEND-CONTRACT、ui-12、ui-09 附 A（N-18~N-32）同源。
+   ============================================================================ */
+
+/* ---- 数据：服务树治理属性（6.1） ---- */
+const GOVERNANCE = {
+  o1:{owner:'平台工程组', tags:['core','pci-dss'], lifecycle:'stable', deps:'—'},
+  s1:{owner:'张三', tags:['web','prod'], lifecycle:'stable', deps:'svc-data'},
+  c1:{owner:'张三', tags:['web','prod','sdp'], lifecycle:'stable', deps:'svc-a / svc-data'},
+  c2:{owner:'李四', tags:['api','prod'], lifecycle:'stable', deps:'svc-data / svc-ml'},
+  c3:{owner:'王五', tags:['worker'], lifecycle:'active', deps:'svc-data'},
+  c5:{owner:'赵六', tags:['etl','data'], lifecycle:'stable', deps:'svc-ml'},
+  s2:{owner:'孙七', tags:['b'], lifecycle:'beta', deps:'—'},
+};
+function nodeGovernanceHtml(node){
+  const g = GOVERNANCE[node.id] || {owner:'—', tags:[], lifecycle:'—', deps:'—'};
+  return `<div class="h2" style="margin-top:18px">治理属性 <span class="hint">（6.1 服务树治理：owner / tags / lifecycle / dependency）</span></div>
+    <div class="card"><table class="table"><tbody>
+      <tr><td style="color:var(--text-sub);width:110px">责任人</td><td><b>${esc(g.owner)}</b></td></tr>
+      <tr><td style="color:var(--text-sub)">标签</td><td>${(g.tags||[]).map(t=>`<span class="chip">${esc(t)}</span>`).join(' ') || '—'}</td></tr>
+      <tr><td style="color:var(--text-sub)">生命周期</td><td>${g.lifecycle}</td></tr>
+      <tr><td style="color:var(--text-sub)">上游依赖</td><td class="mono">${esc(g.deps||'—')}</td></tr>
+    </tbody></table></div>`;
+}
+
+/* ---- 数据：配置版本（4.1 整环境快照版本，append-only） ---- */
+/* 版本按 `${comp}|${env}` 缓存在 CONFIG_VERSIONS，回滚时追加新版本（v5…）且不覆盖历史。
+   每条含 full（整环境快照全文，供行级 diff）；配置保存经 openReasonModal 收集变更说明后同样 append（4.4）。 */
+const CONFIG_VERSIONS = {};
+function configVersionsOf(comp, env){
+  const key = comp+'|'+env;
+  if(!CONFIG_VERSIONS[key]){
+    const base = (envModel(comp).yaml && envModel(comp).yaml[env]) || '# values.yaml\nreplicas: 2\nimage: nginx:1.25\nresources:\n  cpu: 200m\n';
+    const lines = base.split('\n');
+    const mk = (v, at, who, note, changed)=>({v, at, who, note, changed, full: base, preview: lines.slice(0,6).map((l,i)=>`<div style="color:${i===changed?'var(--accent)':'var(--text-sub)'}">${esc(l)}</div>`).join('')});
+    CONFIG_VERSIONS[key] = [
+      mk('v4', '09-14 18:20', '张三', '调整副本数 2→3', 1),
+      mk('v3', '09-13 11:05', '李四', '升级 nginx 1.24→1.25', 2),
+      mk('v2', '09-10 09:40', '张三', '初始提交', 0),
+      mk('v1', '09-01 10:00', '王五', '环境创建', 0),
+    ];
+  }
+  return CONFIG_VERSIONS[key];
+}
+function openConfigVersionDrawer(){
+  const comp=S.comp, m=envModel(comp), f=allEnvs(m);
+  const env = S.envName || (f[0] && f[0].name) || '—';
+  const vs = configVersionsOf(comp, env);
+  const items = vs.map((v,i)=>`<div class="card" style="margin-bottom:10px;padding:13px">
+    <div class="row" style="gap:10px;align-items:center"><span class="chip mono">${v.v}</span>
+      <b>${v.at}</b><span class="hint">${esc(v.who)}</span><span class="spacer"></span>
+      <label class="hint" style="display:flex;gap:4px;align-items:center;cursor:pointer"><input type="checkbox" class="cfg-diff" data-v="${v.v}">选为对比</label>
+      ${i!==0?`<button class="btn btn-ghost btn-sm" data-act="cfg-rollback" data-v="${v.v}">回滚到此版本</button>`:'<span class="badge b-succ">当前</span>'}</div>
+    <div class="hint" style="margin:6px 0">${esc(v.note)}</div>
+    <div class="code-block mono" style="font-size:11.5px;max-height:120px">${v.preview}</div>
+  </div>`).join('');
+  openModal(`<h3>配置版本历史 · ${esc(comp)} / ${esc(env)}</h3>
+    <div class="mb">整环境快照版本（append-only 新版本；回滚 = 生成新版本 v5，不覆盖历史）。勾选任意两个版本出行级 diff（4.1）。后端契约见 ui-09 附 A · N-18。</div>
+    <div style="max-height:52vh;overflow:auto">${items}</div>
+    <div id="cfg-diff-out" class="code-block mono" style="font-size:11.5px;max-height:200px;margin-top:10px;display:none"></div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="cfg-diff-btn">对比所选两个版本</button><button class="btn btn-ghost" data-close>关闭</button></div>`, null);
+  document.getElementById('cfg-diff-btn').onclick=()=>{
+    const sel=[...document.querySelectorAll('.cfg-diff')].filter(c=>c.checked).map(c=>c.dataset.v);
+    const out=document.getElementById('cfg-diff-out');
+    if(sel.length!==2){ toast('请勾选恰好两个版本', true); return; }
+    const a=vs.find(x=>x.v===sel[0]), b=vs.find(x=>x.v===sel[1]);
+    if(!a||!b){ toast('版本不存在', true); return; }
+    const rows=diffLines(String(a.full||'').split('\n'), String(b.full||'').split('\n'));
+    out.innerHTML = rows.map(l=>`<div style="color:${l.startsWith('+')?'var(--succ-fg)':l.startsWith('-')?'var(--fail-fg)':'var(--text-sub)'}">${l}</div>`).join('') || '<div class="hint">两个版本内容一致</div>';
+    out.style.display='';
+  };
+  document.querySelectorAll('[data-act="cfg-rollback"]').forEach(b=>b.onclick=()=>{
+    const v=b.dataset.v;
+    const vs = configVersionsOf(comp, env);
+    const maxN = Math.max(0, ...vs.map(x=>parseInt((x.v||'v0').slice(1),10)||0));
+    const nv = 'v'+(maxN+1);
+    const src = vs.find(x=>x.v===v);
+    vs.unshift({v:nv, at:'刚刚', who:'张三', note:'回滚至 '+v, changed:0, full: src?src.full:'', preview: src?src.preview:''});
+    toast('已基于 '+v+' 生成新版本 '+nv+'（回滚，append-only）');
+    closeModal(); openConfigVersionDrawer();
+  });
+}
+
+/* ---- 数据：触发器（4.3） ---- */
+function openTriggerConfig(){
+  const name = S.editorName || '日常流水线';
+  const t = TRIGGERS[name] || {manual:true, cron:'', cronOn:false, webhookOn:false, event:'', eventOn:false, concurrency:'allow', sign:'none'};
+  openModal(`<h3>触发器配置 · ${esc(name)}</h3>
+    <div class="mb">手动触发始终可用；自动触发支持 Cron / Webhook / 事件三种类型（互斥可选）。后端契约见 ui-09 附 A · N-21（净新增）。</div>
+    <div class="tabs" style="margin-bottom:12px">
+      <div class="tab active" data-tab="manual">手动</div><div class="tab" data-tab="cron">Cron</div><div class="tab" data-tab="webhook">Webhook</div><div class="tab" data-tab="event">事件</div></div>
+    <div data-panel="manual">
+      <div class="field"><label>手动触发</label><div class="checks"><label><input type="checkbox" checked disabled> 始终允许（在编排页「▶ 触发」）</label></div></div>
+    </div>
+    <div data-panel="cron" style="display:none">
+      <div class="field"><label>Cron 表达式（五段式：分 时 日 月 周）</label><input id="tg-cron" class="input mono" value="${esc(t.cron||'')}" placeholder="0 2 * * *（每日 02:00）" /></div>
+      <div id="cron-preview" class="hint" style="margin-top:6px"></div>
+    </div>
+    <div data-panel="webhook" style="display:none">
+      <div class="field"><label>Webhook</label><div class="row" style="gap:8px"><input class="input mono" value="https://www.sdpworkflow.com:8443/api/v1/hooks/${esc(name)}" readonly style="background:var(--surface-2);color:var(--text-sub)" /><button class="btn btn-ghost btn-sm" data-act="tg-regen">重新生成</button></div></div>
+      <div class="field"><label>Webhook 签名</label><select id="tg-sign" class="input"><option value="hmac-sha256" ${t.sign==='hmac-sha256'?'selected':''}>HMAC-SHA256 校验</option><option value="none" ${t.sign==='none'?'selected':''}>不校验</option></select></div>
+    </div>
+    <div data-panel="event" style="display:none">
+      <div class="field"><label>事件触发（上游事件 → 自动运行）</label><select id="tg-evt" class="input"><option value="on_push" ${t.event==='on_push'?'selected':''}>代码推送 (on_push)</option><option value="on_pr" ${t.event==='on_pr'?'selected':''}>PR 合并 (on_pr)</option><option value="on_release" ${t.event==='on_release'?'selected':''}>打 Tag (on_release)</option></select></div>
+      <div class="hint">上游契约：事件源（代码平台 / 打 Tag）经 hub 事件总线投递，console 仅配置订阅；ui-09 附 A · N-21。</div>
+    </div>
+    <div class="field"><label>并发策略</label><select id="tg-conc" class="input"><option value="forbid" ${t.concurrency==='forbid'?'selected':''}>禁止并发（进行中则跳过 / 排队）</option><option value="allow" ${t.concurrency==='allow'?'selected':''}>允许并发</option></select></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>保存</button></div>`,
+    ()=>{ const cronEl=document.getElementById('tg-cron');
+      if(cronEl && cronEl.value.trim() && !cronParse(cronEl.value)){ toast('Cron 表达式不合法（五段式：分 时 日 月 周）', true); return false; }
+      TRIGGERS[name]=Object.assign({}, t, {
+        cron:(cronEl||{}).value||'', event:(document.getElementById('tg-evt')||{}).value||'',
+        concurrency:(document.getElementById('tg-conc')||{}).value||'allow', sign:(document.getElementById('tg-sign')||{}).value||'none' });
+      audit('张三','trigger.config', name, '触发器配置更新（cron='+TRIGGERS[name].cron+'）');
+      toast('触发器配置已保存'); render(); });
+  const showTab=k=>{ document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active', x.dataset.tab===k));
+    document.querySelectorAll('[data-panel]').forEach(x=>x.style.display = x.dataset.panel===k?'':'none'); };
+  document.querySelectorAll('[data-tab]').forEach(x=>x.onclick=()=>showTab(x.dataset.tab));
+  const cp=document.getElementById('cron-preview'), ce=document.getElementById('tg-cron');
+  const updPrev=()=>{ if(!ce.value.trim()){ cp.textContent='（未设置）'; return; }
+    const f=cronParse(ce.value); if(!f){ cp.textContent='不合法：需五段式（分 时 日 月 周），如 0 2 * * *'; return; }
+    const n=cronNext(f); cp.textContent='合法 · 下次执行：'+(n?n.toLocaleString('zh-CN',{hour12:false}):'一年内无匹配'); };
+  ce.oninput=updPrev; updPrev();
+}
+
+/* ---- 数据：变量与密钥（5.3，组件级；密钥 AES-GCM 不回明文） ---- */
+const VARSECRETS = {
+  'comp-web':[
+    {name:'LOG_LEVEL', scope:'Service', kind:'var', val:'info', updated:'09-14'},
+    {name:'FEATURE_FLAG', scope:'Service', kind:'var', val:'canary,newui', updated:'09-12'},
+    {name:'DB_PASSWORD', scope:'Service', kind:'secret', val:'set', updated:'09-10'},
+    {name:'TLS_CERT', scope:'Component', kind:'secret', val:'set', updated:'09-01'},
+  ],
+};
+function pageVarsSecrets(){
+  const uuid=curUuid(), comp=compLabel(uuid);
+  const rows=(VARSECRETS[comp]||[]);
+  const inner = rows.length ? `<table class="table">
+    <thead><tr><th>名称</th><th>作用域</th><th>类型</th><th>值</th><th>更新</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr>
+      <td class="mono"><b>${esc(r.name)}</b></td>
+      <td><span class="chip">${esc(r.scope)}</span></td>
+      <td>${r.kind==='secret'?'<span class="badge b-warn">密钥</span>':'<span class="badge b-succ">变量</span>'}</td>
+      <td class="mono">${r.kind==='secret'?`<span class="mask">${esc(r.val)}</span> <span class="hint">（AES-GCM 加密，接口仅回 valueSet）</span>`:esc(r.val)}</td>
+      <td class="mono hint">${r.updated}</td></tr>`).join('')}</tbody></table>`
+    : `<div class="empty"><span class="big">🔑</span>暂无变量与密钥</div>`;
+  return `<div class="infobar" style="margin-bottom:14px"><div class="infobar-h">变量与密钥（5.3）</div>
+    <div class="infobar-b">普通变量明文展示；密钥类型在 hub 侧 AES-GCM 加密、接口仅回 <span class="mono">valueSet:true</span>，前端永不显示明文（复用 credentials 加密底座）。变量组首批 Service 级，Org 级延迟并强管控（决策 #6）。后端契约见 ui-09 附 A · N-26。</div></div>
+    <div class="toolbar2"><span class="hint">组件级（uuid 作用域）</span><div class="spacer"></div>
+      <button class="btn btn-primary btn-sm" data-act="vs-add">＋ 新建变量 / 密钥</button></div>
+    <div class="card flush">${inner}</div>`;
+}
+
+/* ---- 数据：Runner 舰队（6.3） ---- */
+const RUNNERS = [
+  {name:'runner-kind-e2e-01', version:'v0.4.2', target:'kind-e2e-01', queued:0, running:1, status:'online', hb:'8s 前'},
+  {name:'runner-kind-e2e-02', version:'v0.4.2', target:'kind-e2e-02', queued:2, running:0, status:'online', hb:'11s 前'},
+  {name:'runner-tx-prod-gz', version:'v0.4.1', target:'tx-prod-gz', queued:0, running:0, status:'offline', hb:'6h 前'},
+  {name:'runner-ali-test-sh', version:'—', target:'ali-test-sh', queued:0, running:0, status:'unknown', hb:'—'},
+];
+function openRunnerDetail(rid){
+  const r = RUNNERS.find(x=>x.name===rid); if(!r) return;
+  openModal(`<h3>Runner 详情 · ${esc(r.name)}</h3>
+    <div class="mb">绑定目标 <span class="chip">${esc(r.target)}</span> · 版本 <span class="mono">${esc(r.version)}</span> · 队列 ${r.queued} 待执行 / ${r.running} 执行中。</div>
+    <div class="field"><label>升级到版本</label><select id="ru-ver" class="input"><option>v0.4.3（最新）</option><option>v0.4.2</option></select></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" id="ru-upgrade">升级 Runner</button></div>`, null);
+  document.getElementById('ru-upgrade').onclick=()=>{
+    const v=document.getElementById('ru-ver').value; r.version=v; r.status='online'; r.hb='刚刚';
+    audit('张三','runner.upgrade', r.name, 'POST /targets/:id/upgrade → '+v); toast('已提交升级（示意）'); closeModal(); render(); };
+}
+
+/* ---- 数据：通知中心（5.2 全页） ---- */
+function pageNotifCenter(){
+  const rows = NOTIFICATIONS.map((n,i)=>`<tr>
+    <td><span class="badge ${n.cls}">${n.icon}</span></td>
+    <td><b>${esc(n.title)}</b><div class="hint" style="white-space:normal">${esc(n.desc)} · ${esc(n.at)}</div></td>
+    <td>${NOTIF_READ[i]?'<span class="hint">已读</span>':'<span class="badge b-warn">未读</span>'}</td>
+    <td style="text-align:right"><button class="link" data-act="notif-mark" data-i="${i}">${NOTIF_READ[i]?'标为未读':'标为已读'}</button></td></tr>`).join('');
+  return `<div class="wrap">
+    <div class="title">通知中心</div><div class="sub">待审批 / 失败运行 / 目标异常，点条目直达对应页面（顶栏铃铛为聚合入口）。后端聚合可先行、零新端点（ui-09 附 A · N-17）。</div>
+    <div class="h2" style="margin-top:18px">全部通知 <span class="hint">（未读 ${NOTIFICATIONS.filter((_,i)=>!NOTIF_READ[i]).length}）</span><span class="spacer"></span><button class="btn btn-ghost btn-sm" data-act="sub-rules">订阅规则</button></div>
+    <div class="card flush"><table class="table">
+      <thead><tr><th>类型</th><th>内容</th><th>状态</th><th></th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="4" style="color:var(--text-sub);padding:14px">无通知</td></tr>'}</tbody></table></div>
+  </div>`;
+}
+const NOTIF_READ = {};
+/* 5.2 订阅规则（2026-10-12）：事件类型 × 渠道（站内 / 邮箱）。站内 = 铃铛 / 通知中心；
+   邮箱 = hub 侧 SMTPMailer 投递（ui-12 已实现，console 为配置面）；聚合零新端点（ui-09 附 A · N-17）。 */
+const SUBSCRIPTIONS = [
+  {evt:'run.failed',        label:'运行失败',            inapp:true,  mail:true},
+  {evt:'approval.pending',  label:'待审批',              inapp:true,  mail:true},
+  {evt:'target.offline',    label:'目标离线 / 心跳丢失', inapp:true,  mail:false},
+  {evt:'rollout.unhealthy', label:'灰度健康度波动',      inapp:false, mail:false},
+];
+function openSubscriptionRules(){
+  const rows = SUBSCRIPTIONS.map((s,i)=>`<tr>
+    <td><b>${esc(s.label)}</b><div class="hint mono">${esc(s.evt)}</div></td>
+    <td style="text-align:center"><input type="checkbox" data-sub="${i}" data-ch="inapp" ${s.inapp?'checked':''}></td>
+    <td style="text-align:center"><input type="checkbox" data-sub="${i}" data-ch="mail" ${s.mail?'checked':''}></td></tr>`).join('');
+  openModal(`<h3>订阅规则</h3>
+    <div class="mb">按事件类型配置通知渠道（5.2）。站内 = 铃铛 / 通知中心；邮箱 = SMTP 投递（hub 侧 SMTPMailer，账号在平台设置维护）。</div>
+    <div class="card flush" style="box-shadow:none"><table class="table">
+      <thead><tr><th>事件</th><th style="text-align:center">站内</th><th style="text-align:center">邮箱</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>保存</button></div>`,
+    ()=>{ document.querySelectorAll('[data-sub]').forEach(cb=>{ const s=SUBSCRIPTIONS[+cb.dataset.sub]; if(s) s[cb.dataset.ch]=cb.checked; });
+      audit('张三','notification.subscribe','订阅规则','渠道更新');
+      toast('订阅规则已保存（示意）'); render(); });
+}
+
+/* ---- 数据：全局制品库（6.2，跨组件） ---- */
+const GLOBAL_ARTIFACTS = [
+  {comp:'comp-web', name:'comp-web-1.4.3.tar.gz', builtAt:'09-14 19:02', size:'48.2 MB', sha256:'a3f1…c9', retain:'90d', sign:'已签名', sbom:'已生成', scan:'通过'},
+  {comp:'comp-api', name:'comp-api-2.1.0.tar.gz', builtAt:'09-14 18:47', size:'62.0 MB', sha256:'7b2e…41', retain:'90d', sign:'已签名', sbom:'已生成', scan:'1 中危'},
+  {comp:'comp-worker', name:'comp-worker-1.0.5.tar.gz', builtAt:'09-14 18:12', size:'31.5 MB', sha256:'c0d8…7a', retain:'90d', sign:'未签名', sbom:'未生成', scan:'待扫描'},
+  {comp:'comp-etl', name:'comp-etl-3.2.1.tar.gz', builtAt:'09-13 22:30', size:'120.4 MB', sha256:'e91f…02', retain:'30d', sign:'已签名', sbom:'已生成', scan:'通过'},
+];
+function pageGlobalArtifacts(){
+  const inner = `<table class="table">
+    <thead><tr><th>组件</th><th>版本包</th><th>构建时间</th><th>大小</th><th>SHA256</th><th>保留期</th><th>签名</th><th>SBOM</th><th>扫描</th></tr></thead>
+    <tbody>${GLOBAL_ARTIFACTS.map(a=>`<tr>
+      <td><b>${esc(a.comp)}</b></td>
+      <td class="mono">${esc(a.name)}</td><td class="mono">${a.builtAt}</td><td class="mono">${a.size}</td>
+      <td class="mono hint">${a.sha256}</td><td class="mono">${a.retain}</td>
+      <td>${a.sign==='已签名'?'<span class="badge b-succ">已签名</span>':`<span class="badge b-warn">未签名</span>`}</td>
+      <td>${a.sbom==='已生成'?'<span class="badge b-succ">已生成</span>':`<span class="badge b-warn">${esc(a.sbom)}</span>`}</td>
+      <td>${a.scan==='通过'?'<span class="badge b-succ">通过</span>':a.scan.indexOf('危')>=0?`<span class="badge b-fail">${esc(a.scan)}</span>`:`<span class="badge b-warn">${esc(a.scan)}</span>`}</td>
+    </tr>`).join('')}</tbody></table>`;
+  return `<div class="wrap">
+    <div class="title">全局制品库</div><div class="sub">跨组件制品总览（校验和 / 保留期 / 签名 / SBOM / 扫描）。删除与清理由 GC + 过期策略处理。后端契约见 ui-09 附 A · N-29。</div>
+    <div class="infobar" style="margin-top:14px"><div class="infobar-h">制品治理</div>
+      <div class="infobar-b">签名（Cosign）、SBOM（CycloneDX）、漏洞扫描为 6.2 净新增能力；当前仅展示占位状态。外部分发（6.5）单独立项，不在本页（决策 #1）。</div></div>
+    <div class="card flush">${inner}</div>
+  </div>`;
+}
+
+/* ---- 数据：个人访问令牌 PAT（6.4，净新增；复用 user:manage 自身范围） ---- */
+const PAT_TOKENS = [
+  {name:'ci-deploy-token', scope:'deploy', created:'09-01', expire:'2027-09-01', last:'2h 前', prefix:'pat_a1b2'},
+  {name:'local-dev-token', scope:'read', created:'08-20', expire:'2026-11-20', last:'1d 前', prefix:'pat_c3d4'},
+];
+function pagePat(){
+  const inner = PAT_TOKENS.length ? `<table class="table">
+    <thead><tr><th>名称</th><th>权限范围</th><th>创建</th><th>过期</th><th>最近使用</th><th>前缀</th><th></th></tr></thead>
+    <tbody>${PAT_TOKENS.map((t,i)=>`<tr>
+      <td><b>${esc(t.name)}</b></td><td><span class="chip">${esc(t.scope)}</span></td>
+      <td class="mono">${t.created}</td><td class="mono">${t.expire}</td><td class="mono hint">${t.last}</td>
+      <td class="mono">${esc(t.prefix)}…</td>
+      <td style="text-align:right"><button class="link" style="color:var(--fail-fg)" data-act="pat-revoke" data-i="${i}">撤销</button></td></tr>`).join('')}</tbody></table>`
+    : `<div class="empty"><span class="big">🔑</span>暂无个人访问令牌</div>`;
+  return `<div class="wrap">
+    <div class="title">个人访问令牌</div><div class="sub">PAT 是组件级密钥（credentials）之外的<b>用户级</b>令牌，仅自身可用（复用 user:manage 自身范围）。这是 6.4 唯一完全净新增能力。后端契约见 ui-09 附 A · N-31。</div>
+    <div class="toolbar2" style="margin-top:14px"><span class="hint">仅当前用户可见 / 可管理</span><div class="spacer"></div>
+      <button class="btn btn-primary btn-sm" data-act="pat-create">＋ 新建令牌</button></div>
+    <div class="card flush">${inner}</div>
+  </div>`;
+}
+function openPatCreate(){
+  openModal(`<h3>新建个人访问令牌</h3>
+    <div class="mb">令牌仅显示一次，请妥善保存。权限范围限定为当前用户自身。</div>
+    <div class="field"><label>名称</label><input id="pat-name" class="input" placeholder="例如：ci-deploy-token" /></div>
+    <div class="field"><label>权限范围</label><select id="pat-scope" class="input"><option value="read">read（只读）</option><option value="deploy">deploy（触发 / 部署）</option><option value="admin">admin（全量，须二次确认）</option></select></div>
+    <div class="field"><label>过期</label><select id="pat-exp" class="input"><option value="2026-11-20">90 天</option><option value="2027-09-01">1 年</option></select></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>生成</button></div>`,
+    ()=>{ const name=(document.getElementById('pat-name')||{}).value||''; if(!name){ toast('请填写名称', true); return false; }
+      const scope=document.getElementById('pat-scope').value;
+      if(scope==='admin' && !confirm('admin 范围为全量权限，确定创建？')) return false;
+      const raw='pat_'+Math.random().toString(16).slice(2,20);
+      PAT_TOKENS.unshift({name, scope, created:'09-14', expire:document.getElementById('pat-exp').value, last:'刚刚', prefix:raw.slice(0,12)});
+      render();
+      openModal(`<h3>令牌已生成</h3>
+        <div class="mb">请立即复制保存，<b>明文仅显示一次</b>（关闭后无法再次查看）：</div>
+        <div class="field"><label>访问令牌</label><textarea id="pat-raw" class="input mono" readonly style="resize:none;height:56px">${raw}</textarea></div>
+        <div class="modal-foot"><button class="btn btn-primary" id="pat-copy">复制</button><button class="btn btn-ghost" data-close>我已保存</button></div>`,
+        ()=>{ const ta=document.getElementById('pat-raw'); if(ta&&navigator.clipboard) navigator.clipboard.writeText(ta.value).then(()=>toast('已复制到剪贴板')); });
+      return false; });
+}
+
+/* ---- 轻量动作分支（vs-add / pat-* / notif-mark / tg-regen）：补充 content 主监听器未覆盖的新增动作 ---- */
+document.getElementById('content').addEventListener('click', (e)=>{
+  const a=e.target.closest('[data-act]'); if(!a) return;
+  const act=a.dataset.act;
+  if(act==='vs-add'){ openModal('<h3>新建变量 / 密钥</h3><div class="mb">变量明文存储；密钥在 hub 侧 AES-GCM 加密、仅回 valueSet。</div><div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-close>创建</button></div>'); }
+  else if(act==='pat-create'){ openPatCreate(); }
+  else if(act==='pat-revoke'){ PAT_TOKENS.splice(+a.dataset.i,1); toast('已撤销令牌（示意）'); render(); }
+  else if(act==='notif-mark'){ NOTIF_READ[+a.dataset.i]=!NOTIF_READ[+a.dataset.i]; renderNotif(); render(); }
+  else if(act==='tg-regen'){ toast('Webhook 已重新生成（示意）'); }
+  else if(act==='sub-rules'){ openSubscriptionRules(); }
+});
+
+/* ---- 触发器数据（4.3，供配置弹窗默认值） ---- */
+const TRIGGERS = {
+  '日常流水线':{manual:true, cron:'0 2 * * *', event:'on_push', concurrency:'forbid', sign:'hmac-sha256'},
+};
 </script>
 </body>
 </html>

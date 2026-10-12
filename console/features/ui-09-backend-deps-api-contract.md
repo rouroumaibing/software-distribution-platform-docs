@@ -104,6 +104,24 @@
 | --- | --- | --- | --- |
 | N-16 | 平台审计日志查询端点 | 【后端依赖】 | 原型「用户与权限」页新增平台审计日志表，覆盖：审批（decision）、运行取消（cancel）、手动执行（`POST /environments/:id/exec`，`target:exec` 逐条审计）、凭据轮转/创建、目标注册、组映射变更。建议 `GET /audit?who=&act=&page=`；写入面 hub 侧已具备，**统一查询端点是否存在待核对**，缺则登记为新端点 |
 | N-17 | 通知聚合数据源 | 【待确认】 | 顶栏通知中心（待审批 / 失败运行 / 目标异常 + 未读角标）。**前端聚合可先行、零新端点**：待审批 = `GET /runs?phase=WaitingApproval`、失败 = `GET /runs?phase=Failed&createdAfter=`（N-1 时间窗已落地）、目标异常 = targets 心跳状态；独立 `GET /notifications` 仅在需要已读状态 / 跨设备同步时立项 |
+| N-18 | 配置版本化层（整环境快照 + comment + 回滚） | 【后端依赖】 | 4.1 需求：配置按环境保存版本、版本列表/详情/回滚、保存接口收 `comment`。**现状**：`ComponentConfigHistory`（key 级 append log、secret 已脱敏 `<secret>`）已存在 → 缺"整环境 YAML 快照版本 + `comment` 字段 + 两版整配置 diff + 回滚生成新版本"。**决策 #2**：与 pipeline 定义版本（N-19 同表）共用 UI 层、分离数据层 |
+| N-19 | 版本晋级 / 按版本回滚（跨环境） | 【后端依赖】 | 4.2 需求：版本实体与查询、晋级接口、按版本回滚、与制品/运行关联。**现状**：pipeline **定义**版本 `PipelineVersionService`(List/Compare/Rollback, append-only) 已存在；"发布版本跨环境晋级 / 部署状态徽章 / 指定版本回滚"净新增（`packageversion` 仅平台三版本部署常量矩阵，不可晋级）。**决策 #2/#7**：版本视图复用 N-18 的版本抽屉 UI；回滚后发布状态置 `rolled_back`（见 N-23） |
+| N-20 | 整 spec 提交端点 `PUT /pipelines/:id/spec` | 【后端依赖】 | 4.3 需求（**决策 #3**）：编排 + 触发器 + 变量 + 设置 四分区原子提交，错误按分区/字段分组返回（如 `{triggers:[...], dag:[...]}`）。**现状**：hub 已有 pipeline 更新路径，但四 Tab 拆多次 PUT 易产生"触发器已存、DAG 没存"中间态；新增整提交端点降低竞态 |
+| N-21 | 触发器 CRUD / Webhook 签名 / 调度 / 并发策略 | 【后端依赖】 | 4.3 需求：多类型触发器（手动/Git 事件/cron/上游完成/Webhook）、Webhook 签名与轮换、调度器、并发策略字段（排队/取消旧运行/拒绝新运行）。**现状**：`TriggerRequest` 仅为手动运行输入体，无类型/调度/签名/并发策略 |
+| N-22 | 审计 `reason` / `ticket` 字段 + 组件级入口 | 【后端依赖】 | 4.4 / 5.4 需求：审计新增结构化 `reason`/`ticket`、前后差异、服务端筛选分页、`component:manage` 组件级审计入口。**现状**：`GET /audit-logs` 六维 filter + 分页已存在（N-16 已核对）；缺 `reason`/`ticket` 过滤（依赖本项）与组件级作用域 |
+| N-23 | `RolloutPhase` 补 `Failed` / `RolledBack` 终态 | 【后端依赖】 | 4.5 需求（**决策 #7**）：发布状态独立为 进行中/已暂停/成功/失败/**已回滚**。**重要更正**：`Environment.Status` 后端已是 4 值枚举（`unconfigured/configured_unverified/verified/failed`），计划的"paused 混用"在后端模型层已不成立；真正缺口在 `RolloutPhase` 缺 `Failed`/`RolledBack` 终态 |
+| N-24 | 审批策略实体 + `assignee` + 变更窗口 | 【后端依赖】 | 5.1 需求（**决策 #4**）：审批策略（环境级默认 + 组件级覆盖）、`assignee=me` 过滤、超时调度、转交、变更窗口。**现状**：`PipelineApproval`(run/component/org 三级作用域, Pending/Approved/Rejected/Cancelled) 已存在；缺 `Assignee` 字段（无法 `assignee=me`）、策略配置实体、审批中心后端、变更窗口。配置动作需 net-new `approval:configure`（见 N-32） |
+| N-25 | 通知订阅规则 / 渠道适配 / 静默 | 【后端依赖】 | 5.2 需求（**决策 #5**）：事件总线、订阅规则存储、渠道适配（站内+Webhook+邮件首批；企业 IM 作适配器插件）、已读状态、静默时段。**现状**：`GET /notifications` + `POST /notifications/read-mark` 已存在（N-17）；缺订阅规则/渠道/静默 |
+| N-26 | 普通变量 / 共享变量组实体 | 【后端依赖】 | 5.3 需求（**决策 #6**）：普通变量、共享变量组（首批 Service 级，Org 级延迟强管控）、运行时参数声明、日志脱敏规则。**现状**：`credentials/` 全 CRUD + AES-GCM + 不回明文已存在（密钥底座）；缺普通变量/变量组/运行时参数声明 |
+| N-27 | 运行级 SSE 包装 / 续跑 / 批量逐对象 | 【后端依赖】 | 5.5 需求：流式日志（运行级 SSE 包装）、进度指示、失败点续跑、批量终止/重跑逐对象返回。**现状**：`TaskRunLog` 持久化 + 查询端点、`run_control` 批量终止/重跑已存在；agent_op 有 SSE 基础设施；缺运行级 SSE 包装/续跑/批量逐对象结果 |
+| N-28 | 服务树治理属性（owner/tags/lifecycle/dependency） | 【后端依赖】 | 6.1 需求：节点 owner/描述/标签/生命周期（活跃/冻结/废弃）、组件依赖图与被谁依赖。**现状**：org/component CRUD 基础在；缺治理属性模型与依赖关系 |
+| N-29 | 制品签名 / SBOM / 漏洞扫描 / 跨组件检索 | 【后端依赖】 | 6.2 需求：制品校验和/签名状态/SBOM/漏洞扫描、跨组件检索、被使用环境。**现状**：`Artifact`(checksum/ExpiresAt/CleanupState) 已存在；缺签名/SBOM/扫描/跨组件检索/被使用环境。**决策 #1**：制品表预留 nullable `tenant_id`/`external_ref`（外部分发耦合保险，不实现逻辑） |
+| N-30 | Runner 容量队列 / 配额用量 / 全局策略 / 公告 | 【后端依赖】 | 6.3 需求：Runner 视图（版本/在线数/并发容量/排队数/升级结果 + 批量升级回退）、配额用量（按 Org 运行次数/存储/Runner 时长）、全局默认策略、系统公告、平台健康。**现状**：agent_op(Runner 升级/版本/队列) + metrics/keycloak 在；缺聚合视图/配额用量/全局策略/公告端点 |
+| N-31 | PAT 实体（用户级，复用 `user:manage`） | 【后端依赖】 | 6.4 需求：个人访问令牌（范围/有效期、创建/列表/吊销、明文仅展示一次、写审计）。**现状**：净新增实体；权限上复用 `user:manage`（自身范围），不引入新组件级动作 |
+| N-32 | 权限词表扩展：`notification:read`/`configure`、`approval:configure` | 【后端依赖】 | 前端补全计划引入的新动作（5.1/5.2），不在 hub §7 词表内：建议新增 `notification:read`/`notification:configure`（通知读取与配置）、`approval:configure`（审批策略配置，或复用 `component:manage`/`org:manage`，待 N-24 冻结时拍板）。其余工作项均复用既有 `component:*`/`pipeline:*`/`config:*`/`artifact:*`/`page:*`/`org:manage`/`user:manage` |
+| N-33 | 组件可部署版本列表 `GET /components/:id/versions` | 【后端依赖】 | 4.2「指定版本回滚」目标来源：组件全部可部署版本（新→旧；版本号 / 构建时间 / 大小 / SHA256）。**核对结论**：`packageversion` 端点是平台自身三版本（ConfigMap 常量，不可晋级，N-19 已述），组件级版本矩阵净新增。回滚语义 = append 新 release 记录（`ver`=目标版本），与 `PipelineVersionService`（定义版本 append-only）同构不同体：前者制品/部署版本，后者结构快照。console 原型已按 mock 落地（`RELEASE_VERSIONS`），hub 侧待立项 |
+
+> **2026-10-11 补记（前端设计补全计划）**：N-18–N-32 由原三份后端契约文档（2026-10-11，已并入 ui-12 后删除）逐条核对 hub 源码后抽取；多数 P0/P1 后端底座已存在（credentials AES-GCM、`PipelineApproval`、`PipelineVersionService`、`TaskRunLog`、agent_op SSE、`Artifact` 等），净新增集中在触发器/版本晋级/审批策略/通知订阅/变量组/制品扫描/Runner 视图/PAT。决策挂钩见 `CONSOLE-DECISIONS-STEELMAN-2026-10-11.md`（#1–#7）。
 
 **D.1 补记（不改上方 D.1 表历史行）**：Run 域取消桩在 D.1 表中缺登记，本轮补记——`POST /runs/:id/cancel`（console `src/api/run.ts:149-150`；hub 侧取消运行中流水线已落地，语义 = 停掉 Pending/Running/WaitingApproval 的 run）。审批决策（`run.ts:124`）与单任务重跑（`run.ts:112` redispatch）上表已列。**原型 2026-10-08 补齐轮的 终止 / 审批 / 仅失败任务重跑 三个动作，实现版直接消费以上既有桩，无新后端依赖**。
 
