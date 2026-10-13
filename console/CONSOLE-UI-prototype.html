@@ -925,8 +925,7 @@ function pageCatalog(){
                <tr><td style="color:var(--text-sub)">环境</td><td>${es} 个</td></tr>`
                :`<tr><td style="color:var(--text-sub)">节点类型</td><td>${kind}</td></tr>
                <tr><td style="color:var(--text-sub)">子节点</td><td>${(node.children||[]).length} 个</td></tr>`}
-             </tbody></table>`; })()}
-            ${nodeGovernanceHtml(node)}
+             </tbody></table>${nodeGovernanceHtml(node)}`; })()}
       </div>
     </div>
   </div>`;
@@ -2631,20 +2630,90 @@ document.getElementById('userDrop').addEventListener('click', (e)=>{
 });
 document.addEventListener('click', ()=>{ const d=document.getElementById('userDrop'); if(d) d.hidden=true; });
 
-/* ============ boot ============ */
-/* 首屏渲染延迟到整段脚本加载完成后，避免 TDZ：GOVERNANCE / RUNNERS / NOTIF_READ / TRIGGERS
-   等 const 在下方才声明，若默认页或 URL 恢复页为服务树 / 接入管理 / 通知中心，render() 会在
-   这些 const 初始化前被同步调用而抛 ReferenceError。setTimeout(0) 让首屏渲染排到脚本末尾执行。 */
-(function(){
-  const sysDark = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
-  S.theme = sysDark?'dark':'light';
-  document.documentElement.dataset.theme = S.theme;
-  setTimeout(render, 0);
-})();
+/* ============ 数据块统一区（2026-10-12 加固：全部 const 数据前移至启动代码之前） ============
+   动因：renderNotif() 在模块加载期被立即调用，而 NOTIF_READ 等 const 声明在其后，触发
+   TDZ（Cannot access ... before initialization）→ 脚本中断 → 后续数据块全部未初始化，
+   服务树 / 接入管理 / 通知中心 / PAT / 触发器 / 订阅规则等页面全部报错。
+   setTimeout(render, 0) 只挡得住「启动时同步 render」这一类，挡不住加载期其他调用；
+   数据全部前移才是整类根治。新数据块一律追加到本区，不要再散落到启动代码之后。 */
 
-/* ============ 组件详情：制品 / 权限 / 日志 三 Tab（原型同步设计，2026-09-21） ============
-/* 作用域主键 = 组件 uuid；本原型以 compLabel(uuid) 解析为组件名后按名取数据，与后端"按 component_id(uuid) 过滤"一致。
-   制品库 / 组件权限 / 运行日志的接口契约见 CONSOLE-UI-DESIGN.md §7.3 / §7.9 / §7.6 与 §7.10 / §7.11。 */
+/* 5.1 审批策略（2026-10-12）：组件默认 + 环境覆盖两档（hub ApprovalPolicy 已落地，console 为展示 / 配置面）。
+   执行路径只解析组件默认；环境覆盖档因 run↔environment 无直连已登记为 B 类（ui-12 R2），此处按策略展示。 */
+const APPROVAL_POLICY = {
+  default: {group:'release-manager', any:true, note:'release-manager 组任一成员批准后继续（需 approval:approve）'},
+  envOverride: {'production': {group:'platform-admin', any:false, note:'platform-admin 双人批准'}},
+};
+
+/* ---------- 平台组映射编辑（Keycloak 组 → platform_role） ---------- */
+const ROLE_MAP = [
+  {grp:'sdp-admins', role:'platform-admin', members:3},
+  {grp:'sdp-devs',   role:'platform-user',  members:18},
+];
+
+/* ---- 数据：服务树治理属性（6.1） ---- */
+const GOVERNANCE = {
+  o1:{owner:'平台工程组', tags:['core','pci-dss'], lifecycle:'stable', deps:'—'},
+  s1:{owner:'张三', tags:['web','prod'], lifecycle:'stable', deps:'svc-data'},
+  c1:{owner:'张三', tags:['web','prod','sdp'], lifecycle:'stable', deps:'svc-a / svc-data'},
+  c2:{owner:'李四', tags:['api','prod'], lifecycle:'stable', deps:'svc-data / svc-ml'},
+  c3:{owner:'王五', tags:['worker'], lifecycle:'active', deps:'svc-data'},
+  c5:{owner:'赵六', tags:['etl','data'], lifecycle:'stable', deps:'svc-ml'},
+  s2:{owner:'孙七', tags:['b'], lifecycle:'beta', deps:'—'},
+};
+
+/* ---- 数据：配置版本（4.1 整环境快照版本，append-only） ---- */
+/* 版本按 `${comp}|${env}` 缓存在 CONFIG_VERSIONS，回滚时追加新版本（v5…）且不覆盖历史。
+   每条含 full（整环境快照全文，供行级 diff）；配置保存经 openReasonModal 收集变更说明后同样 append（4.4）。 */
+const CONFIG_VERSIONS = {};
+
+/* ---- 数据：变量与密钥（5.3，组件级；密钥 AES-GCM 不回明文） ---- */
+const VARSECRETS = {
+  'comp-web':[
+    {name:'LOG_LEVEL', scope:'Service', kind:'var', val:'info', updated:'09-14'},
+    {name:'FEATURE_FLAG', scope:'Service', kind:'var', val:'canary,newui', updated:'09-12'},
+    {name:'DB_PASSWORD', scope:'Service', kind:'secret', val:'set', updated:'09-10'},
+    {name:'TLS_CERT', scope:'Component', kind:'secret', val:'set', updated:'09-01'},
+  ],
+};
+
+/* ---- 数据：Runner 舰队（6.3） ---- */
+const RUNNERS = [
+  {name:'runner-kind-e2e-01', version:'v0.4.2', target:'kind-e2e-01', queued:0, running:1, status:'online', hb:'8s 前'},
+  {name:'runner-kind-e2e-02', version:'v0.4.2', target:'kind-e2e-02', queued:2, running:0, status:'online', hb:'11s 前'},
+  {name:'runner-tx-prod-gz', version:'v0.4.1', target:'tx-prod-gz', queued:0, running:0, status:'offline', hb:'6h 前'},
+  {name:'runner-ali-test-sh', version:'—', target:'ali-test-sh', queued:0, running:0, status:'unknown', hb:'—'},
+];
+
+const NOTIF_READ = {};
+
+/* 5.2 订阅规则（2026-10-12）：事件类型 × 渠道（站内 / 邮箱）。站内 = 铃铛 / 通知中心；
+   邮箱 = hub 侧 SMTPMailer 投递（ui-12 已实现，console 为配置面）；聚合零新端点（ui-09 附 A · N-17）。 */
+const SUBSCRIPTIONS = [
+  {evt:'run.failed',        label:'运行失败',            inapp:true,  mail:true},
+  {evt:'approval.pending',  label:'待审批',              inapp:true,  mail:true},
+  {evt:'target.offline',    label:'目标离线 / 心跳丢失', inapp:true,  mail:false},
+  {evt:'rollout.unhealthy', label:'灰度健康度波动',      inapp:false, mail:false},
+];
+
+/* ---- 数据：全局制品库（6.2，跨组件） ---- */
+const GLOBAL_ARTIFACTS = [
+  {comp:'comp-web', name:'comp-web-1.4.3.tar.gz', builtAt:'09-14 19:02', size:'48.2 MB', sha256:'a3f1…c9', retain:'90d', sign:'已签名', sbom:'已生成', scan:'通过'},
+  {comp:'comp-api', name:'comp-api-2.1.0.tar.gz', builtAt:'09-14 18:47', size:'62.0 MB', sha256:'7b2e…41', retain:'90d', sign:'已签名', sbom:'已生成', scan:'1 中危'},
+  {comp:'comp-worker', name:'comp-worker-1.0.5.tar.gz', builtAt:'09-14 18:12', size:'31.5 MB', sha256:'c0d8…7a', retain:'90d', sign:'未签名', sbom:'未生成', scan:'待扫描'},
+  {comp:'comp-etl', name:'comp-etl-3.2.1.tar.gz', builtAt:'09-13 22:30', size:'120.4 MB', sha256:'e91f…02', retain:'30d', sign:'已签名', sbom:'已生成', scan:'通过'},
+];
+
+/* ---- 数据：个人访问令牌 PAT（6.4，净新增；复用 user:manage 自身范围） ---- */
+const PAT_TOKENS = [
+  {name:'ci-deploy-token', scope:'deploy', created:'09-01', expire:'2027-09-01', last:'2h 前', prefix:'pat_a1b2'},
+  {name:'local-dev-token', scope:'read', created:'08-20', expire:'2026-11-20', last:'1d 前', prefix:'pat_c3d4'},
+];
+
+/* ---- 触发器数据（4.3，供配置弹窗默认值） ---- */
+const TRIGGERS = {
+  '日常流水线':{manual:true, cron:'0 2 * * *', event:'on_push', concurrency:'forbid', sign:'hmac-sha256'},
+};
+
 const UI = { logRun:'', logLevel:'all', logQ:'' };
 
 const ARTIFACTS = {
@@ -2658,6 +2727,7 @@ const ARTIFACTS = {
     {id:'a5', name:'comp-api-2.0.0.tar.gz', builtAt:'2026-09-14 18:47', size:'63.1 MB', url:'https://artifacts.sdp.local/platform-eng/sounds-great/comp-api/run-7c03/comp-api-2.0.0.tar.gz?sig=aa10…42bd'},
   ],
 };
+
 /* 归档说明：本页只读，仅展示流水线构建 / 发布产物；删除 / 清理由 GC 与过期策略处理，人工不开放。 */
 const ARCHIVE_INFO = `<div class="infobar">
   <div class="infobar-h">🗄 归档与备份（本页只读：仅展示流水线构建 / 发布产物，非上传入口）</div>
@@ -2668,6 +2738,7 @@ const ARCHIVE_INFO = `<div class="infobar">
     <b>过期</b> <span class="mono">expires_at</span> <b>已生效</b>（保留期 GC，<b>默认关闭</b>）：先删对象、后删行；对象删失败的行标记 <span class="mono">pending_deletion</span> 并由下一轮自动重试，且不再出现在制品列表。对账本身仍为「仅报告 + 人工确认」（见 hub DELETE-CONTRACT §6.6-4）。
   </div>
 </div>`;
+
 const PERMISSION_BINDINGS = {
   'comp-web':[
     {subject:'张三', subjectType:'user', role:'component-admin', boundBy:'系统', boundAt:'创建时', owner:true},
@@ -2680,12 +2751,14 @@ const PERMISSION_BINDINGS = {
     {subject:'svc-a-dev', subjectType:'group', role:'component-editor', boundBy:'王五', boundAt:'09-03'},
   ],
 };
+
 const COMP_ROLES = [
   {key:'component-viewer', label:'查看者', perms:'只读：概览 / 配置 / 环境 / 制品 / 日志 / 运行'},
   {key:'component-editor', label:'编辑者', perms:'读写 + 触发运行 + 编辑配置 / 环境 / 流水线'},
   {key:'component-approver', label:'审批者', perms:'编辑者 + approval:approve（生产卡点审批）'},
   {key:'component-admin', label:'管理员', perms:'全部组件动作 + component:manage（含改 / 删绑定）'},
 ];
+
 const RUN_LOGS = {
   'comp-web':[
     {id:'run-8f21', pipeline:'日常流水线', phase:'succeeded', at:'09-14 19:02', tasks:[
@@ -2709,6 +2782,20 @@ const RUN_LOGS = {
     ]},
   ],
 };
+
+/* ============ boot ============ */
+/* 首屏渲染排到脚本加载完成后执行：全部 const 数据已在「数据块统一区」前移，启动期无 TDZ；
+   setTimeout(0) 保留，使首屏 render 排在本段所有加载期语句（含 renderNotif 初始化）之后。 */
+(function(){
+  const sysDark = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
+  S.theme = sysDark?'dark':'light';
+  document.documentElement.dataset.theme = S.theme;
+  setTimeout(render, 0);
+})();
+
+/* ============ 组件详情：制品 / 权限 / 日志 三 Tab（原型同步设计，2026-09-21） ============
+/* 作用域主键 = 组件 uuid；本原型以 compLabel(uuid) 解析为组件名后按名取数据，与后端"按 component_id(uuid) 过滤"一致。
+   制品库 / 组件权限 / 运行日志的接口契约见 CONSOLE-UI-DESIGN.md §7.3 / §7.9 / §7.6 与 §7.10 / §7.11。 */
 
 /* ---------- 制品（artifacts） ---------- */
 function pageArtifacts(){
@@ -3017,17 +3104,6 @@ function openVersionMatrix(){
     <div class="modal-foot"><button class="btn btn-primary" data-close>关闭</button></div>`, null);
 }
 
-/* 5.1 审批策略（2026-10-12）：组件默认 + 环境覆盖两档（hub ApprovalPolicy 已落地，console 为展示 / 配置面）。
-   执行路径只解析组件默认；环境覆盖档因 run↔environment 无直连已登记为 B 类（ui-12 R2），此处按策略展示。 */
-const APPROVAL_POLICY = {
-  default: {group:'release-manager', any:true, note:'release-manager 组任一成员批准后继续（需 approval:approve）'},
-  envOverride: {'production': {group:'platform-admin', any:false, note:'platform-admin 双人批准'}},
-};
-/* ---------- 平台组映射编辑（Keycloak 组 → platform_role） ---------- */
-const ROLE_MAP = [
-  {grp:'sdp-admins', role:'platform-admin', members:3},
-  {grp:'sdp-devs',   role:'platform-user',  members:18},
-];
 function openPermMapEdit(grp){
   const m = ROLE_MAP.find(x=>x.grp===grp); if(!m) return;
   openModal(`<h3>编辑映射 · <span class="mono">${esc(m.grp)}</span></h3>
@@ -3101,7 +3177,8 @@ function renderNotif(){
   if(!btn || !drop) return;
   btn.addEventListener('click',(e)=>{ e.stopPropagation(); renderNotif(); drop.hidden=!drop.hidden; });
   drop.addEventListener('click',(e)=>{ e.stopPropagation();
-    if(e.target.closest('[data-nav]')) drop.hidden=true; });
+    const nav=e.target.closest('[data-nav]');
+    if(nav){ drop.hidden=true; go(nav.dataset.nav, nav.dataset.runTab, nav.dataset.runFilter); } });
   document.addEventListener('click',()=>{ drop.hidden=true; });
   renderNotif();
 })();
@@ -3112,16 +3189,6 @@ function renderNotif(){
    与 plans/CONSOLE-P0/P1/P2-BACKEND-CONTRACT、ui-12、ui-09 附 A（N-18~N-32）同源。
    ============================================================================ */
 
-/* ---- 数据：服务树治理属性（6.1） ---- */
-const GOVERNANCE = {
-  o1:{owner:'平台工程组', tags:['core','pci-dss'], lifecycle:'stable', deps:'—'},
-  s1:{owner:'张三', tags:['web','prod'], lifecycle:'stable', deps:'svc-data'},
-  c1:{owner:'张三', tags:['web','prod','sdp'], lifecycle:'stable', deps:'svc-a / svc-data'},
-  c2:{owner:'李四', tags:['api','prod'], lifecycle:'stable', deps:'svc-data / svc-ml'},
-  c3:{owner:'王五', tags:['worker'], lifecycle:'active', deps:'svc-data'},
-  c5:{owner:'赵六', tags:['etl','data'], lifecycle:'stable', deps:'svc-ml'},
-  s2:{owner:'孙七', tags:['b'], lifecycle:'beta', deps:'—'},
-};
 function nodeGovernanceHtml(node){
   const g = GOVERNANCE[node.id] || {owner:'—', tags:[], lifecycle:'—', deps:'—'};
   return `<div class="h2" style="margin-top:18px">治理属性 <span class="hint">（6.1 服务树治理：owner / tags / lifecycle / dependency）</span></div>
@@ -3133,10 +3200,6 @@ function nodeGovernanceHtml(node){
     </tbody></table></div>`;
 }
 
-/* ---- 数据：配置版本（4.1 整环境快照版本，append-only） ---- */
-/* 版本按 `${comp}|${env}` 缓存在 CONFIG_VERSIONS，回滚时追加新版本（v5…）且不覆盖历史。
-   每条含 full（整环境快照全文，供行级 diff）；配置保存经 openReasonModal 收集变更说明后同样 append（4.4）。 */
-const CONFIG_VERSIONS = {};
 function configVersionsOf(comp, env){
   const key = comp+'|'+env;
   if(!CONFIG_VERSIONS[key]){
@@ -3233,15 +3296,6 @@ function openTriggerConfig(){
   ce.oninput=updPrev; updPrev();
 }
 
-/* ---- 数据：变量与密钥（5.3，组件级；密钥 AES-GCM 不回明文） ---- */
-const VARSECRETS = {
-  'comp-web':[
-    {name:'LOG_LEVEL', scope:'Service', kind:'var', val:'info', updated:'09-14'},
-    {name:'FEATURE_FLAG', scope:'Service', kind:'var', val:'canary,newui', updated:'09-12'},
-    {name:'DB_PASSWORD', scope:'Service', kind:'secret', val:'set', updated:'09-10'},
-    {name:'TLS_CERT', scope:'Component', kind:'secret', val:'set', updated:'09-01'},
-  ],
-};
 function pageVarsSecrets(){
   const uuid=curUuid(), comp=compLabel(uuid);
   const rows=(VARSECRETS[comp]||[]);
@@ -3261,13 +3315,6 @@ function pageVarsSecrets(){
     <div class="card flush">${inner}</div>`;
 }
 
-/* ---- 数据：Runner 舰队（6.3） ---- */
-const RUNNERS = [
-  {name:'runner-kind-e2e-01', version:'v0.4.2', target:'kind-e2e-01', queued:0, running:1, status:'online', hb:'8s 前'},
-  {name:'runner-kind-e2e-02', version:'v0.4.2', target:'kind-e2e-02', queued:2, running:0, status:'online', hb:'11s 前'},
-  {name:'runner-tx-prod-gz', version:'v0.4.1', target:'tx-prod-gz', queued:0, running:0, status:'offline', hb:'6h 前'},
-  {name:'runner-ali-test-sh', version:'—', target:'ali-test-sh', queued:0, running:0, status:'unknown', hb:'—'},
-];
 function openRunnerDetail(rid){
   const r = RUNNERS.find(x=>x.name===rid); if(!r) return;
   openModal(`<h3>Runner 详情 · ${esc(r.name)}</h3>
@@ -3294,15 +3341,6 @@ function pageNotifCenter(){
       <tbody>${rows||'<tr><td colspan="4" style="color:var(--text-sub);padding:14px">无通知</td></tr>'}</tbody></table></div>
   </div>`;
 }
-const NOTIF_READ = {};
-/* 5.2 订阅规则（2026-10-12）：事件类型 × 渠道（站内 / 邮箱）。站内 = 铃铛 / 通知中心；
-   邮箱 = hub 侧 SMTPMailer 投递（ui-12 已实现，console 为配置面）；聚合零新端点（ui-09 附 A · N-17）。 */
-const SUBSCRIPTIONS = [
-  {evt:'run.failed',        label:'运行失败',            inapp:true,  mail:true},
-  {evt:'approval.pending',  label:'待审批',              inapp:true,  mail:true},
-  {evt:'target.offline',    label:'目标离线 / 心跳丢失', inapp:true,  mail:false},
-  {evt:'rollout.unhealthy', label:'灰度健康度波动',      inapp:false, mail:false},
-];
 function openSubscriptionRules(){
   const rows = SUBSCRIPTIONS.map((s,i)=>`<tr>
     <td><b>${esc(s.label)}</b><div class="hint mono">${esc(s.evt)}</div></td>
@@ -3319,13 +3357,6 @@ function openSubscriptionRules(){
       toast('订阅规则已保存（示意）'); render(); });
 }
 
-/* ---- 数据：全局制品库（6.2，跨组件） ---- */
-const GLOBAL_ARTIFACTS = [
-  {comp:'comp-web', name:'comp-web-1.4.3.tar.gz', builtAt:'09-14 19:02', size:'48.2 MB', sha256:'a3f1…c9', retain:'90d', sign:'已签名', sbom:'已生成', scan:'通过'},
-  {comp:'comp-api', name:'comp-api-2.1.0.tar.gz', builtAt:'09-14 18:47', size:'62.0 MB', sha256:'7b2e…41', retain:'90d', sign:'已签名', sbom:'已生成', scan:'1 中危'},
-  {comp:'comp-worker', name:'comp-worker-1.0.5.tar.gz', builtAt:'09-14 18:12', size:'31.5 MB', sha256:'c0d8…7a', retain:'90d', sign:'未签名', sbom:'未生成', scan:'待扫描'},
-  {comp:'comp-etl', name:'comp-etl-3.2.1.tar.gz', builtAt:'09-13 22:30', size:'120.4 MB', sha256:'e91f…02', retain:'30d', sign:'已签名', sbom:'已生成', scan:'通过'},
-];
 function pageGlobalArtifacts(){
   const inner = `<table class="table">
     <thead><tr><th>组件</th><th>版本包</th><th>构建时间</th><th>大小</th><th>SHA256</th><th>保留期</th><th>签名</th><th>SBOM</th><th>扫描</th></tr></thead>
@@ -3345,11 +3376,6 @@ function pageGlobalArtifacts(){
   </div>`;
 }
 
-/* ---- 数据：个人访问令牌 PAT（6.4，净新增；复用 user:manage 自身范围） ---- */
-const PAT_TOKENS = [
-  {name:'ci-deploy-token', scope:'deploy', created:'09-01', expire:'2027-09-01', last:'2h 前', prefix:'pat_a1b2'},
-  {name:'local-dev-token', scope:'read', created:'08-20', expire:'2026-11-20', last:'1d 前', prefix:'pat_c3d4'},
-];
 function pagePat(){
   const inner = PAT_TOKENS.length ? `<table class="table">
     <thead><tr><th>名称</th><th>权限范围</th><th>创建</th><th>过期</th><th>最近使用</th><th>前缀</th><th></th></tr></thead>
@@ -3399,10 +3425,6 @@ document.getElementById('content').addEventListener('click', (e)=>{
   else if(act==='sub-rules'){ openSubscriptionRules(); }
 });
 
-/* ---- 触发器数据（4.3，供配置弹窗默认值） ---- */
-const TRIGGERS = {
-  '日常流水线':{manual:true, cron:'0 2 * * *', event:'on_push', concurrency:'forbid', sign:'hmac-sha256'},
-};
 </script>
 </body>
 </html>

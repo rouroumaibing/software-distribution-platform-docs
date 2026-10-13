@@ -330,3 +330,13 @@ pnpm test（7 个 smoke 脚本）                   ✅ 全过
 2. **顺带**：原型 5 项代码小修（TDZ / 审计分类 / 角标 / PAT 安全 / 配置版本 v5）+ 文件名实际落盘改名（文档 §0.2 #11 早已按新名记录，磁盘迟至今日对齐）+ 版本矩阵语义勘误（`GET /package-versions` = 平台自身三版本，组件级矩阵改引 N-33）。
 3. **门禁**：`node --check` 抽 `<script>` SYNTAX_OK；纯函数冒烟（cronParse/cronNext/diffLines）**20/20**——抓出并修复 `*/15` 步长 cron 解析 bug；内容复核 51 个新标记在盘 / 3 个旧模式清零。
 4. **B 类登记**：`GET /components/:id/versions`（hub 侧待立项，N-33）；环境覆盖档执行路径维持 R4 结论（本文不重复登记）。
+
+### M.2 2026-10-12（晚）原型运行时缺陷修复轮（仅原型，console 实现仓未动）
+
+1. **背景**：用户以 jsdom 对 M.1 产物做入口级回归（19 个入口），报 2 处崩溃；本轮修复后复验，又由自建 jsdom harness 抓出 1 处功能级死链（用户方法只查报错，漏「不报错但不工作」类）。
+2. **修复 ①（用户报告）启动 TDZ**：`renderNotif()` 在模块加载期被立即调用，而 `NOTIF_READ` 等 const 声明在其后 → `Cannot access 'NOTIF_READ' before initialization` → 脚本中断 → 后续数据块全部未初始化（服务树 / 接入管理 / 通知中心 / PAT / 触发器 / 订阅规则全崩）。**未采用用户建议的单点前移**，改用结构性方案：**全部 17 个 const 数据块统一前移至 boot IIFE 之前**（新增「数据块统一区」，区块注释随行），整类 TDZ 根治——`setTimeout(render,0)` 只挡「启动时同步 render」，挡不住加载期其他调用。
+3. **修复 ②（用户报告）服务树 `node is not defined`**：`${nodeGovernanceHtml(node)}` 写在 IIFE 闭合之后，而 `node` 是 IIFE 内 const → 服务树每次渲染必崩。修法：插值移入 IIFE 返回的模板内（治理卡片与节点信息同 pane，语义本就如此）。
+4. **修复 ③（harness 抓出）铃铛下拉深链全死**：`#notifDrop` click handler 首行 `e.stopPropagation()`，事件到不了 `#topbar` 委托监听（`go()` 在内）→ 通知条目与「查看全部通知 →」只关下拉不跳转；左栏无通知中心入口 ⇒ **5.2 通知中心整页不可达**。修法：drop handler 内对 `[data-nav]` 直接 `go(nav.dataset.nav, runTab, runFilter)`。同类审计：全文件 4 处 `stopPropagation`，另 3 处（userBtn / userDrop / notifBtn）均在各自 handler 内直接导航，无此患。
+5. **门禁（复现用户方法并加强）**：受管 node 工作区装 jsdom 自建 harness——① 加载零报错（TDZ gate）② 逐页穷举 **64 个交互入口**（导航 / 动作 / Tab / 树节点 / 子 pill；destructive 动作黑名单）+ **11 个弹窗 settle**（含输入填充、原因必填拦截、回滚 append 路径）③ **34/34 行为断言**：触发器 Tab 切换 + cron 合法 / 非法预览 + 保存写回（重开校验持久化）、灰度回滚（原因必填拦截 → append 新 release 记录 + 「（历史）」标记 + toast）、配置版本两版本 diff 输出 + 回滚 append vN、凭据轮转原因必填、PAT 无「永不过期」+ admin 二次确认 + 明文仅展示一次、铃铛角标标记已读后 -1。
+6. **harness 抓 bug 经过（留痕）**：初版 17/21 → 4 个 FAIL 中定位 3 个为 harness 自身缺陷（徽章选择器 `.badge` vs 实际 `.hint`、`hidden` 属性 vs `style.display`、T3 导航路径假设错误——T2 后页面停在运行中心），1 个为真 bug（即修复 ③）。
+7. **遗留**：用户路线图仍开放项（4.2 版本详情 / 晋级、4.3 上游触发与触发来源列、5.1 策略配置界面、5.3 / 5.4 / 5.5 / 6.x 及第四期）不在本轮范围；console 实现仓仍未动。

@@ -124,3 +124,54 @@ owner 明确：
 
 **验证门禁（全绿）**：`gofmt` / `go vet ./...` / `go build ./...` / `go mod tidy` / `go test ./internal/run/...`（9 个用例通过）。
 **零 schema 变更**：未新增/改动任何表结构（扇出/重试完全复用 `dispatch_jobs` 1:多 形状）。
+
+---
+
+## 10. 线协议类型一致性约定（保持统一）
+
+> 本节约束 hub 与 runner 之间**线协议类型定义**的归属、副本与变更流程；与 §2–§9 的下发机制决策正交，但同属「hub↔runner 线协议」这一跨组件事实，故同住本 ADR。
+> 背景与实施方案原计划见 `plans/HUB-DECOUPLE-RUNNER-PROTOCOL-2026-10-13.md`，该计划已于 2026-10-13 实施完成并关闭（方案 D：hub 内 `internal/runnerproto` 派生副本）。本节即落地后的权威约定。
+
+### 10.1 事实来源（SSOT）
+
+- **`software-distribution-platform-runner` 仓库的 `api/v1alpha1` 是 hub↔runner 线协议的唯一事实来源**：协议类型、枚举值、JSON tag、`MessageType` 常量、各 `*Payload` 的信封结构，权威定义都在 runner 侧。
+- 证据：hub 全仓 28 处 import 全部指向 `.../runner/api/v1alpha1`（19 生产 + 9 测试），是 hub 与 runner 之间唯一的源码级引用边。
+
+### 10.2 hub 派生副本（方案 D）
+
+- hub 在 `internal/runnerproto/` 持有一份**派生快照**：仅含 hub 实际引用的类型 + 其传递闭包（不含 CRD 根对象 `PipelineRun`/`TaskRun`/`Rollout` 及 `*List`/`*Status`、不含 `TaskRunSpec`、不含 `zz_generated.deepcopy.go`、不含 `groupversion_info.go` 的 scheme 注册与 `init()`）。
+- 该副本**不是第二真相源**，是 runner 源码的镜像。`internal/runnerproto/doc.go` 头注释须标注**来源 runner commit SHA + 变更流程**，并写明「runner 为 SSOT，本包为派生快照」。
+- import 别名保留 `runnerapi`（与原 `runner/api/v1alpha1` 一致），因此 hub 调用点无需逐个改代码。
+
+### 10.3 变更同步流程
+
+任何线协议变更**先在 runner `api/v1alpha1` 落地**，再按下列顺序同步，runner 是变更发起方与权威：
+
+1. runner 侧改类型 / 枚举 / JSON tag；
+2. 手动镜像到 hub `internal/runnerproto`（JSON tag 逐字符照抄、常量值逐字照抄、传递闭包全复制、排除 kubebuilder 标记与 `zz_generated`）；
+3. 重跑 hub **Phase 3 契约测试**（字节级 JSON round-trip 一致性 + 枚举值断言）；
+4. 契约测试失败 = 副本与源不一致，必须先修副本再合并。
+
+### 10.4 兼容性规则（破坏性变更一律升版本）
+
+- 线协议字段与枚举**只增不删、不改枚举字符串值**——枚举字符串已落库（`pipeline_runs`/`task_runs`/`rollout_runs` 的 `phase` 列等），改值即破坏既有数据；
+- 新增字段必须 `omitempty` / 向后兼容；
+- 破坏性变更须将协议从 `v1alpha1` 升到 `v1beta1`（或 `v1`）并做双版本过渡，不得原地破坏 `v1alpha1` 消费者。
+
+### 10.5 独立构建（禁止源码级跨仓耦合）
+
+- hub / console / runner **三仓各自可独立** `go build ./...` / `go vet ./...` / `go test ./...` / `make package`；独立构建是默认底线，不是功绩（不因此加标榜注释）。
+- hub **不再经 `go.mod replace` 跨仓引用 runner 源码**（已拆除，由 §10.2 的 `internal/runnerproto` 副本取代）；`go list -deps ./... | grep -i runner` 必须为空。
+- 违反独立构建的典型症状：构建期才以 opaque 错误暴露（如 `make package` 报「找不到 ../software-distribution-platform-runner」超时），属缺陷而非预期行为。
+
+### 10.6 保持统一的守卫
+
+hub `internal/runnerproto` 副本与 runner `api/v1alpha1` 源**必须保持字节级 JSON 一致**；一致性由 hub Phase 3 契约测试守护，不一致即 CI 失败。任何一端改了协议而另一端未同步，都被该测试拦下——这是「保持统一」的唯一可执行机制。
+
+### 10.7 实施状态（2026-10-13 已完成 · 方案 D）
+
+- **副本已落地**：`software-distribution-platform-hub/internal/runnerproto/`（`doc.go` / `message.go` / `payload.go` / `phase.go` / `status.go` / `spec.go` / `param.go`），来源 runner commit `cfe8619a0ec2f77b03214bb36a199f100c932b7e`。
+- **构建耦合已拆除**：hub `go.mod` 的 `require .../runner` 与 `replace => ../runner` 已删除；28 个 `*.go` 文件（19 生产 + 9 测试）的 import 已从 `runner/api/v1alpha1` 切换为 `internal/runnerproto`，别名 `runnerapi` 保留、调用点零改动。
+- **独立构建验证**：`go list -deps ./... | grep -i runner` 为空；`go build ./...` / `go vet ./...` 通过；hub 不再依赖 runner 源码树。
+- **契约测试守护**：`internal/runnerproto/contract_test.go` + `internal/runnerproto/testdata/contract/*.json`（14 个 runner 真实序列化样本）。测试用 `DisallowUnknownFields` 解码再编码并 `JSONEq` 比对；已做一次「故意改坏一个 JSON tag → 测试失败」的破坏-恢复验证，证明测试真能拦下漂移。`make package` 的最终独立构建门禁建议在目标 Linux/amd64 机器补跑（本机 macOS 仅跑通 build/vet/单包测试）。
+- **未采用方案 A/B**：未抽独立协议仓库、也未在 runner 内建子模块——避免引入版本化模块源（在 `goproxy.cn` 不通的部署环境下反而会被卡死），符合「最小新增基础设施」约束。

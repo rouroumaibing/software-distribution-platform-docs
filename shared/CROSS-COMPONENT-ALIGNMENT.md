@@ -37,3 +37,8 @@
 ## 修改同步纪律
 
 以上概念横跨多个组件，**任何一处的修改都要同步另外两处**，避免漂移。本文件是「对齐视图」：先改各域权威文档，再回到这里同步摘要与指针；两边不一致时，以各域权威文档为准。
+
+## 8. hub↔runner 线协议一致性（保持统一 · 2026-10-13 已落地）
+
+- 协议类型的事实来源（SSOT）、hub 派生副本位置、变更同步流程、兼容性规则与独立构建边界 → **[shared/ADR-dispatch-durable-queue.md §10](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-dispatch-durable-queue.md)**（runner `api/v1alpha1` 为 SSOT，hub `internal/runnerproto` 为派生快照，一致性强弱由 Phase 3 契约测试守护）。
+- 三仓独立构建是默认底线：hub 经 `go.mod replace` 跨仓引用 runner 源码的耦合已拆除（方案 D），违反独立构建属缺陷。
