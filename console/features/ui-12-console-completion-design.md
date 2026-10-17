@@ -1,4 +1,4 @@
-> **来源**：本文件是 [`CONSOLE-UI-DESIGN.md`](./CONSOLE-UI-DESIGN.md) 的配套特性文档，承接 `前端设计补全计划（已完成并删除，内容并入本文）`（计划分析与落地）与 `四份前端 spec（已并入本文各节，计划文档已删除）`、`CONSOLE-FRONTEND-FIVES-STATES-2026-10-11.md`、`CONSOLE-DECISIONS-STEELMAN-2026-10-11.md`。
+> **来源**：本文件是 [`CONSOLE-UI-DESIGN.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) 的配套特性文档，承接 `前端设计补全计划（已完成并删除，内容并入本文）`（计划分析与落地）与 `四份前端 spec（已并入本文各节，计划文档已删除）`、`CONSOLE-FRONTEND-FIVES-STATES-2026-10-11.md`、`CONSOLE-DECISIONS-STEELMAN-2026-10-11.md`。
 > **拆分说明**（2026-10-11）：前端设计补全计划（四期、15 个工作项）的**前端侧设计事实**集中落地于此，章节号沿用计划原编号（4.1–4.5 / 5.1–5.5 / 6.1–6.5 / 第四期 §4.1–4.5），外部可引用「ui-12 §4.1」等。
 > **铁律**：本文**只追加**——后续修订轮次追加到文件尾，禁止改写历史段落；状态判断以 [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 为准。
 > **标记约定**：`【假设】` / `【待确认】` / `【后端依赖】` / 【原型未展开】。
@@ -215,7 +215,7 @@
 
 ## 附 A · 原型落点对账（2026-10-11 集成轮，以原型为准）
 
-> 补全内容已按评审意见**分布集成进 [`CONSOLE-UI-prototype.html`](../CONSOLE-UI-prototype.html) 原有页面**（companion 独立原型的「15 工作项独立左栏」形态被否决，文件已删除，见 `CONSOLE-UI-DESIGN.md` §0.2 #19）。下表为原型**实际落点**与上文各节「设计入口」的对照；有差异处以原型渲染结果为准（事实源声明），上文入口描述保留作设计初衷记录。6.5（决策 #1 不实现）与第四期 §4.2–4.5 属设计稿层面，未做原型页。
+> 补全内容已按评审意见**分布集成进 [`CONSOLE-UI-prototype.html`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-prototype.html) 原有页面**（companion 独立原型的「15 工作项独立左栏」形态被否决，文件已删除，见 `CONSOLE-UI-DESIGN.md` §0.2 #19）。下表为原型**实际落点**与上文各节「设计入口」的对照；有差异处以原型渲染结果为准（事实源声明），上文入口描述保留作设计初衷记录。6.5（决策 #1 不实现）与第四期 §4.2–4.5 属设计稿层面，未做原型页。
 
 | 工作项 | 设计入口（上文） | 原型实际落点 | 差异说明 |
 |---|---|---|---|
@@ -283,7 +283,7 @@
 
 ### 计划文档并入删除（内容权威已在本文件 + 落码）
 
-`CONSOLE-FRONTEND-DESIGN-COMPLETION-PLAN`、`CONSOLE-P0/P1/P2-BACKEND-CONTRACT`、`CONSOLE-P0/P1/P2/P3-FRONTEND-SPEC`、`CONSOLE-COMPLETION-DEV-STEELMAN`、`CONSOLE-DECISIONS-STEELMAN`（决策记录权威 = ui-10 折叠版）。`CONSOLE-FRONTEND-FIVES-STATES` 保留（共享五态规范，持续被引用；2026-10-11 盘点后迁 [./CONSOLE-FRONTEND-FIVES-STATES-2026-10-11.md](./CONSOLE-FRONTEND-FIVES-STATES-2026-10-11.md)）。
+`CONSOLE-FRONTEND-DESIGN-COMPLETION-PLAN`、`CONSOLE-P0/P1/P2-BACKEND-CONTRACT`、`CONSOLE-P0/P1/P2/P3-FRONTEND-SPEC`、`CONSOLE-COMPLETION-DEV-STEELMAN`、`CONSOLE-DECISIONS-STEELMAN`（决策记录权威 = ui-10 折叠版）。`CONSOLE-FRONTEND-FIVES-STATES` 保留（共享五态规范，持续被引用；2026-10-11 盘点后迁 [./CONSOLE-FRONTEND-FIVES-STATES-2026-10-11.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/CONSOLE-FRONTEND-FIVES-STATES-2026-10-11.md)）。
 
 ## 修订 R4（2026-10-12）：收口轮 2 —— R3 留守项全部闭环，平台自升级审批流完整版落码
 
@@ -299,8 +299,8 @@ R3 的四项 B 类留守中，**#3 环境覆盖档执行**与 **#4 组件级审�
 
 ### B2 / B3 最终决策（历史遗留两项）
 
-1. **B2 Build→Harbor** → 维持登记（用户拍板）：等首个真实构建推送需求出现再拍板 scope（registry 配置入口 + `REGISTRY_*` 注入 + docker login 凭据 + image 制品命名约定）。裁定写入 STATUS §2 `#22②`，设计仍存 [../plans/HARBOR-REGISTRY-INTEGRATION-2026-09-28.md](../plans/HARBOR-REGISTRY-INTEGRATION-2026-09-28.md) 作为待启动 spec。
-2. **B3 canary 真流量 E2E** → 留**云上验收 gate**（用户拍板，与 FIDELITY 清单口径一致）：canary 权重回传代码侧已落地完成，剩余纯验证；不本地 kind 实跑（本地维持代码侧已验证状态）。STATUS §2 `#10` 按 FIDELITY 收敛，设计仍存 [../plans/FIDELITY-KIND-VS-CLOUD-2026-10-09.md](../plans/FIDELITY-KIND-VS-CLOUD-2026-10-09.md) 作为云上验收 gate 清单。
+1. **B2 Build→Harbor** → 维持登记（用户拍板）：等首个真实构建推送需求出现再拍板 scope（registry 配置入口 + `REGISTRY_*` 注入 + docker login 凭据 + image 制品命名约定）。裁定写入 STATUS §2 `#22②`，设计仍存 [../plans/HARBOR-REGISTRY-INTEGRATION-2026-09-28.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/HARBOR-REGISTRY-INTEGRATION-2026-09-28.md) 作为待启动 spec。
+2. **B3 canary 真流量 E2E** → 留**云上验收 gate**（用户拍板，与 FIDELITY 清单口径一致）：canary 权重回传代码侧已落地完成，剩余纯验证；不本地 kind 实跑（本地维持代码侧已验证状态）。STATUS §2 `#10` 按 FIDELITY 收敛，设计仍存 [../plans/FIDELITY-KIND-VS-CLOUD-2026-10-09.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/FIDELITY-KIND-VS-CLOUD-2026-10-09.md) 作为云上验收 gate 清单。
 
 ### 平台遗留项全口径（R4 后无 open 的实现缺口）
 

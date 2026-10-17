@@ -1,7 +1,7 @@
 # SDP Console 前端设计文档（CONSOLE-UI-DESIGN）
 
 > **事实源声明（2026-09-19 合并）**：本文是 console 前端设计的**唯一事实源**。
-> - **IA / 页面 / 交互 / 视觉以可交互原型 [`CONSOLE-UI-prototype.html`](./CONSOLE-UI-prototype.html) 为准**；文档与原型不一致时，以原型渲染结果为准，并回头修文档（本轮的修订依据）。
+> - **IA / 页面 / 交互 / 视觉以可交互原型 [`CONSOLE-UI-prototype.html`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-prototype.html) 为准**；文档与原型不一致时，以原型渲染结果为准，并回头修文档（本轮的修订依据）。
 > - **后端接口契约**（请求体 / 响应 / 字段名 / 端点 / DAG 映射）→ [`shared/API-REFERENCE.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/API-REFERENCE.md)；**删除语义** → [`shared/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md)；**数据模型 / RBAC 表** → [`shared/DATA-MODEL.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)。本文不重复这些契约，只写 console 侧的消费方式。
 > - 章节号沿用自旧文档：仍具权威性的章节（执行模型、异常分支、权限与审批 UX、四态、验收、流水线 4 类模式、API 桩状态）按**原章节号**收录于本文，以保证 `hub/`、`runner/`、`README.md` 中的既有引用继续有效（见文末「章节号稳定性约定」）。此前的 `CONSOLE-UI重设计文档.md`（IA v3 重设计）与 `CONSOLE-UI设计文档.md`（IA v2 合并版，2026-09-09）已由本文取代，仓内不存在。
 > - 标注约定：`【假设】`= 据上下文推导，需确认；`【待确认】`= 存在歧义 / 待拍板；`【后端依赖】`= 需 hub 补端点或核对；`【原型未展开】`= 原型中为占位页，只有结构没有内容。
@@ -28,7 +28,7 @@
 | 附 A / 附 B / 附 C | 后端依赖与待确认 / N-13 决策 / 服务树删除决策 | 新 |
 | 附 D | API 契约与三层数据模型 / 三态子任务表单 | 旧文 附 A 迁入 |
 | 附 E | 历史未完成项快照 | 旧文 附 B 迁入 |
-| 计划 §4.1–§4.5（前端设计补全） | [ui-12-console-completion-design.md](./features/ui-12-console-completion-design.md) | 四期 15 工作项逐项设计（交互/权限矩阵/五态/契约引用/决策挂钩）；配套契约/spec 已并入 ui-12（修订 R3）后删除 |
+| 计划 §4.1–§4.5（前端设计补全） | [ui-12-console-completion-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-12-console-completion-design.md) | 四期 15 工作项逐项设计（交互/权限矩阵/五态/契约引用/决策挂钩）；配套契约/spec 已并入 ui-12（修订 R3）后删除 |
 
 ### 0.2 修订史索引（v1 → v4.5 + 实现同步，21 轮）
 

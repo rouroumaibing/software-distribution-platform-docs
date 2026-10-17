@@ -117,8 +117,12 @@ software-distribution-platform-docs/
 | [hub/user-stories.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/user-stories.md)                                     | hub     | 用户故事                | ——                                                               |
 | [runner/index.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/index.md) | runner  | **runner 域入口索引** | —— |
 | [runner/STORY-runner-implementation.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md) | runner  | runner 实现 Story     | §4.2.3 kubebuilder 安装、§4.3 任务处理/DAG 推进、§4.4 授权边界                 |
-| [shared/README.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/README.md) | 跨组件 | **跨组件文档目录**（判据：横跨 ≥2 组件整体迁入，不拆分、不设主从；住户 8，2026-10-08 复核） | 住户清单 / 维护纪律 / 不入住说明 |
+| [shared/README.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/README.md) | 跨组件 | **跨组件文档目录**（判据：横跨 ≥2 组件整体迁入，不拆分、不设主从；住户 13（2026-10-08 后复核，含 ADR-0001、E2E-THREE-PIPELINES 等新增住户）） | 住户清单 / 维护纪律 / 不入住说明 |
 | [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) | 跨组件 | **平台状态总览（唯一状态权威）**：已完成清单 / 未完成清单 / 刻意不做 | §1 已完成（hub/runner/console/跨组件验证）、§2 未完成（10 项，含性质与前置）、§3 刻意不做 |
+| [plans/FIDELITY-KIND-VS-CLOUD-2026-10-09.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/FIDELITY-KIND-VS-CLOUD-2026-10-09.md) | 跨组件 | 保真度差异清单 kind vs 云上（活跃：云上验收 gate 未跑，#10 依赖） | §1 差异项 / §2 收敛结论 |
+| [plans/HARBOR-REGISTRY-INTEGRATION-2026-09-28.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/HARBOR-REGISTRY-INTEGRATION-2026-09-28.md) | 跨组件 | Harbor 对接盘点（①③收口；② Build→Harbor 留守 open） | §1 代码/镜像 / §2 留守 |
+| [shared/ADR-0001-runner-first-connect-enrollment.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-0001-runner-first-connect-enrollment.md) | 跨组件 | Runner 首连自注册 ADR（跨 hub+runner 线协议） | —— |
+| [shared/E2E-THREE-PIPELINES-2026-09-26.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/E2E-THREE-PIPELINES-2026-09-26.md) | 跨组件 | 三流水线整体 E2E 权威记录（场景/流程/缺口 G-1~G-14） | §9 缺口修复 |
 
 ## 5. 跨组件对齐（重点：跨组件概念必须保持一致）
 
@@ -130,7 +134,7 @@ software-distribution-platform-docs/
 
 - 设计文档已从三个组件仓库的 `docs/design/` 统一收口到本仓库，作为**单一真源**；本库只放设计文档，不放代码。
 - 文档内部互引统一使用 GitHub blob 链接（代码库级别），不使用相对路径或绝对文件路径。
-- `hub/assets/` 下的架构图源（png / pptx）为独立图源，当前未被任何 md 引用。
+- `hub/assets/` 下的架构图源（9 png + 1 pptx）为**独立图源（待接入，可选）**，当前未被任何 md 引用；具体文件名见 hub/assets/ 目录。后续接入到 DATA-MODEL / hub STORY 等文档时再补引用，避免静默腐烂。
 
 ### 6.1 文档形态论（2026-09-24 定稿）
 
@@ -142,7 +146,7 @@ software-distribution-platform-docs/
 | feature | `<域>/features/` | 已完成/既成事实的设计文档，**一主题一文件** | 各自**只追加**，禁止改写历史段落 |
 | 活跃计划 | `<域>/plans/` | 只收**带实质设计内容的进行中计划**（有实施路径与验收 Gate） | 收口后归档/删除，结论迁 feature 文件 |
 | 裸待办 | 仅 STATUS §2 | 无设计内容的待办条目 | **禁止**为待办建文档；开工且产生设计内容后才建 plans/ 文件 |
-| 真全局文档 | `shared/` | 横跨 ≥2 组件的跨组件文档（整体迁入，不拆分、不设主从） | 判据与住户清单见 `shared/README.md`；当前住户 8（2026-10-08 复核，含 CERTIFICATES.md） |
+| 真全局文档 | `shared/` | 横跨 ≥2 组件的跨组件文档（整体迁入，不拆分、不设主从） | 判据与住户清单见 `shared/README.md`；当前住户 13（详见 shared/README，已含 ADR-0001、E2E-THREE-PIPELINES） |
 
 ### 6.2 归属原则：范围优先（2026-09-24 第二次修订）
 

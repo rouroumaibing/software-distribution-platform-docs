@@ -13,7 +13,7 @@
 
 > 裁定语义：目录位置表达的是**文档的治理范围主张**（这份内容属于整个平台），不是变更流程的镜像。防腐不靠位置，靠本 README 的维护纪律 + STATUS 指针协议 + 各域 index 交叉引用。
 
-## 当前住户（11）
+## 当前住户（13）
 
 | 文件 | 横跨范围 |
 | --- | --- |
@@ -28,6 +28,8 @@
 | [runner-reflux-spec.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/runner-reflux-spec.md) | runner→hub 执行态回流协议（灰度权重/产物/agent_version/通知已读）：runner 发、hub 落、console 消费（跨三端永久设计文档） |
 | [install-upgrade-executor-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/install-upgrade-executor-design.md) | agent_ops install/upgrade 执行器：runner 自升级 Job + hub enroll 对账，台账终态闭环（跨三端永久设计文档） |
 | [alerting-rules-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/alerting-rules-design.md) | 离线告警规则：hub/runner 指标 → Prometheus rules（env 仓部署）→ 通知流（跨三端永久设计文档） |
+| [ADR-0001-runner-first-connect-enrollment.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-0001-runner-first-connect-enrollment.md) | Runner 首连自注册 ADR（跨 hub+runner 线协议）；2026-10-11 自根 plans/ 迁入 shared/ |
+| [E2E-THREE-PIPELINES-2026-09-26.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/E2E-THREE-PIPELINES-2026-09-26.md) | 三流水线整体 E2E 权威记录（跨组件）；2026-10-11 自根 plans/ 迁入 shared/ |
 
 ## 维护纪律
 

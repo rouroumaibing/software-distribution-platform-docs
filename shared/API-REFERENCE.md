@@ -103,7 +103,7 @@
 - `POST /pipelines/:id/versions/:version/rollback`（把**结构**回填到该版，并**记为新的一版**）
 
 ### 组件可部署版本（4.2 指定版本回滚目标来源，2026-10-12 登记 · 待立项）
-- `GET /components/:id/versions`（暂名）：组件全部可部署版本（新→旧；版本号 / 构建时间 / 大小 / SHA256）——console 灰度控制台「回滚到指定版本」的目标来源。与上方 `GET /pipelines/:id/versions` **同构不同体**：前者制品/部署版本，后者结构快照。契约见 [ui-09 附 A · N-33](../console/features/ui-09-backend-deps-api-contract.md)
+- `GET /components/:id/versions`（暂名）：组件全部可部署版本（新→旧；版本号 / 构建时间 / 大小 / SHA256）——console 灰度控制台「回滚到指定版本」的目标来源。与上方 `GET /pipelines/:id/versions` **同构不同体**：前者制品/部署版本，后者结构快照。契约见 [ui-09 附 A · N-33](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-09-backend-deps-api-contract.md)
 
 **语义（与实现一致，勿按其它工具的心智模型推断）**
 - 版本在**结构性保存**时自动留档：阶段 / 子任务的增删改都会触发快照；只改元信息（name/kind/description）不产生新版本。
