@@ -1,5 +1,5 @@
 > **来源**：本文件是 [`CONSOLE-UI-DESIGN.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) 的配套特性文档，承接 `前端设计补全计划（已完成并删除，内容并入本文）`（计划分析与落地）与 `四份前端 spec（已并入本文各节，计划文档已删除）`、`CONSOLE-FRONTEND-FIVES-STATES-2026-10-11.md`、`CONSOLE-DECISIONS-STEELMAN-2026-10-11.md`。
-> **拆分说明**（2026-10-11）：前端设计补全计划（四期、15 个工作项）的**前端侧设计事实**集中落地于此，章节号沿用计划原编号（4.1–4.5 / 5.1–5.5 / 6.1–6.5 / 第四期 §4.1–4.5），外部可引用「ui-12 §4.1」等。
+> **拆分说明**：前端设计补全计划（四期、15 个工作项）的**前端侧设计事实**集中落地于此，章节号沿用计划原编号（4.1–4.5 / 5.1–5.5 / 6.1–6.5 / 第四期 §4.1–4.5），外部可引用「ui-12 §4.1」等。
 > **铁律**：本文**只追加**——后续修订轮次追加到文件尾，禁止改写历史段落；状态判断以 [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 为准。
 > **标记约定**：`【假设】` / `【待确认】` / `【后端依赖】` / 【原型未展开】。
 > **权限事实源**：hub `internal/permission/models/role.go` §7 action 词表（Casbin 式 `resource:action`）：`component:read/update/delete/create/manage`、`pipeline:read/trigger/create/update/delete`、`approval:approve`、`config:read/update`、`artifact:read/download`、`page:overview/servicetree/settings:view`、`org:manage`、`user:manage`；内置组件角色 `component-viewer/editor/approver/admin`。
@@ -213,7 +213,7 @@
 
 ---
 
-## 附 A · 原型落点对账（2026-10-11 集成轮，以原型为准）
+## 附 A · 原型落点对账（集成轮，以原型为准）
 
 > 补全内容已按评审意见**分布集成进 [`CONSOLE-UI-prototype.html`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-prototype.html) 原有页面**（companion 独立原型的「15 工作项独立左栏」形态被否决，文件已删除，见 `CONSOLE-UI-DESIGN.md` §0.2 #19）。下表为原型**实际落点**与上文各节「设计入口」的对照；有差异处以原型渲染结果为准（事实源声明），上文入口描述保留作设计初衷记录。6.5（决策 #1 不实现）与第四期 §4.2–4.5 属设计稿层面，未做原型页。
 
@@ -236,9 +236,9 @@
 
 ---
 
-## 修订 R2（2026-10-12）：后端净新增落地记录（开发轮 1）
+## 修订 R2：后端净新增落地记录（开发轮 1）
 
-本轮按「前端全量 + hub 端点一并开发」执行（steelman 2026-10-11 定序：4.4/4.5 → 4.1/4.2 → 5.3 → 4.3 → 5.1 → 5.2 → 5.4+5.5）。已落码并过 gate（hub: go build/vet/test + gofmt；console: vue-tsc+vite build + scripts/*.mjs 契约冒烟 71/71）：
+本轮按「前端全量 + hub 端点一并开发」执行（steelman 定序：4.4/4.5 → 4.1/4.2 → 5.3 → 4.3 → 5.1 → 5.2 → 5.4+5.5）。已落码并过 gate（hub: go build/vet/test + gofmt；console: vue-tsc+vite build + scripts/*.mjs 契约冒烟 71/71）：
 
 | 项 | hub | console | 状态 |
 | --- | --- | --- | --- |
@@ -261,7 +261,7 @@
 
 ---
 
-## 修订 R3（2026-10-12）：开发收口 —— A 类全部完成，B 类全部决议，计划文档并入删除
+## 修订 R3：开发收口 —— A 类全部完成，B 类全部决议，计划文档并入删除
 
 用户拍板后的收口轮（hub 30 测试包 ok / console build + 7 冒烟脚本全绿）：
 
@@ -283,9 +283,9 @@
 
 ### 计划文档并入删除（内容权威已在本文件 + 落码）
 
-`CONSOLE-FRONTEND-DESIGN-COMPLETION-PLAN`、`CONSOLE-P0/P1/P2-BACKEND-CONTRACT`、`CONSOLE-P0/P1/P2/P3-FRONTEND-SPEC`、`CONSOLE-COMPLETION-DEV-STEELMAN`、`CONSOLE-DECISIONS-STEELMAN`（决策记录权威 = ui-10 折叠版）。`CONSOLE-FRONTEND-FIVES-STATES` 保留（共享五态规范，持续被引用；2026-10-11 盘点后迁 [./CONSOLE-FRONTEND-FIVES-STATES-2026-10-11.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/CONSOLE-FRONTEND-FIVES-STATES-2026-10-11.md)）。
+`CONSOLE-FRONTEND-DESIGN-COMPLETION-PLAN`、`CONSOLE-P0/P1/P2-BACKEND-CONTRACT`、`CONSOLE-P0/P1/P2/P3-FRONTEND-SPEC`、`CONSOLE-COMPLETION-DEV-STEELMAN`、`CONSOLE-DECISIONS-STEELMAN`（决策记录权威 = ui-10 折叠版）。`CONSOLE-FRONTEND-FIVES-STATES` 保留（共享五态规范，持续被引用；盘点后迁 [./CONSOLE-FRONTEND-FIVES-STATES-2026-10-11.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/CONSOLE-FRONTEND-FIVES-STATES-2026-10-11.md)）。
 
-## 修订 R4（2026-10-12）：收口轮 2 —— R3 留守项全部闭环，平台自升级审批流完整版落码
+## 修订 R4：收口轮 2 —— R3 留守项全部闭环，平台自升级审批流完整版落码
 
 R3 的四项 B 类留守中，**#3 环境覆盖档执行**与 **#4 组件级审计下沉** 本轮正式落码；**#1 渠道**与 **#2 变更窗口** 已在 R3 落码；**#5.1 环境覆盖档** 原"执行仅解析组件默认"的缺口补完；另就 **B2 Build→Harbor** 与 **B3 canary 真流量 E2E** 两项历史遗留拍板。
 
@@ -314,7 +314,7 @@ R3 的四项 B 类留守中，**#3 环境覆盖档执行**与 **#4 组件级审�
 hub：`go build ./...` / `go vet ./...` 全绿；`internal/target` / `internal/permission` / `internal/platform` / `internal/run` 单测包全绿（新增：upgrade 审批闸 + 派发修复 + 超时回收 + 审计归属反规范化 + 双通道鉴权 + componentId 过滤形状）。
 console：`vue-tsc --noEmit` / `pnpm build` 全绿；7 个 `scripts/*-smoke.mjs` 全绿。
 
-## 修订 R5（2026-10-12）：原型路线图落地轮 —— 4.1 / 4.2 / 4.3 / 4.4 / 5.1 / 5.2 全部收口
+## 修订 R5：原型路线图落地轮 —— 4.1 / 4.2 / 4.3 / 4.4 / 5.1 / 5.2 全部收口
 
 `plans/CONSOLE-UI-PROTOTYPE-ROADMAP-2026-10-12.md`（控制台原型代码层审查的后续路线图）全部落地，内容权威并入本文，**该 plan 已删除**。范围仅原型（`console/CONSOLE-UI-prototype.html` 内联 JS），console 实现仓未动。
 
@@ -342,7 +342,7 @@ console：`vue-tsc --noEmit` / `pnpm build` 全绿；7 个 `scripts/*-smoke.mjs`
 3. **铃铛角标**：按 `NOTIF_READ` 实时算未读，标记已读后即刷新。
 4. **PAT 安全**：删「永不过期」、`admin` 加二次确认、生成后弹窗展示明文令牌。
 5. **版本矩阵语义勘误**：`GET /package-versions` 实为平台自身三版本（ui-11 已勘误），原型 mock 注释与弹窗文案同步更正，组件级版本矩阵改引新契约。
-6. **文件名对齐**：原型 2026-10-12 由 `CONSOLE-UI-原型.html` 实际落盘改名为 `CONSOLE-UI-prototype.html`（本文 §0.2 #11 早已按新名记录，本次磁盘与文档对齐），11 处引用同步更新。
+6. **文件名对齐**：原型 由 `CONSOLE-UI-原型.html` 实际落盘改名为 `CONSOLE-UI-prototype.html`（本文 §0.2 #11 早已按新名记录，本次磁盘与文档对齐），11 处引用同步更新。
 
 ### 验证 gate（R5 轮）
 

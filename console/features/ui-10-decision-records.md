@@ -1,5 +1,5 @@
 > **来源**：[CONSOLE-UI-DESIGN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) · 附 B 决策记录（运行中心 URL 形态）+ 附 C 决策记录（服务树节点删除）
-> **拆分说明**（2026-09-24）：原文 1686 行按章节拆分归档至 `console/features/`，**章节号与原文一致**，外部引用「CONSOLE-UI-DESIGN §N.x」仍有效（章节→文件映射见原文档 §0.4）。
+> **拆分说明**：原文 1686 行按章节拆分归档至 `console/features/`，**章节号与原文一致**，外部引用「CONSOLE-UI-DESIGN §N.x」仍有效（章节→文件映射见原文档 §0.4）。
 > **铁律**：本文件**只追加**——新增修订轮次追加到文件尾，禁止改写历史段落；状态判断一律以 [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 为准，本文件只维护行为规格。
 
 ---
@@ -31,7 +31,7 @@
 | F8 | 组件详情各 Tab 是**一等资源**：独立数据源、独立加载、独立权限、独立 `meta.title` | §5.4 / §7.3 |
 | F9 | 后端**现无**全局 `/runs` 端点，跨组件列表需求落在 N-1/N-3 | 附 A |
 
-> 【2026-10-08 状态更新】F9 已过期：hub 已注册全局 `GET /runs`（`cmd/hub/main.go:537`，`scoped.GET("/runs", pipelineRunHandler.ListAll)`）。本表为历史决策记录，原表述保留不改写；现口径见 附 A N-1。
+> 【状态更新】F9 已过期：hub 已注册全局 `GET /runs`（`cmd/hub/main.go:537`，`scoped.GET("/runs", pipelineRunHandler.ListAll)`）。本表为历史决策记录，原表述保留不改写；现口径见 附 A N-1。
 
 ### B.2 方案 A：`/runs?view=pipelines`（query）
 
@@ -136,7 +136,7 @@
 | 旧链 | 打开 `/releases` | 跳到 `/runs?view=releases` 且**展示发布列表**（非运行列表） |
 | 不变量回归 | 任意深链/切换后检查左栏 | 条目恒 5、顺序不变（S5 / v4.1 断言） |
 
-> ✅ **gate 与设计已一致（2026-09-19 同步）**：`pnpm test:runcenter` **16 条**断言与 `src/constants/runCenter.ts`（两视图）同批改完，`vue-tsc --noEmit` + `vite build` 全绿；产出的 `RunCenterView-*.js` 分包中不再出现“运行 / 流水线 / 发布”。
+> ✅ **gate 与设计已一致（同步）**：`pnpm test:runcenter` **16 条**断言与 `src/constants/runCenter.ts`（两视图）同批改完，`vue-tsc --noEmit` + `vite build` 全绿；产出的 `RunCenterView-*.js` 分包中不再出现“运行 / 流水线 / 发布”。
 >
 > **原告警（同日早些时候记录，保留作教训）**：gate 与设计不一致 —— 14 条断言仍按三视图编写（含 `view=pipelines` 的合法性断言），真实 `runCenter.ts` 也仍是三视图。**这是一次必须原子完成的改动**（设计→代码→gate 同批改），否则 gate 会拦住正确实现。该告警已消解。
 
@@ -148,7 +148,7 @@
 | A → C | 路由表加真实路由 + `activePath` 多前缀特判 + 面包屑规则重写 + 去掉 `?view=` 读取 |
 | 任一 → 任一 | 不涉及数据层、后端契约、IA 与视觉系统；**可逆** |
 
-### B.9 实现落地记录（2026-09-15）
+### B.9 实现落地记录
 
 **已落地** —— 全部在 `software-distribution-platform-console`，纯前端、可逆（与 B.8 结论一致）：
 
@@ -158,17 +158,17 @@
 | 视图页面 | `src/views/RunCenterView.vue`（重写） | 视图切换条 + 视图内真实筛选 + 分页 + 视图级面包屑；**URL 是唯一写入口**（watch `route.query` → 归一化 → 加载），切换/筛选/分页一律 `replace`，只有下钻详情 `push`（约束 ①③） |
 | 资源索引 | `src/composables/useResourceMap.ts` | `buildPipelineIndex()` → `buildResourceIndex()`：除 `pipelineId → {组件, 流水线, kind, version}` 外，再摊平出全服务树流水线列表（发布视图的数据源）。旧函数失去引用后删除，不留别名 |
 | 旧链语义修复 | `src/router/index.ts` | `/releases` → `/runs?view=releases`（消除 B.6 约束 ⑤ 的静默漂移） |
-| 回归门禁 | `scripts/runcenter-url-smoke.mjs` + `package.json` | `pnpm test:runcenter`：14 条断言（2026-09-19 更新为 **16 条**，见 B.10），直接 import `.ts` 源码（Node ≥22.18 原生类型剥离），**无需构建**，覆盖 B.7 全部自动化行 |
+| 回归门禁 | `scripts/runcenter-url-smoke.mjs` + `package.json` | `pnpm test:runcenter`：14 条断言（更新为 **16 条**，见 B.10），直接 import `.ts` 源码（Node ≥22.18 原生类型剥离），**无需构建**，覆盖 B.7 全部自动化行 |
 
 **与设计稿的偏差（均为「代码事实优先」，已在上文对应处标注）**：
 
-1. **没有「已暂停」筛选项** —— `Paused` 属 Rollout 任务级状态，不在 run phase 枚举内；逐 run 查 `/runs/:id/tasks` 才能判定（N+1），故当时留空并登记为后端依赖，不拿 `Running` 冒充。**（2026-09-19 更新：原型后来把「已暂停」补成了**带数据的**一等状态，本条只描述当时已落地的实现版；现行口径以 §7.6 为准。）**
+1. **没有「已暂停」筛选项** —— `Paused` 属 Rollout 任务级状态，不在 run phase 枚举内；逐 run 查 `/runs/:id/tasks` 才能判定（N+1），故当时留空并登记为后端依赖，不拿 `Running` 冒充。**（更新：原型后来把「已暂停」补成了**带数据的**一等状态，本条只描述当时已落地的实现版；现行口径以 §7.6 为准。）**
 2. **发布视图是前端聚合** —— 当时 hub 无全局聚合端点（附 A N-3）。过渡手段：服务树索引 + 扫描一屏运行；**数据被截断时 UI 显式提示**「按最近 N 条运行聚合，全局聚合端点待补」，不静默给错数字。
-3. **面包屑落在页内 `.crumb`**（沿用 `ServiceTreeView` / `RunMonitorView` / `PipelineEditorView` 的既有惯例），不是 §7.1 骨架里的**顶栏**面包屑。当时未动 `MainLayout.vue`，因此「左栏恒 5 项、不挂分组标签」的不变量天然不受影响。**（2026-09-19 注：原型的面包屑已在顶栏 `#crumb`；真实 console 收敛到顶栏仍属未落地项。）**
+3. **面包屑落在页内 `.crumb`**（沿用 `ServiceTreeView` / `RunMonitorView` / `PipelineEditorView` 的既有惯例），不是 §7.1 骨架里的**顶栏**面包屑。当时未动 `MainLayout.vue`，因此「左栏恒 5 项、不挂分组标签」的不变量天然不受影响。**（注：原型的面包屑已在顶栏 `#crumb`；真实 console 收敛到顶栏仍属未落地项。）**
 
 **未落地（不属 N-13 范围，勿误读为本轮完成）**：§5.4 组件 9 Tab → 7 主 Tab 收敛、§7.2 Dashboard 待办卡深链（依赖 Dashboard 重写）、§7.1 顶栏面包屑与 ⌘K 搜索浮层、§6.1 流水线 CRUD 缺口的 UI（新建入口 / `kind` 放开 / 流水线级删除）。
 
-### B.10 两视图同步落地记录（2026-09-19）
+### B.10 两视图同步落地记录
 
 > **起因**：v4.4 裁决了“三视图 → 两视图”，但当时只改了文档与原型，**代码与 gate 仍按三视图**（B.7 末尾曾为此留下一段告警）。本节把设计、代码、gate 一次改齐。
 
@@ -204,7 +204,7 @@
 | --- | --- | --- |
 | F1 | **old 前端只有"增加"、无删除 UI**；删除能力原只存在于后端 `DeleteServiceTreeById`（go-devops-gin handler / service / repository 三层齐全），按 id 删除 | `old/go-devops/go-devops-ui/src/views/servicetree/ServiceTreeManage.vue`（无删除）、`old/go-devops-gin/internal/v1/servicetrees` |
 | F2 | 服务树节点**嵌套**（Org→Service→Component），删父会带走子 —— 级联语义天然在服务端，前端无法"看全"子树实时状态 | 原型 `TREE`、旧代码结构 |
-| F3 | 原型早期加在前端的递归校验 `deleteBlockers` 被用户明确否决（"前端不做数据判断"） | 2026-09-15 会话 |
+| F3 | 原型早期加在前端的递归校验 `deleteBlockers` 被用户明确否决（"前端不做数据判断"） | 会话 |
 | F4 | `DELETE` 是破坏性操作：任何客户端校验都能被绕过，且用户确认那一刻的快照可能已过期 | 通用工程常识 |
 | F5 | 原型 / 真实 console 都能拿到流水线、环境等数据（前端可"算"），但**新鲜度无法保证** | 原型 `PIPELINES`/`RELEASES` 派生 |
 
@@ -283,7 +283,7 @@
 | 前端行为（流水线） | `delPipeline(name)`：强确认弹窗（输入名称）→ `DELETE` → 成功 `toast`（历史运行日志保留）；`409` 渲染 reasons。原型 `mockDeletePipeline` 为同语义后端模拟占位 |
 | 级联规则（后端） | 组件需**流水线 + 环境清零**；服务需其下**组件清零**；Org 需其下**服务清零**；递归向上。详见 [`shared/DELETE-CONTRACT.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DELETE-CONTRACT.md) |
 
-> 【2026-10-08 状态更新】① 上表「级联规则（后端）」中「清零才能删」已演进：现为**活跃 run 才 `409 + {reasons}`（Pending/Running/WaitingApproval），其余一律级联软删**（hub `catalog/service/service.go:145-168`：fast-path 即时 409 + 级联事务内 guard 复检，同一事务）。② 「前端行为（服务树）」行的**输入节点名强确认尚未实现**——现实现为普通确认弹窗 + 409 reasons 渲染（`ServiceTreeView.vue:879-897`），强确认是本表落地契约项，仍待实现。原表按历史决策记录保留不改写。
+> 【状态更新】① 上表「级联规则（后端）」中「清零才能删」已演进：现为**活跃 run 才 `409 + {reasons}`（Pending/Running/WaitingApproval），其余一律级联软删**（hub `catalog/service/service.go:145-168`：fast-path 即时 409 + 级联事务内 guard 复检，同一事务）。② 「前端行为（服务树）」行的**输入节点名强确认尚未实现**——现实现为普通确认弹窗 + 409 reasons 渲染（`ServiceTreeView.vue:879-897`），强确认是本表落地契约项，仍待实现。原表按历史决策记录保留不改写。
 
 ### C.8 验证方式（gate）
 
@@ -295,9 +295,9 @@
 | 后端（N-15 未落地） | `DELETE /services/:id`（或 `DELETE /components/:id`）对已清节点 | `204`，子树移除 |
 | 后端（N-15 未落地） | 对残留节点 | `409` + `{reasons}` 且 reasons 层级正确、覆盖最深层未清理项 |
 
-> 【2026-10-08 状态更新】上表两行「后端（N-15 未落地）」已过期：hub 级联校验已落地——活跃 run `409 + {reasons}`、其余级联软删（`catalog/service/service.go:145-168`）；console 侧亦已真调用 `DELETE` 并渲染 reasons。断言本身仍有效，状态标注以本注记为准。
+> 【状态更新】上表两行「后端（N-15 未落地）」已过期：hub 级联校验已落地——活跃 run `409 + {reasons}`、其余级联软删（`catalog/service/service.go:145-168`）；console 侧亦已真调用 `DELETE` 并渲染 reasons。断言本身仍有效，状态标注以本注记为准。
 
-### C.9 实现落地记录（2026-09-15）
+### C.9 实现落地记录
 
 | 状态 | 层 | 内容 |
 | --- | --- | --- |
@@ -306,13 +306,13 @@
 | **未落地** | hub `DeleteServiceTreeById` | 需补**递归级联校验**（组件→流水线/环境；服务→组件；Org→服务）并在事务内 `return 409 + {reasons}`。当前 handler/service/repository 三层只做"按 id 删"，**无级联校验** |
 | **未落地** | console `delDetail` | 真调用 `DELETE /services/:id`（或 `/components/:id`）（替换 `mockDeleteNode`），把 409 body 的 `reasons` 直接渲染 |
 
-> 【2026-10-08 状态更新】上表两行「未落地」均已过期、已落地：hub `DeleteServiceTreeById` 现含活跃 run 校验 + 递归级联软删（`catalog/service/service.go:145-168`）；console `delDetail` 已真调用 `DELETE`（org/catalog/component 各自 remove API）并渲染 409 reasons（`ServiceTreeView.vue:609-633`）。历史行保留不改写，现口径见 注记与 附 A N-15。
+> 【状态更新】上表两行「未落地」均已过期、已落地：hub `DeleteServiceTreeById` 现含活跃 run 校验 + 递归级联软删（`catalog/service/service.go:145-168`）；console `delDetail` 已真调用 `DELETE`（org/catalog/component 各自 remove API）并渲染 409 reasons（`ServiceTreeView.vue:609-633`）。历史行保留不改写，现口径见 注记与 附 A N-15。
 
-> 对齐 v4.3 修订（§5.2）与 附 A N-15：前端删除 UX 与后端契约已在本文对齐；后端级联校验已随 N-15 落地（现口径见 附 A N-15 与上方【2026-10-08 状态更新】）。
+> 对齐 v4.3 修订（§5.2）与 附 A N-15：前端删除 UX 与后端契约已在本文对齐；后端级联校验已随 N-15 落地（现口径见 附 A N-15 与上方【状态更新】）。
 
 ---
 
-## 附 B.x 运行详情页 URL 形态裁定（2026-10-08，CONSOLE-P2-UX-DESIGN §2.2）
+## 附 B.x 运行详情页 URL 形态裁定（CONSOLE-P2-UX-DESIGN §2.2）
 
 > 来源：原 `console/plans/CONSOLE-P2-UX-DESIGN-2026-10-08.md` §2.2，闭环后折叠入本决策记录。与 附 B（运行中心视图 `?view=` 形态）是**不同决策**：本裁定针对**单次运行详情页**的下钻 URL。
 
@@ -331,7 +331,7 @@
 
 ---
 
-## 附 E：前端设计补全计划 7 项未决策双向钢人论证（2026-10-11）
+## 附 E：前端设计补全计划 7 项未决策双向钢人论证
 
 > 来源：原 `plans/CONSOLE-DECISIONS-STEELMAN-2026-10-11.md`（完整版，开发收口后已删除；本记录即其决策权威）；本记录为其决策记录折叠版，沿用 附 B/C 的**双向钢人**体例（事实 → 钢人 → 反方 → 裁定）。
 > **范围**：计划 §8 的 7 项未决策（外部分发立项 / 版本组件共用 / 整 DAG 提交 / 审批策略层级 / 通知渠道首批 / 变量组作用域 / 已回滚枚举）。权限事实源 = hub `role.go` §7 词表。
@@ -393,7 +393,7 @@
 
 ---
 
-### E.8 原型路线图轮决策（2026-10-12，用户拍板 + 双向钢人）
+### E.8 原型路线图轮决策（用户拍板 + 双向钢人）
 
 > 范围：`CONSOLE-UI-prototype.html` 路线图落地（权威记录 ui-12 R5）。以下四项经双向钢人论证收敛；前两项用户直接拍板，后两项按钢人裁定执行。
 

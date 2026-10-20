@@ -85,8 +85,8 @@ owner 明确：
 ## 6. 待办 / 扩展（out of scope 本 ADR，但已登记）
 
 - **D. 产物/结果落库（跨模块）**：`TaskRun` 加 `ResultRef`/`ArtifactRefs`；`runnerapi.TaskRunStatusSummary` 加 `ExitCode`/`ArtifactRefs`/`ResultRef`；`ApplyStatus` 写回；runner 侧需补发这些字段。**（仍单列待排期）**
-- **二期·多环境扇出**：✅ 已实现（2026-08-26）。`TriggerRequest.TargetIDs []uuid.UUID`；`triggerFanout` 每环境建一条独立 `PipelineRun` + 一条 `dispatch_jobs` 并 `tryDeliver`；目标只需存在（不要求在线），离线即排队。
-- **二期·页面重试**：✅ 已实现（2026-08-26）。`Redispatch(ctx, runID)`：取该 run 最近一条 `dispatch_jobs`（`LatestByRun`），拷贝其 payload 建新 `pending` 记录并 `tryDeliver`；`dead`/`failed` 才重投，`dispatched`/`dispatching` 幂等跳过；run 卡 `Failed` 则重置 `Pending`。新端点 `POST /runs/:id/redispatch`。
+- **二期·多环境扇出**：✅ 已实现。`TriggerRequest.TargetIDs []uuid.UUID`；`triggerFanout` 每环境建一条独立 `PipelineRun` + 一条 `dispatch_jobs` 并 `tryDeliver`；目标只需存在（不要求在线），离线即排队。
+- **二期·页面重试**：✅ 已实现。`Redispatch(ctx, runID)`：取该 run 最近一条 `dispatch_jobs`（`LatestByRun`），拷贝其 payload 建新 `pending` 记录并 `tryDeliver`；`dead`/`failed` 才重投，`dispatched`/`dispatching` 幂等跳过；run 卡 `Failed` 则重置 `Pending`。新端点 `POST /runs/:id/redispatch`。
 
 ---
 
@@ -109,7 +109,7 @@ owner 明确：
 
 ---
 
-## 9. 实现状态（2026-08-26，二期已落地）
+## 9. 实现状态（二期已落地）
 
 **新增 / 改动文件**
 - `internal/run/models/trigger_request.go`：`TriggerRequest` 增 `TargetIDs []uuid.UUID`。
@@ -130,7 +130,7 @@ owner 明确：
 ## 10. 线协议类型一致性约定（保持统一）
 
 > 本节约束 hub 与 runner 之间**线协议类型定义**的归属、副本与变更流程；与 §2–§9 的下发机制决策正交，但同属「hub↔runner 线协议」这一跨组件事实，故同住本 ADR。
-> 背景与实施方案原计划见 `plans/HUB-DECOUPLE-RUNNER-PROTOCOL-2026-10-13.md`，该计划已于 2026-10-13 实施完成并关闭（方案 D：hub 内 `internal/runnerproto` 派生副本）。本节即落地后的权威约定。
+> 背景与实施方案原计划见 `plans/HUB-DECOUPLE-RUNNER-PROTOCOL-2026-10-13.md`，该计划已于 实施完成并关闭（方案 D：hub 内 `internal/runnerproto` 派生副本）。本节即落地后的权威约定。
 
 ### 10.1 事实来源（SSOT）
 
@@ -168,7 +168,7 @@ owner 明确：
 
 hub `internal/runnerproto` 副本与 runner `api/v1alpha1` 源**必须保持字节级 JSON 一致**；一致性由 hub Phase 3 契约测试守护，不一致即 CI 失败。任何一端改了协议而另一端未同步，都被该测试拦下——这是「保持统一」的唯一可执行机制。
 
-### 10.7 实施状态（2026-10-13 已完成 · 方案 D）
+### 10.7 实施状态（已完成 · 方案 D）
 
 - **副本已落地**：`software-distribution-platform-hub/internal/runnerproto/`（`doc.go` / `message.go` / `payload.go` / `phase.go` / `status.go` / `spec.go` / `param.go`），来源 runner commit `cfe8619a0ec2f77b03214bb36a199f100c932b7e`。
 - **构建耦合已拆除**：hub `go.mod` 的 `require .../runner` 与 `replace => ../runner` 已删除；28 个 `*.go` 文件（19 生产 + 9 测试）的 import 已从 `runner/api/v1alpha1` 切换为 `internal/runnerproto`，别名 `runnerapi` 保留、调用点零改动。

@@ -2,7 +2,7 @@
 
 > 日期：2026-10-09
 > 决策背景：用户拍板双环境分工——本地 kind = 开发迭代（快反馈），云上托管 K8s = 验收 gate（真实验证）。
-> 实证前提：2026-10-08/09 两日失败分类中，"单机 kind ≠ 生产导致的环境失真 = 0 例"；被证伪的是
+> 实证前提：/09 两日失败分类中，"单机 kind ≠ 生产导致的环境失真 = 0 例"；被证伪的是
 > "AI 沙箱执行 + 脚手架缺陷"组合，不是本地环境的验证效力。本清单的作用是把"哪些验证必须上云"
 > 从直觉变成逐项判定。
 
@@ -51,7 +51,7 @@
 
 触发时机：里程碑 / 发布前 / 底层依赖升级。
 
-## 6. 云上落地进展（2026-10-19）
+## 6. 云上落地进展
 
 差异矩阵逐项落定（验证证据：`env log/2026-10-19-cloud-install.md`、`env log/2026-10-19-cloud-deploy.md`）：
 
@@ -64,5 +64,6 @@
 | 6 存储 | postgres/harbor PVC 走 `csi-disk`，全 Bound |
 | 7 issuer | 443 标准端口下 `/keycloak/realms/sdp` 200，issuer 复验通过 |
 
-- **验收 gate（§5）进展（2026-10-19）**：①E2E 冒烟 ✅（e2e-smoke.sh 云上首跑 PASS=15 FAIL=0 + cancel/rerun 定向 E2E PASS=11 FAIL=0，run 终态 Succeeded，脚本内动态取 token/内置 no_proxy，一条命令跑通）；②**canary 真流量 ✅**（e2e-canary.sh PASS=9 FAIL=0：release 流水线 → Rollout 步进 → 50% 双版本 2/2 并存 + NodePort 合成流量 18/22 → 权重快照回流 → 100% 收口）；③发布 pipeline 语义 ✅（Release 任务 RolloutConfig → Rollout CR → canary 引擎 → 快照回流，与 ② 同链贯通）。三项 gate 全绿。
+- **验收 gate（§5）进展**：①E2E 冒烟 ✅（e2e-smoke.sh 云上首跑 PASS=15 FAIL=0 + cancel/rerun 定向 E2E PASS=11 FAIL=0，run 终态 Succeeded，脚本内动态取 token/内置 no_proxy，一条命令跑通）；②**canary 真流量 ✅**（e2e-canary.sh PASS=9 FAIL=0：release 流水线 → Rollout 步进 → 50% 双版本 2/2 并存 + NodePort 合成流量 18/22 → 权重快照回流 → 100% 收口）；③发布 pipeline 语义 ✅（Release 任务 RolloutConfig → Rollout CR → canary 引擎 → 快照回流，与 ② 同链贯通）。三项 gate 全绿。
 - 端口裁定修正：本地 kind 8443 为端口映射时代过渡，云上 https listener=443（ELB 下 X-Forwarded-Port=443，issuer 推导不带端口）。
+- **环境重置注记（2026-10-20）**：上述三项 gate 曾于 2026-10-19 在云上全绿，但 2026-10-20 云上环境已全量清理（SDP/harbor/nginx 卸载、PVC 释放），故本节「✅」为历史验收记录，非当前常驻状态；如需复验须重跑 `env/prod-deplyment/hce-2.0-64bit-deploy.sh`→`run.sh`→`example/nginx-canary` 部署链。证据：`env/log/2026-10-19-cloud-install.md`、`env/log/2026-10-19-cloud-deploy.md`、`env/log/2026-10-20-cleanup.md`。

@@ -1,4 +1,4 @@
-# ALERTING-RULES-DESIGN：平台离线告警规则设计（2026-10-08）
+# ALERTING-RULES-DESIGN：平台离线告警规则设计
 
 - **状态**：Design（设计定稿，本轮落实）
 - **住户依据**：横跨 hub（指标源 + 通知流）+ runner（指标源）+ env 仓（规则文件部署）三端，按「范围优先」判据入住 `shared/`
@@ -6,7 +6,7 @@
 
 ## 1. 设计目的
 
-当前系统（三仓 main，2026-10-08）双端指标埋点已就绪——hub `internal/metrics`（自研 0.0.4 文本导出器：`sdp_hub_http_requests_total` / `sdp_hub_http_request_duration_seconds_total` / `sdp_hub_in_flight_requests` / `sdp_hub_uptime_seconds` / `sdp_hub_build_info`）、runner `pkg/metrics`（`sdp_runner_taskrun_phase_transitions_total` / `sdp_runner_rollout_current_canary_weight` / `sdp_runner_connector_reconnects_total` / `sdp_runner_alert_failures_total`）——但**没有任何告警规则**消费它们：runner 与 hub 的 WS 断连、hub 5xx 激增、流水线连环失败都只能靠人盯 Grafana。本设计目的是补齐「指标 → 告警规则 → 通知流」的最后一环，使离线/异常**主动可发现**。
+当前系统（三仓 main）双端指标埋点已就绪——hub `internal/metrics`（自研 0.0.4 文本导出器：`sdp_hub_http_requests_total` / `sdp_hub_http_request_duration_seconds_total` / `sdp_hub_in_flight_requests` / `sdp_hub_uptime_seconds` / `sdp_hub_build_info`）、runner `pkg/metrics`（`sdp_runner_taskrun_phase_transitions_total` / `sdp_runner_rollout_current_canary_weight` / `sdp_runner_connector_reconnects_total` / `sdp_runner_alert_failures_total`）——但**没有任何告警规则**消费它们：runner 与 hub 的 WS 断连、hub 5xx 激增、流水线连环失败都只能靠人盯 Grafana。本设计目的是补齐「指标 → 告警规则 → 通知流」的最后一环，使离线/异常**主动可发现**。
 
 ## 2. 设计逻辑
 

@@ -1,6 +1,6 @@
 # shared/ — 跨组件文档（横跨 ≥2 组件的整体性内容）
 
-> **入住判据（2026-09-24 第二次修订，范围优先）**：内容横跨 ≥2 个组件（hub / console / runner / 身份基础设施）即入住，**整体迁入、不拆分、不设主从**——不以"变更权威在谁"为由留在某组件目录下。
+> **入住判据（第二次修订，范围优先）**：内容横跨 ≥2 个组件（hub / console / runner / 身份基础设施）即入住，**整体迁入、不拆分、不设主从**——不以"变更权威在谁"为由留在某组件目录下。
 > 旧判据「无单一变更权威才入住」已废止（hub 为变更源的横切文档同样入住）；但各概念的**行为权威仍在实现它的代码**，文档内保留的「权威实现在 hub」等标注是事实陈述，不是归属主张。
 
 ## 判据裁定记录
@@ -29,8 +29,8 @@
 | [runner-reflux-spec.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/runner-reflux-spec.md) | runner→hub 执行态回流协议（灰度权重/产物/agent_version/通知已读）：runner 发、hub 落、console 消费（跨三端永久设计文档） |
 | [install-upgrade-executor-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/install-upgrade-executor-design.md) | agent_ops install/upgrade 执行器：runner 自升级 Job + hub enroll 对账，台账终态闭环（跨三端永久设计文档） |
 | [alerting-rules-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/alerting-rules-design.md) | 离线告警规则：hub/runner 指标 → Prometheus rules（env 仓部署）→ 通知流（跨三端永久设计文档） |
-| [ADR-0001-runner-first-connect-enrollment.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-0001-runner-first-connect-enrollment.md) | Runner 首连自注册 ADR（跨 hub+runner 线协议）；2026-10-11 自根 plans/ 迁入 shared/ |
-| [E2E-THREE-PIPELINES-2026-09-26.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/E2E-THREE-PIPELINES-2026-09-26.md) | 三流水线整体 E2E 权威记录（跨组件）；2026-10-11 自根 plans/ 迁入 shared/ |
+| [ADR-0001-runner-first-connect-enrollment.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-0001-runner-first-connect-enrollment.md) | Runner 首连自注册 ADR（跨 hub+runner 线协议）；自根 plans/ 迁入 shared/ |
+| [E2E-THREE-PIPELINES-2026-09-26.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/E2E-THREE-PIPELINES-2026-09-26.md) | 三流水线整体 E2E 权威记录（跨组件）；自根 plans/ 迁入 shared/ |
 
 ## 维护纪律
 

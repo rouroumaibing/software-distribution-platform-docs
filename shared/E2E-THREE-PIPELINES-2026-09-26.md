@@ -95,7 +95,7 @@ console 逐页检查（浏览器实际渲染，非仅 API）：
 ## 6. 缺口登记（测试中发现的代码问题）
 
 > 测试结束后同步到 `docs/hub/STORY-BACKLOG.md`（B-XX 编号）与 `plans/STATUS.md`。此处先按 G-XX 登记，证据均为 文件:行号 级。
-> **状态（2026-09-26 第二批）**：G-1~G-12 已全部修复并 kind 回归通过（见 §9）；G-3（软件包版本选择）、G-4 完整版（专用构建环境模板）留 follow-up story。
+> **状态（第二批）**：G-1~G-12 已全部修复并 kind 回归通过（见 §9）；G-3（软件包版本选择）、G-4 完整版（专用构建环境模板）留 follow-up story。
 
 | # | 严重度 | 缺口 | 证据 | 影响 |
 | --- | --- | --- | --- | --- |
@@ -155,7 +155,7 @@ G-9 修复前，部署场景用 **Build 任务 + kubectl 镜像 + 内嵌 manifes
 | nginx-daily-v2 | e331a54d / pr-b798360a | **Succeeded** | sdp-test nginx Running |
 | nginx-release | 61a5d470 / pr-9c4841af | **Succeeded** | WaitingApproval→approve→sdp-prod nginx Running |
 
-## 9. 补齐开发记录（2026-09-26 第二批：缺口修复）
+## 9. 补齐开发记录（第二批：缺口修复）
 
 > 用户指令：全量补齐开发、kind 实测验证、文档闭环。修复方案均经双向钢人论证（结论见各行）。
 > Gate：hub/runner `go build`+`vet`+`test`+`gofmt -l` 全绿；console `pnpm build`+`test` 全绿。
@@ -188,9 +188,9 @@ G-9 修复前，部署场景用 **Build 任务 + kubectl 镜像 + 内嵌 manifes
 | 特权模式（dind/cind） | 「特权模式」勾选（新增） | 本次新增 |
 | 发布 chart（repoURL/name/version）/ values / manifest | 发布配置组 | G-12 修复后真实生效；假字段 chartUrl 已移除 |
 | 审批（人数/审批人） | 人工审核组 | 既有可配 |
-| 版本号 | 触发对话框 params（如 VERSION=v0.0.1）+ **制品库版本 picker** | 可配；B-20 最小版已落地（2026-09-26 第三批）：对话框自动列组件已登记制品版本，选中即填 VERSION 参数；kind 实测 UI 触发 run 一次通过。制品→发布语义联动（选版本同时改 chartVersion/manifest）留完整版 |
+| 版本号 | 触发对话框 params（如 VERSION=v0.0.1）+ **制品库版本 picker** | 可配；B-20 最小版已落地（第三批）：对话框自动列组件已登记制品版本，选中即填 VERSION 参数；kind 实测 UI 触发 run 一次通过。制品→发布语义联动（选版本同时改 chartVersion/manifest）留完整版 |
 
-### 9.3 回归验证（kind 实测，2026-09-26 全部通过）
+### 9.3 回归验证（kind 实测，全部通过）
 
 - [x] 重部署三镜像（docker rmi + deploy-local.sh SKIP_AUTH=1；hub 修复后另以 `build/hub/build.sh v0.0.5` + `kubectl set image` 增量更新）
 - [x] G-8/G-2：构建任务 upload-url PUT 200 → hub PVC `/data/artifacts/.../v0.0.4/nginx-v0.0.4.tar.gz` 落盘 → artifacts API 有行（key 已做 `${VERSION}` 替换）

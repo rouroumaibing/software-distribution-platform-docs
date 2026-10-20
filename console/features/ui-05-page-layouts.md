@@ -1,5 +1,5 @@
 > **来源**：[CONSOLE-UI-DESIGN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) · §7 页面布局
-> **拆分说明**（2026-09-24）：原文 1686 行按章节拆分归档至 `console/features/`，**章节号与原文一致**，外部引用「CONSOLE-UI-DESIGN §N.x」仍有效（章节→文件映射见原文档 §0.4）。
+> **拆分说明**：原文 1686 行按章节拆分归档至 `console/features/`，**章节号与原文一致**，外部引用「CONSOLE-UI-DESIGN §N.x」仍有效（章节→文件映射见原文档 §0.4）。
 > **铁律**：本文件**只追加**——新增修订轮次追加到文件尾，禁止改写历史段落；状态判断一律以 [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 为准，本文件只维护行为规格。
 
 ---
@@ -64,18 +64,18 @@
 - **配置** = 左环境树（分组 → 环境）+ 右 `values.yaml`（查看 / 编辑 / 导入 / 导出）。
 - **环境** = 环境与分组管理：分组可折叠、hover `＋` 新建环境（走**两步向导**）；**分组的删除入口只在"分组为空"时出现**（非空分组不给删除入口，避免误删）；环境删除走右侧详情面板。右侧面板即**对接配置**（基本信息 / 接入方式三选一 / 按接入方式分流的凭据区 / 逐项连接测试），完整规格见 **§7.12**。
 - 面包屑只有顶栏一条；内容区不重复（§8.4）。
-- **制品 / 权限 / 日志** 三个 Tab 均已展开（2026-09-21 原型同步设计）：制品库（筛选 + 表格 + 行内操作，§7.10）、组件级权限（`component_role_bindings`，§7.9）、运行日志聚合（§7.11）。权限的 UX 规格见 §7.9。
+- **制品 / 权限 / 日志** 三个 Tab 均已展开（原型同步设计）：制品库（筛选 + 表格 + 行内操作，§7.10）、组件级权限（`component_role_bindings`，§7.9）、运行日志聚合（§7.11）。权限的 UX 规格见 §7.9。
 
 ### 7.4 流水线 CRUD 页面
 
 - **列表（组件交付→流水线）**：列 = 名称 / 类型 / 版本 / 最近运行 / 操作（运行 · 编辑 · 删除）；右上 `＋ 新建流水线`。
 - **跨组件视角**：v4.4 裁决：**无**独立/视图化的跨组件流水线列表；跨组件巡视只保留运行与发布两个切面。
 - **编辑器**：沿用阶段组横向流；顶部工具条 `[保存] [▶ 触发] [🗑 删除流水线]`，阶段头有 `executionMode` 开关与 `[+ 子任务]`，任务卡 hover 出 `[编辑] [删除]`。
-- **子任务的"产品语言"（2026-09-17 拍板，原型已实现）**：编辑器**不露 `Build` / `Release` / `Approval` 原词**，只显示「构建 / 运行任务」「发布任务」「人工审核阶段」三种描述；三者由配置**派生**（填了发布目标 → `Release`，填了审批人 → `Approval`，否则 `Build`），`type` 仅作为请求体序列化产物进入 hub 供 runner 派发。**不引入模版目录**。
+- **子任务的"产品语言"（拍板，原型已实现）**：编辑器**不露 `Build` / `Release` / `Approval` 原词**，只显示「构建 / 运行任务」「发布任务」「人工审核阶段」三种描述；三者由配置**派生**（填了发布目标 → `Release`，填了审批人 → `Approval`，否则 `Build`），`type` 仅作为请求体序列化产物进入 hub 供 runner 派发。**不引入模版目录**。
 - **请求体预览**：保存时弹出 JSON / YAML 双视图，标注 `PUT /pipelines/:id`（更新）或 `POST /pipelines`（新建），字段映射见附 D。
 - **删除确认弹窗**：标题「删除流水线 <名>？」，**强确认（输入名称）**；提交 `DELETE` 后由**后端判定**——`409 + {reasons}` 时渲染"无法删除"弹窗（reasons 来自后端，含进行中 / 待审批运行等逐条清单），成功则 toast + 列表移除（并提示"历史运行日志保留"）。**前端不预先计算影响面**，契约与服务树删除一致（附 C / N-15）。
 
-> **落地状态（2026-09-22）**：本节 5 条已全部落地，实现清单 / 显式差异 / 门禁见 **附 H**。
+> **落地状态**：本节 5 条已全部落地，实现清单 / 显式差异 / 门禁见 **附 H**。
 
 ### 7.5 服务树页与全局搜索
 
@@ -120,9 +120,9 @@
   | 运行 | 全部 / 运行中 `running` / 失败 `failed` / **待我审批** `waiting` | 下推 `GET /runs?phase=`，**服务端过滤** |
   | 发布 | 全部 / 进行中 `running` / **已暂停** `paused` / 成功 `succeeded` | 前端聚合数据上过滤（发布无 phase 枚举） |
 
-  > **「已暂停」是已落地的一等状态（2026-09-19 按原型回写）**：原型 `PH` 状态集含 `paused ⏸ 已暂停`，发布数据 `r1` 即 `phase:'paused'`，筛选存在且能出结果。**后端支持仍是缺口**：`Paused` 是 Rollout（runner `Rollout` CRD，**任务级**）的状态，不在 `PipelineRunPhase` 六个枚举（Pending/Running/WaitingApproval/Succeeded/Failed/Cancelled）里。因此在 hub 提供 `GET /releases?scope=global&state=paused` 之前，该筛选项在**真实实现版**需要"逐 run 拉 `GET /runs/:id/tasks`"（N+1）才能判定 —— 登记为附 A N-3。
+  > **「已暂停」是已落地的一等状态（按原型回写）**：原型 `PH` 状态集含 `paused ⏸ 已暂停`，发布数据 `r1` 即 `phase:'paused'`，筛选存在且能出结果。**后端支持仍是缺口**：`Paused` 是 Rollout（runner `Rollout` CRD，**任务级**）的状态，不在 `PipelineRunPhase` 六个枚举（Pending/Running/WaitingApproval/Succeeded/Failed/Cancelled）里。因此在 hub 提供 `GET /releases?scope=global&state=paused` 之前，该筛选项在**真实实现版**需要"逐 run 拉 `GET /runs/:id/tasks`"（N+1）才能判定 —— 登记为附 A N-3。
   > `NOTE['runs-releases']` 现行文案：“「已暂停」已是本原型的一等状态（`PH` 徽章 + `RUN_FILTERS` 筛选 + 数据行可筛出结果），后端端点待补”；全局 `/releases` CRUD 状态见 附 A N-3。
-  > ⚠️ **真实实现版的筛选项是「可实现子集」**（2026-09-19 记录）：`src/constants/runCenter.ts` 的 `RUN_VIEWS` 现为 运行「全部 / 运行中 / 失败 / **待我审批**」+ 发布「全部 / 进行中 / 成功」。**「已暂停」在实现版不渲染**（N-3 端点未落地）—— `isValidRunFilter('releases','paused')` 显式返回 `false`：宁可没有该筛选，也不要“点了没反应”（原型铁律：不渲染无 handler 的装饰控件）。
+  > ⚠️ **真实实现版的筛选项是「可实现子集」**（记录）：`src/constants/runCenter.ts` 的 `RUN_VIEWS` 现为 运行「全部 / 运行中 / 失败 / **待我审批**」+ 发布「全部 / 进行中 / 成功」。**「已暂停」在实现版不渲染**（N-3 端点未落地）—— `isValidRunFilter('releases','paused')` 显式返回 `false`：宁可没有该筛选，也不要“点了没反应”（原型铁律：不渲染无 handler 的装饰控件）。
   > 📐 **两层命名（勿混）**：原型 `RUN_FILTERS` 用语义键（`running` / `failed` / `waiting` / `paused` / `succeeded`），实现版用 `PipelineRunPhase` **真实枚举值**（`Running` / `Failed` / `WaitingApproval` / `Succeeded`）直传 `GET /runs?phase=` —— 上表「筛选项」即“语义键 → 真实枚举值”的映射结果。
   > ⚠️ **两处不对称（待拍板，非缺陷）**：运行视图无「成功」、发布视图无「失败」/「待审批」，系原型现行形态（`全部` 已覆盖）。若要放开成状态全集，改 `RUN_VIEWS` 一处即可（纯前端、可逆）；非法值由 `pnpm test:runcenter`「筛选值只落在真实枚举内」断言兜住。
 
@@ -222,7 +222,7 @@
   - **存储**：对象存储 MinIO（3 副本 · 跨 AZ 同步），bucket `sdp-artifacts`，对外域名 `artifacts.sdp.local`；并镜像至 NFS 归档盘 `/data/artifacts/{org}/{component}/{version}/`（断网可取用）。
   - **目录布局**：`sdp-artifacts/{org}/{service_tree_path}/{component}/{run_id}/{artifact_name}`（以 run 为单位归集，便于复现某次构建）。
   - **备份周期**：每日 02:00 增量快照 + 每周日 03:00 全量快照；保留策略为**热层（可下载）90 天 → 转冷归档 1 年（合规留痕）→ GC 报告 + 人工确认后清理**。
-  - **过期**：`expires_at` **已生效**（2026-09-23，B-16 收口）—— hub 保留期 GC（`ARTIFACT_GC_INTERVAL`，**默认关闭**）按该声明回收，**先删对象、后删行**；对象删失败的行标记 `cleanup_state='pending_deletion'`（**不出现在本页列表**）并由下一轮自动重试。对账本身仍是**仅报告 + 人工确认**（见 hub `DELETE-CONTRACT.md` §6.5 / §6.6-4）。
+  - **过期**：`expires_at` **已生效**（B-16 收口）—— hub 保留期 GC（`ARTIFACT_GC_INTERVAL`，**默认关闭**）按该声明回收，**先删对象、后删行**；对象删失败的行标记 `cleanup_state='pending_deletion'`（**不出现在本页列表**）并由下一轮自动重试。对账本身仍是**仅报告 + 人工确认**（见 hub `DELETE-CONTRACT.md` §6.5 / §6.6-4）。
 - **行内删除**：本页提供行内删除（`artifactApi.remove`）；上传不提供。产物批量清理由 GC 与过期策略统一处理（`artifact:delete` 权限语义不变）。
 - 端点（`src/api/artifact.ts`）：`GET /components/:componentId/artifacts`（分页）、`GET /artifacts/:id`、`GET /artifacts/:id/download`（签名 URL）、`DELETE /artifacts/:id`。
 
@@ -238,13 +238,13 @@
 - **错误态**：日志拉取 / 流失败 → 重试。
 - 端点（§7.6）：`GET /runs/:id/tasks/:name/log`。
 
-### 7.12 环境对接配置（创建向导 + 凭据模型，2026-09-21 新增）
+### 7.12 环境对接配置（创建向导 + 凭据模型，新增）
 
 > **起因**：组件详情「环境」Tab 此前只有一个 `target` / `namespace` 自由文本框，「新建环境」也只收名称/目标/命名空间 —— **kubeconfig、kube-apiserver 地址、SSH 主机与凭据无处可填**。本节按 hub 实测代码把这件事补完。
 >
-> **层次前提（2026-09-21 裁定）**：本节讲的是**② 平台怎么够到目标**（目标 = 被纳管集群 / 主机），**不涉及 ③ 平台自身装在哪、怎么升级**。平台自身不进服务树 / 组件 / 环境模型，其部署与升级留在平台之外——三层边界见 [README.md「5.4 平台自身定位与部署形态」](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)，不采纳自升级的六条理由见 [shared/DATA-MODEL.md §9.11](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)（原 E2E-VERIFY-PLAN P6，已删档归位）。另注：**单机版**（平台与目标同集群）下，`targets` 里那一行目标指向的集群同时也是**平台底座所在**；但 **runner 是接入侧代理组件，其身份与部署形态无关**（2026-09-21 二次裁定），故下文凡提"目标"均指**被接入的目标**角色。
+> **层次前提（裁定）**：本节讲的是**② 平台怎么够到目标**（目标 = 被纳管集群 / 主机），**不涉及 ③ 平台自身装在哪、怎么升级**。平台自身不进服务树 / 组件 / 环境模型，其部署与升级留在平台之外——三层边界见 [README.md「5.4 平台自身定位与部署形态」](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)，不采纳自升级的六条理由见 [shared/DATA-MODEL.md §9.11](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)（原 E2E-VERIFY-PLAN P6，已删档归位）。另注：**单机版**（平台与目标同集群）下，`targets` 里那一行目标指向的集群同时也是**平台底座所在**；但 **runner 是接入侧代理组件，其身份与部署形态无关**（二次裁定），故下文凡提"目标"均指**被接入的目标**角色。
 >
-> **口径校准（2026-09-21 更正）**：本节早前把 `kubeconfig` / `ssh` 的凭据挂在 **runner 侧 Secret**，并称其"尚未裁决"——**两处都已更正**。用户已澄清：**两条直连通道都由 hub 侧发起连接**（不是给 runner 用），且**发布目标与归档机器都可能是非 K8s 的**，平台须覆盖非容器环境的「连接 / 测试 / 发布 / 执行命令」全链路。跨组件裁定见 [README.md §5.6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md) + `shared/DATA-MODEL.md` §9.5 / §9.7。
+> **口径校准（更正）**：本节早前把 `kubeconfig` / `ssh` 的凭据挂在 **runner 侧 Secret**，并称其"尚未裁决"——**两处都已更正**。用户已澄清：**两条直连通道都由 hub 侧发起连接**（不是给 runner 用），且**发布目标与归档机器都可能是非 K8s 的**，平台须覆盖非容器环境的「连接 / 测试 / 发布 / 执行命令」全链路。跨组件裁定见 [README.md §5.6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md) + `shared/DATA-MODEL.md` §9.5 / §9.7。
 
 #### 7.12.1 接入方式：三条通道，凭据归属不同
 
@@ -378,14 +378,14 @@
 | --- | --- | --- |
 | 目标下拉 | `GET /api/v1/targets` | ✅ 已有（`RegisterCRUD`） |
 | 环境 CRUD | `POST/GET/PUT/DELETE /api/v1/environments`、`GET /components/:id/environments` | ✅ 已有 |
-| 环境创建 | `POST /api/v1/environments` | ✅ **请求体已扩齐（2026-10-08 核对）**：`componentId` / `key` / `name` / `targetId` / `envType` / `namespace` / `access`（`agent`/`kubeconfig`/`ssh`）/ `accessConfig`（各通道非敏感配置 + 凭据引用，如 `kube.credRef` / `ssh.secretRef`）/ `groupId` / `status`（hub `internal/environment/models/environment.go`，CRUD 泛型绑定模型体） |
-| 环境分组 | `environment_groups` + `environments.group_id` | ✅ **已落库（2026-10-08 核对）** —— hub `internal/environmentgroup` 全套（handler / repository / service / models）+ `cmd/hub/main.go` 注册（:48-50 import、:471 `RegisterRoutes`），表经 GORM `AutoMigrate` 建于 `internal/db/db.go`；见 [hub 数据模型 §8](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) |
+| 环境创建 | `POST /api/v1/environments` | ✅ **请求体已扩齐（核对）**：`componentId` / `key` / `name` / `targetId` / `envType` / `namespace` / `access`（`agent`/`kubeconfig`/`ssh`）/ `accessConfig`（各通道非敏感配置 + 凭据引用，如 `kube.credRef` / `ssh.secretRef`）/ `groupId` / `status`（hub `internal/environment/models/environment.go`，CRUD 泛型绑定模型体） |
+| 环境分组 | `environment_groups` + `environments.group_id` | ✅ **已落库（核对）** —— hub `internal/environmentgroup` 全套（handler / repository / service / models）+ `cmd/hub/main.go` 注册（:48-50 import、:471 `RegisterRoutes`），表经 GORM `AutoMigrate` 建于 `internal/db/db.go`；见 [hub 数据模型 §8](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) |
 | 连接测试 | `POST /api/v1/environments/:id/test` → 逐项 checklist | ✅ **已落地** —— `EnvironmentService.Test` / `TestReport`（配置完整性结构校验；连通性项如实返回 `skip`，hub 无出站能力），结果持久化到 env |
-| 凭据库 | `GET/POST/PUT/DELETE /api/v1/credentials`（只回 `valueSet`，不返明文） | ✅ **已落地（2026-09-23）** —— `internal/credentials`（AES-GCM 信封加密落库，列前缀 `enc:v1:`；API 仅回 `valueSet`）+ console `CredentialsView.vue`（平台管理第 3 个 Tab） |
+| 凭据库 | `GET/POST/PUT/DELETE /api/v1/credentials`（只回 `valueSet`，不返明文） | ✅ **已落地** —— `internal/credentials`（AES-GCM 信封加密落库，列前缀 `enc:v1:`；API 仅回 `valueSet`）+ console `CredentialsView.vue`（平台管理第 3 个 Tab） |
 | kubeconfig 解析 | `POST /api/v1/credentials/parse-kubeconfig` | ✅ **已落地** —— 结构化回显 `server`/`caPresent`/`insecureSkipTLS`/`authMethod`/`currentContext`/`defaultNamespace` + `errors`（**拒绝 `exec:` 插件**） |
 | 目标注册 token | `POST /api/v1/targets/:id/enroll-token`（一次性） | ✅ **端点已落地** —— `TargetHandler.EnrollToken` / `TargetService.GenerateEnrollToken`（一次性 + 过期）。⚠️ 网关仍用全局共享 `GATEWAY_TOKEN`，per-target 身份约束（`agent_version` 上报 + 凭据流转）属 `§9.9` 引导特性 |
 
-> **SSH 直连仍未实现（2026-10-08 更新）**：`POST /environments/:id/test`（逐项 checklist）与 `POST /environments/:id/exec`（校验并排队 agent 操作，执行归 runner）**端点均已注册**（hub `internal/environment/handler/environment.go:24,27`）；但 hub `go.mod` **无 `x/crypto/ssh` 依赖**，`ssh` 通道的出站直连拨号能力仍属净新增，hub 亦无 `client-go`。按层分写约定，列定义应落 `docs/shared/DATA-MODEL.md`、请求体与响应落 `docs/shared/API-REFERENCE.md`；本节只给 console 侧的消费形状。**凭据由 hub 侧持有**（§7.12.4）。
+> **SSH 直连仍未实现（更新）**：`POST /environments/:id/test`（逐项 checklist）与 `POST /environments/:id/exec`（校验并排队 agent 操作，执行归 runner）**端点均已注册**（hub `internal/environment/handler/environment.go:24,27`）；但 hub `go.mod` **无 `x/crypto/ssh` 依赖**，`ssh` 通道的出站直连拨号能力仍属净新增，hub 亦无 `client-go`。按层分写约定，列定义应落 `docs/shared/DATA-MODEL.md`、请求体与响应落 `docs/shared/API-REFERENCE.md`；本节只给 console 侧的消费形状。**凭据由 hub 侧持有**（§7.12.4）。
 
 > ⚠️ **`targets` 只覆盖 `agent` 通道**：`environments.target_id` 是 **NOT NULL FK**，**表达不出非容器目标**；非容器目标需给 `targets` **扩表**（`targetKind` + 直连凭据列，`shared/DATA-MODEL.md` §9.7）。本节的 `ssh.targets[]` 只是**环境内**的主机清单，**不等于**跨环境复用的目标注册表。
 
@@ -408,9 +408,9 @@
 
 ---
 
-### 7.13 运行域闭环与平台管理补齐（原型，2026-10-08 · 只追加，冲突处以本节为准）
+### 7.13 运行域闭环与平台管理补齐（原型，· 只追加，冲突处以本节为准）
 
-> 2026-10-08 一轮针对「看得到状态、执行不了动作」的原型缺口补齐（`CONSOLE-UI-prototype.html` 2562 → 约 2860 行）。
+> 一轮针对「看得到状态、执行不了动作」的原型缺口补齐（`CONSOLE-UI-prototype.html` 2562 → 约 2860 行）。
 > 本节只描述**新增形态**，不改写 §7.6 / §7.7 / §7.9 历史段落；落地记录与显式差异见 ui-11 **附 K**，新增依赖 N-16/N-17 见 ui-09 **附 A 补充**。
 
 **① 运行中心行动作（§7.6 补充）**：运行视图行加 `详情`（进单次运行详情页，见 ③）与 `审批`（仅 `waiting` 行，见 ④）；发布视图 `控制 →` 从无 handler 占位接为**灰度控制台弹窗**（见 ②）。
@@ -425,7 +425,7 @@
 
 **④ 审批操作 UX（§7.9 审批卡的原型落点）**：`waiting` 时详情页顶部出审批警示条（卡点组 + production 强制审批说明）+「✓ 审批」按钮 → 弹窗（`批准并继续` / `驳回` + 意见可选）→ 提交 `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision`（桩已有 `run.ts:124`，后端 `h.Approve` 已实现）。§7.9 的**防自审**与**历史决策留痕展示**原型尚未展开（见 ui-11 附 K.2-4）。
 
-**⑤ 运行中心表格增强（§7.6 补充）**：分页控件（`page/pageSize`，对齐 N-1 已支持参数）+ 时间范围筛选（全部 / 近 1 小时 / 近 24 小时 / 近 7 天；**hub 侧 `?createdAfter=` 已落地**，见 ui-09 N-1【2026-10-08 更新】）。
+**⑤ 运行中心表格增强（§7.6 补充）**：分页控件（`page/pageSize`，对齐 N-1 已支持参数）+ 时间范围筛选（全部 / 近 1 小时 / 近 24 小时 / 近 7 天；**hub 侧 `?createdAfter=` 已落地**，见 ui-09 N-1【更新】）。
 
 **⑥ 顶栏通知中心（§7.1 补充）**：铃铛 + 未读角标 + 下拉面板；条目 = 待审批 / 失败运行 / 目标异常三类，点击按 todoCard 同一跳转语义直达（视图 + 筛选）。数据源为**前端聚合**（复用 `GET /runs?phase=` / targets 心跳），独立通知端点未立项（ui-09 N-17【待确认】）。
 

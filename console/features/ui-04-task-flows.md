@@ -1,5 +1,5 @@
 > **来源**：[CONSOLE-UI-DESIGN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) · §6 核心任务流程
-> **拆分说明**（2026-09-24）：原文 1686 行按章节拆分归档至 `console/features/`，**章节号与原文一致**，外部引用「CONSOLE-UI-DESIGN §N.x」仍有效（章节→文件映射见原文档 §0.4）。
+> **拆分说明**：原文 1686 行按章节拆分归档至 `console/features/`，**章节号与原文一致**，外部引用「CONSOLE-UI-DESIGN §N.x」仍有效（章节→文件映射见原文档 §0.4）。
 > **铁律**：本文件**只追加**——新增修订轮次追加到文件尾，禁止改写历史段落；状态判断一律以 [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 为准，本文件只维护行为规格。
 
 ---
@@ -11,7 +11,7 @@
 - **阶段（Stage）串行**：流水线由有序阶段组成，按 `sequence` 从前到后逐阶段执行；前一阶段全部子任务完成（成功/跳过）才解锁下一阶段。
 - **阶段内子任务按 `executionMode` 串行/并行**（**`ExecutionMode` 已确认放在 Stage 级**，一个阶段统一一种模式）：
   - `Parallel`（默认）：阶段内子任务并发启动，互不等待；
-  - `Serial`（✅ **调度已落地（2026-09-23，C-06）**）：hub `buildSpec` 在同阶段子任务间按序推导「紧邻前驱」`DependsOn` 链，严格先后（调用方手写 `DependsOn` 优先）；runner `serialBlocked()` 消费；
+  - `Serial`（✅ **调度已落地（C-06）**）：hub `buildSpec` 在同阶段子任务间按序推导「紧邻前驱」`DependsOn` 链，严格先后（调用方手写 `DependsOn` 优先）；runner `serialBlocked()` 消费；
   - **阶段完成条件**：该阶段所有子任务 `Succeeded` 或 `Skipped` 即视为完成；任一 `Failed` 且不可重试 → 阶段失败，下游不调度（DAG `Skipped`）。
 - **数据与执行解耦（推送模型，已确认）**：触发 `POST /pipelines/:id/runs` 时 hub 先把"任务落实到数据库"（`pipeline_runs` + 按 DAG 种子的 `task_runs` + `dispatch_jobs`），再把整份已解析 spec 经 WebSocket **推送**给目标环境 runner；runner 在集群内建 CRD 执行，**不直连 hub DB**，状态经 WS `status_update` 流回 hub 写回 `task_runs`。详见 [hub 数据模型](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) §6 / [runner STORY](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md) §4.3。
 - **原型对应**：编排页阶段卡可前后移动（重排 `sequence`）、阶段内子任务可上下移动（重排 `displayOrder`）、阶段头 `executionMode` 一键在 并行/串行 间切换（非静态展示，可点击切换）。
@@ -24,12 +24,12 @@
 
 | 步骤 | 操作 | 端点 | 状态 |
 | --- | --- | --- | --- |
-| C1 新建 | 组件「交付→流水线」→ **＋ 新建流水线** → 表单（名称 / 类型 build·release·custom / 描述 / 关联组件）→ 保存并编排 | `POST /pipelines` | ✅ **已落地（2026-09-22，见 附 H）**：原型已实现，且**组件上下文锁定**：对话框里"所属组件"只读，`componentId` 直接取当前组件 uuid，不存在跨组件选择 |
-| C2 编排 | 进入编辑器 → 加阶段（名称+`executionMode`）→ 加子任务（填发布配置 / 审批人 / 命令） | `POST /pipelines/:id/stages`、`POST /stages/:id/tasks` | ✅ 已落地（2026-09-22） |
+| C1 新建 | 组件「交付→流水线」→ **＋ 新建流水线** → 表单（名称 / 类型 build·release·custom / 描述 / 关联组件）→ 保存并编排 | `POST /pipelines` | ✅ **已落地（见 附 H）**：原型已实现，且**组件上下文锁定**：对话框里"所属组件"只读，`componentId` 直接取当前组件 uuid，不存在跨组件选择 |
+| C2 编排 | 进入编辑器 → 加阶段（名称+`executionMode`）→ 加子任务（填发布配置 / 审批人 / 命令） | `POST /pipelines/:id/stages`、`POST /stages/:id/tasks` | ✅ 已落地 |
 | C3 触发 | 编辑器/详情 → 触发对话框（选目标 + 本次 params） | `POST /pipelines/:id/runs` | 已有 |
-| C4 提交 | 编排完成「保存」→ 弹出**请求体预览**（JSON / YAML 可切换）→ 发送到 hub | `PUT /pipelines/:id`（已存在）或 `POST /pipelines`（新建） | ✅ **已落地（2026-09-22）**：保存前弹 JSON / YAML 双视图，并**如实标注实际调用序列**（hub 无整 DAG 端点，见 附 H.3） |
-| E1 编辑元信息 | 详情头部「编辑」→ 改名称/描述 → 保存 | `PUT /pipelines/:id` | ✅ **已落地（2026-09-22）** |
-| E2 编辑结构 | 加阶段/任务、改任务、删阶段/任务 | `POST/PUT/DELETE`（stage/task） | ✅ **已落地（2026-09-22）**：**已放开 `kind` 限制**，三种取值均可编排 |
+| C4 提交 | 编排完成「保存」→ 弹出**请求体预览**（JSON / YAML 可切换）→ 发送到 hub | `PUT /pipelines/:id`（已存在）或 `POST /pipelines`（新建） | ✅ **已落地**：保存前弹 JSON / YAML 双视图，并**如实标注实际调用序列**（hub 无整 DAG 端点，见 附 H.3） |
+| E1 编辑元信息 | 详情头部「编辑」→ 改名称/描述 → 保存 | `PUT /pipelines/:id` | ✅ **已落地** |
+| E2 编辑结构 | 加阶段/任务、改任务、删阶段/任务 | `POST/PUT/DELETE`（stage/task） | ✅ **已落地**：**已放开 `kind` 限制**，三种取值均可编排 |
 | D1 删除 | 列表行内/头部「删除」→ **强确认（输入名称）→ `DELETE` → 后端级联校验**；有残留（进行中 / 待审批运行）则 `409 + {reasons}`，前端渲染"无法删除"弹窗——**前端不预先计算影响面**（判定权威唯一在后端，与服务树删除同原则，见 附 C / N-15） | `DELETE /pipelines/:id` | ✅ **已落地**：前端强确认 + 渲染 verdict；后端级联校验见 `shared/DELETE-CONTRACT.md` §2 |
 
 **异常分支（前端只渲染后端 verdict — 与服务树删除同一契约，见 附 C）**

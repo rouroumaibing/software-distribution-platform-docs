@@ -56,7 +56,7 @@
   - 动态开关: 不涉及（M1）。
 - **[x] 可服务性与监控 (Serviceability)**
   - 核心日志: 全链路带 `target`/`pipelineRunName`/`taskName` 上下文（如 `dispatch: created PipelineRun ... on target %s`、`rollout: scale %s failed`），可经 TraceID 关联。
-  - 监控告警: ✅ 已接入（2026-09-24）—— `pkg/metrics` Prometheus 计数器/仪表 + 失败告警，经 controller-runtime 内置 metrics server 暴露 `/metrics`（B-09）；降级开关 `SDP_LOG_STREAMING` / `SDP_CANARY_INGRESS` / `SDP_ALERTING`。告警规则与预发/灰度验证属运维环境项（[STATUS](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) #5）。
+  - 监控告警: ✅ 已接入—— `pkg/metrics` Prometheus 计数器/仪表 + 失败告警，经 controller-runtime 内置 metrics server 暴露 `/metrics`（B-09）；降级开关 `SDP_LOG_STREAMING` / `SDP_CANARY_INGRESS` / `SDP_ALERTING`。告警规则与预发/灰度验证属运维环境项（[STATUS](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) #5）。
 
 ---
 
@@ -237,10 +237,10 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 - **审批决策不在 Runner**：Approval 子任务的通过/拒绝由 Hub 经 `approve_task` 帧（§4.1）下发；Runner 仅据此解除挂起或终止，不判断"谁有权审批"（防自审等规则在 [hub 数据模型 §7.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) 落实）。
 - **集群侧权限由 k8s RBAC 约束（已用）**：Hub 为每个"组件 × 环境"签发 `RoleBinding`，Runner 所用 SA 只可触碰该组件命名空间；这是 runner↔集群的部署边界闸，与"用户对组件"的业务授权（[hub 数据模型 §7.2/§7.3](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)）解耦。
 - **结论**：Runner 信任 hub 下发的 spec，自身无授权逻辑、不连接 Keycloak/业务 RBAC 表；业务鉴权与审批审计全部落在 hub + console。
-- **Runner 只是三条接入通道之一（2026-09-21 补充）**：`kubeconfig` / `ssh` 两条通道**由 hub 侧发起连接**，**不经过 Runner**——Runner 不持有、也不使用目标凭据，本节"Runner 只消费 hub 已鉴权下发的 spec"的边界**不变**。但须知道两点：
+- **Runner 只是三条接入通道之一（补充）**：`kubeconfig` / `ssh` 两条通道**由 hub 侧发起连接**，**不经过 Runner**——Runner 不持有、也不使用目标凭据，本节"Runner 只消费 hub 已鉴权下发的 spec"的边界**不变**。但须知道两点：
   1. **执行底座是隐式的**：`pkg/executor/job_builder.go` 把 `TaskRunSpec` 翻译成**目标集群里的 K8s Job**（`mainContainer` = `sh {ScriptPath}`；`releaseContainer` = `helm upgrade --install` / `kubectl apply`；工作区 = EmptyDir 卷）。Job / 命名空间 / SA / RoleBinding / 卷在物理机与虚拟机上**都不存在** → **非容器目标无法走本路径**，只能走 hub 直连的 `ssh`。
   2. **`TaskRunSpec` 目前只有一种执行实现**（K8s Job），尚无 `executor backend` 抽象；若将来 hub 直连复用同一任务模型，需新增后端判别维度。
-  - 通道能力矩阵与凭据归属见 `shared/DATA-MODEL.md` §9.5（2026-09-23 自 docs/README §5.6 迁入）；数据侧见 §9.7。
+  - 通道能力矩阵与凭据归属见 `shared/DATA-MODEL.md` §9.5（自 docs/README §5.6 迁入）；数据侧见 §9.7。
 
 ---
 
@@ -249,8 +249,8 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 - [x] 静态代码扫描无 P0/P1 级安全漏洞：`go vet ./...` ✅（runner 与 hub 双模块）。
 - [x] 编译通过：`go build ./...` ✅（runner 与 hub 双模块，含 `gofmt -w` 格式化）。
 - [x] 单元测试覆盖率达到团队基线：canary engine（`pkg/canary/engine_test.go`）/ health / logstream / dispatch(快照+重跑) / controller(串行+resync) / 环境模型 均有表驱动单测（B-08）。
-- [x] 自动化测试用例通过 / QA 手动验收通过：端到端已于 2026-09-24 本机 kind 实跑通过（`e2e-smoke.sh` PASS=15 FAIL=0，run `Running→Succeeded`，见 §6）。
-- [x] 监控埋点已接入（2026-09-24）：runner `pkg/metrics` 经 controller-runtime 内置 metrics server 暴露 `/metrics`；hub 侧新增 `internal/metrics`（零依赖 Prometheus 文本导出 + `GET /metrics`）。**告警规则 / 降级开关在预发·灰度的验证仍属运维环境项**（非代码）。
+- [x] 自动化测试用例通过 / QA 手动验收通过：端到端已于 本机 kind 实跑通过（`e2e-smoke.sh` PASS=15 FAIL=0，run `Running→Succeeded`，见 §6）。
+- [x] 监控埋点已接入：runner `pkg/metrics` 经 controller-runtime 内置 metrics server 暴露 `/metrics`；hub 侧新增 `internal/metrics`（零依赖 Prometheus 文本导出 + `GET /metrics`）。**告警规则 / 降级开关在预发·灰度的验证仍属运维环境项**（非代码）。
 
 ---
 
@@ -260,5 +260,5 @@ chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 - ✅ **IngressCanary 路由（B-04）**：`internal/controller/rollout_controller.go` + `pkg/canary/engine.go` 已实现金丝雀渐进发布与 IngressCanary 流量切分。
 - ✅ **HTTPProbe / PrometheusQuery 健康检查（B-05）**：`pkg/health/health.go` 的 `HTTPProbe`（真实 GET + 2xx 判定）、`PrometheusQueryOK`（真实 Prometheus 查询 + 阈值）已接入 release 健康判定。
 - ✅ **Rollout 副本数读取真实 Deployment（B-06）**：`rollout_controller.go` 的 `resolveTotalReplicas` 读取线上 stable Deployment 的 `spec.replicas` 作为 total（fallback `RolloutSpec.Replicas` → 默认 2），不再写死 `total=2`。
-- ✅ **端到端验证（B-07）**：**已于 2026-09-24 本机 docker + kind 实跑通过** —— 全栈部署绿、`plans/e2e-smoke.sh` `PASS=15 FAIL=0`、run `Running → Succeeded`。执行中揪出并修复 3 个真 bug（含本 Story 侧的 **runner RBAC 缺 `networking.k8s.io/ingresses`**：`Owns(&Ingress{})` 无对应 list/watch → manager 缓存同步超时 → 任何 run 都不派发）。证据见 `plans/STATUS.md` §1.4（原 audit §5.2 已并入）。
+- ✅ **端到端验证（B-07）**：**已于 本机 docker + kind 实跑通过** —— 全栈部署绿、`plans/e2e-smoke.sh` `PASS=15 FAIL=0`、run `Running → Succeeded`。执行中揪出并修复 3 个真 bug（含本 Story 侧的 **runner RBAC 缺 `networking.k8s.io/ingresses`**：`Owns(&Ingress{})` 无对应 list/watch → manager 缓存同步超时 → 任何 run 都不派发）。证据见 `plans/STATUS.md` §1.4（原 audit §5.2 已并入）。
 - 关联：`STORY-hub-implementation.md`（控制面）。Console 页面与多环境为更上层 Story。

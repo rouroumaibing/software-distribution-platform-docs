@@ -1,5 +1,5 @@
 > **来源**：[CONSOLE-UI-DESIGN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) · §8 交互细节与状态
-> **拆分说明**（2026-09-24）：原文 1686 行按章节拆分归档至 `console/features/`，**章节号与原文一致**，外部引用「CONSOLE-UI-DESIGN §N.x」仍有效（章节→文件映射见原文档 §0.4）。
+> **拆分说明**：原文 1686 行按章节拆分归档至 `console/features/`，**章节号与原文一致**，外部引用「CONSOLE-UI-DESIGN §N.x」仍有效（章节→文件映射见原文档 §0.4）。
 > **铁律**：本文件**只追加**——新增修订轮次追加到文件尾，禁止改写历史段落；状态判断一律以 [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 为准，本文件只维护行为规格。
 
 ---
@@ -21,7 +21,7 @@
 
 > 状态徽章 = **图标 + 文字 + 色块**三通道，**灰阶下仍可辨**（呼应 S4）。
 > 原型实现：`PH` 映射（`succeeded/running/failed/waiting/pending/paused`）+ `badge(p)`；`waiting` 与 `paused` 共用告警底色但图标不同（`⏳` vs `⏸`），**不靠颜色区分**。
-> ⚠️ **实现差异（2026-10-08 核对）**：console 实现的状态集 = `PipelineRunPhase` 六枚举 `Pending / Running / WaitingApproval / Succeeded / Failed / Cancelled`（`src/api/run.ts`），**无 `Paused`**（Paused 是 Rollout 任务级状态，不在运行枚举内）；且 `StatusBadge.vue` 仅 5 档样式（succ / run / fail / warn / pend）—— **`Cancelled` 无专属色，落入 default `pend` 灰**（与 Pending 同档渲染）。
+> ⚠️ **实现差异（核对）**：console 实现的状态集 = `PipelineRunPhase` 六枚举 `Pending / Running / WaitingApproval / Succeeded / Failed / Cancelled`（`src/api/run.ts`），**无 `Paused`**（Paused 是 Rollout 任务级状态，不在运行枚举内）；且 `StatusBadge.vue` 仅 5 档样式（succ / run / fail / warn / pend）—— **`Cancelled` 无专属色，落入 default `pend` 灰**（与 Pending 同档渲染）。
 
 - DAG 节点描边：成功 1px 绿 / 运行 2px 蓝 / 待执行 1px 灰 / 失败 1px 红（粗细区分"已完成/当前活跃"）。
 - 步骤器节点同规则，active 步骤 2px 蓝；箭头与左节点状态同色。
@@ -62,7 +62,7 @@
 - **新建/删除流水线**：删除**必须强确认（输入名称）**（见 §7.4）；新建保存后直接进编辑器（减少一次点击）。
 - **编排页返回**：若有未保存配置，先弹确认「配置未保存，是否返回？」（原型 `backFromEditor`）。
 - **主题切换**：即时生效、记住选择（`localStorage`）；首次访问跟随系统 `prefers-color-scheme`。
-- 触发运行：对话框校验目标必选（无可用目标时「▶ 触发」禁用）；提交后 toast + 跳**该次运行的监控页** `/pipelines/:id/runs/:runId`（`TriggerRunDialog` emit `triggered`，`PipelinesTab` 与 `PipelineEditorView` 两处入口均如此跳转）。对话框另含**制品版本 picker**（B-20 最小版：一键填入 `VERSION` 参数）、组件参数 key 预置、策略拒绝 `409 + reasons` 原样渲染（2026-10-08 按实现回写）。
+- 触发运行：对话框校验目标必选（无可用目标时「▶ 触发」禁用）；提交后 toast + 跳**该次运行的监控页** `/pipelines/:id/runs/:runId`（`TriggerRunDialog` emit `triggered`，`PipelinesTab` 与 `PipelineEditorView` 两处入口均如此跳转）。对话框另含**制品版本 picker**（B-20 最小版：一键填入 `VERSION` 参数）、组件参数 key 预置、策略拒绝 `409 + reasons` 原样渲染（按实现回写）。
 - 重新投递：`run.phase === 'Failed'` 或 run 有 `message` 时显示按钮（`redispatch`）；**实现无确认步**，点击即调用，成功后 toast + 刷新——与原设计「需确认避免重复派发」不同，差异记录于此（`RunMonitorView.vue`）。
 - 取消运行：**非终态**（`Pending`/`Running`/`WaitingApproval`）才显示按钮；**两段式内联确认**（刻意不用 `window.confirm`——内嵌预览下不可靠），终态由后端 `409` 兜底。相位判定在 `utils/run.ts` `isRunCancellable`，由 `scripts/run-control-smoke.mjs` 冒烟钉住。
 - 单任务重跑：任务 `Failed`/`Skipped` 时（`utils/run.ts` `isTaskRerunnable`）在任务详情显示「重跑任务（含下游）」（`POST /runs/:id/tasks/:name/rerun`）；**实现无确认步**，点击即调用、toast 反馈——差异记录于此（`RunMonitorView.vue`）。
@@ -87,7 +87,7 @@
 | 面包屑 | 顶栏一条 + 内容区再一条（组件/编辑器页），与页面标题共 3 处 | **只留顶栏一条**，中间层为可点链接；内容区不重复 |
 | 组件详情「快速入口」按钮组 | 「编排/运行流水线」「配置参数与环境」= 主 Tab 的重复入口 | 不渲染；概览只保留 KPI |
 | 服务树页「同级 Component」表 | 与左卡树重复展示同一批节点 | 不渲染；右卡为「节点信息」（路径/仓库/语言/流水线数） |
-| Dashboard「最近运行（全局）」 | 与运行中心**同一张表、同一组列**（完整 5 行） | 设计为截 **3 行 + 「查看全部 42 条 →」**；**实现差异（2026-10-08 核对）**：实现为跨流水线聚合的**最近 5 条**（各流水线取前 5 条后按时间排序截断），列「运行 / 流水线 / 触发人 / 状态 / 耗时 / 开始时间」，行点击进运行监控页，**无「查看全部」出口**（`DashboardView.vue`） |
+| Dashboard「最近运行（全局）」 | 与运行中心**同一张表、同一组列**（完整 5 行） | 设计为截 **3 行 + 「查看全部 42 条 →」**；**实现差异（核对）**：实现为跨流水线聚合的**最近 5 条**（各流水线取前 5 条后按时间排序截断），列「运行 / 流水线 / 触发人 / 状态 / 耗时 / 开始时间」，行点击进运行监控页，**无「查看全部」出口**（`DashboardView.vue`） |
 | 目标状态 | warnbox 叙述一遍 + KPI「在线目标 3/4」再说一遍 | KPI 保留数字并**可点直达接入管理页**，warnbox 只讲行动（离线→自动重放） |
 | 流水线列表渲染 | 组件内列表**两套重复模板** | 抽 `pipelineRow()` / `pipelineHead()` 共用（v4.4 后只剩组件内一处消费方，函数保留以备复用） |
 | 组件内流水线数据 | `PIPELINES.slice(0,3)` **不分组件**（进 comp-worker 也显示 comp-web 的流水线） | 按组件过滤：`filter(p => p.comp === S.comp)`，无数据走空态 |
@@ -118,9 +118,9 @@
 
 ---
 
-## 8.x P2 体验层设计（2026-10-08 收口，STATUS #23）
+## 8.x P2 体验层设计（收口，STATUS #23）
 
-> 来源：原 `console/plans/CONSOLE-P2-UX-DESIGN-2026-10-08.md`（2026-10-08），闭环后折叠入本文件；运行详情页 URL 形态裁定另见 [ui-10 附 B.x](ui-10-decision-records.md)。状态以 STATUS §2 #23 为准。
+> 来源：原 `console/plans/CONSOLE-P2-UX-DESIGN-2026-10-08.md`，闭环后折叠入本文件；运行详情页 URL 形态裁定另见 [ui-10 附 B.x](ui-10-decision-records.md)。状态以 STATUS §2 #23 为准。
 
 ### 8.x.1 日志下载 + 按 task 折叠 + 流式指示（RunMonitorView）
 

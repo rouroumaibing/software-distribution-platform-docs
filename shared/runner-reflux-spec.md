@@ -1,4 +1,4 @@
-# RUNNER-REFLUX-SPEC：runner → hub 状态回流协议设计（2026-10-08）
+# RUNNER-REFLUX-SPEC：runner → hub 状态回流协议设计
 
 - **状态**：Design（设计定稿，本轮落实；实现 gate = kind 流量测试床，见 §8）
 - **住户依据**：横跨 runner（发送）+ hub（落库）+ console（消费）三端，按「范围优先」判据入住 `shared/`（原 plans/ 位置废止）
@@ -21,7 +21,7 @@
 
 ### 2.1 设计目的（为什么要做）
 
-当前系统（三仓 main 分支，2026-10-08）的执行态回流是**半程**的：runner 在目标集群内完成了灰度步进、产物产出、版本自证三件事，但 hub 侧的 `rollout_runs` 行恒空、`task_run_artifacts` 无从谈起、`targets.agent_version` 恒为空串。后果：① console 灰度控制台用任务完成数**猜测**权重（`ReleaseDetailView.vue` 注释自述），步宽调节没有真实反馈环；② 构建产物只能靠人工从目标集群捞取，签名下载通道（B-16）形同虚设；③ 版本兼容性检查（#2 下半）因无版本数据无法实现。本设计目的是**打通 runner→hub 的执行态回流后半程**，使 hub 成为执行态的完整权威镜像。
+当前系统（三仓 main 分支）的执行态回流是**半程**的：runner 在目标集群内完成了灰度步进、产物产出、版本自证三件事，但 hub 侧的 `rollout_runs` 行恒空、`task_run_artifacts` 无从谈起、`targets.agent_version` 恒为空串。后果：① console 灰度控制台用任务完成数**猜测**权重（`ReleaseDetailView.vue` 注释自述），步宽调节没有真实反馈环；② 构建产物只能靠人工从目标集群捞取，签名下载通道（B-16）形同虚设；③ 版本兼容性检查（#2 下半）因无版本数据无法实现。本设计目的是**打通 runner→hub 的执行态回流后半程**，使 hub 成为执行态的完整权威镜像。
 
 ### 2.2 概念空间
 
@@ -109,8 +109,8 @@ erDiagram
     task_runs ||--o{ pipeline_approvals : "审批型任务"
 ```
 
-- **实现裁定（v3，2026-10-08）**：核实 hub 既有 `artifacts` 表已带 `task_run_id` 外键，且制品上传链路（G-2/G-6/G-14：`RegisterProduced` param-substituted 幂等登记）完备——本节原设计的独立新表 `task_run_artifacts` **会与既有表重复**，裁定不建。回流通道 `Artifacts` 字段**保留为协议预留**（`omitempty`，本轮不实现生产者）；digest/size 元数据增强归制品上传协议扩展（STATUS #22② 立项），届时直接挂既有 `artifacts` 表。
-- `kind=image` 的 location **必须**是 harbor 引用（与 #22①② 的 Build→Harbor 对接共用命名约定）。
+- **实现裁定（v3）**：核实 hub 既有 `artifacts` 表已带 `task_run_id` 外键，且制品上传链路（G-2/G-6/G-14：`RegisterProduced` param-substituted 幂等登记）完备——本节原设计的独立新表 `task_run_artifacts` **会与既有表重复**，裁定不建。回流通道 `Artifacts` 字段**保留为协议预留**（`omitempty`，本轮不实现生产者）；digest/size 元数据增强归制品上传协议扩展（STATUS #22② 立项），届时直接挂既有 `artifacts` 表。
+- `kind=image` 的 location **默认**是 harbor 引用（与 #22①② 的 Build→Harbor 对接共用命名约定）；**registry 为可配置后端**，经 `SDP_JOB_IMAGE_*` / 部署 `--set image.imageAddr` 可指向其他兼容 OCI Distribution 的 registry，harbor 仅是默认实现、非强制依赖。
 - **上报失败重试预算（已裁定）**：3 次指数退避（1s/2s/4s），最终放弃仅记 runner 侧 warning 日志，不阻塞 run 相位推进——产物是增强数据，不是相位依赖。
 
 ## 5. #2 agent_version / per-target 身份
@@ -138,7 +138,7 @@ type AgentInfoPayload struct {
 - **已读**：hub 加 `notification_reads`（`subject` 主键 + `last_read_at`）；`GET /notifications` 返回带 `unreadCount`（服务端时钟计算，消除前端 skew）。console localStorage 游标（已上线）作为**降级路径**保留（hub 未升级时前端行为不变）。
 - **写接口**：`POST /notifications/read-mark`（body: `{readAt: RFC3339}`，subject 取自 token）；幂等——`last_read_at` 只前进不回退。
 - **assignee=me**：审批帧 `ApprovalStatus` 已有 `RequiredCount/ApprovedBy`；hub 在生成通知时写 `assignees`（按 pipeline 绑定角色解析），`GET /notifications?assignee=me` 过滤。**「待我审批」筛选自此有服务端权威**，替换 console 现在的 `phase=WaitingApproval` 近似。
-  - **留守裁定（v3，2026-10-08）**：本轮不实现。approve 链路当前没有可复用的 per-user 服务端权限解析——`HasPermission` 存在但「审批动作」语义（谁能批哪个 pipeline 的审批任务）未钉，提前落 assignees 写入会引入未经拍板的权限模型。留守至权限控制主线（用户既定 next priority）一并设计；console 侧暂维持 `phase=WaitingApproval` 近似（constants/runCenter.ts 注释已声明该降级语义）。
+  - **留守裁定（v3）**：本轮不实现。approve 链路当前没有可复用的 per-user 服务端权限解析——`HasPermission` 存在但「审批动作」语义（谁能批哪个 pipeline 的审批任务）未钉，提前落 assignees 写入会引入未经拍板的权限模型。留守至权限控制主线（用户既定 next priority）一并设计；console 侧暂维持 `phase=WaitingApproval` 近似（constants/runCenter.ts 注释已声明该降级语义）。
 
 ## 7. 兼容与发布
 
@@ -146,7 +146,7 @@ type AgentInfoPayload struct {
 - 新 hub + 旧 runner：扩展字段全 omitempty，行为同今。
 - 三仓版本发布顺序：**hub 先**（收新字段）→ runner 后（发新字段）→ console 消费最后。
 
-## 8. 实现 gate（2026-10-08 第二次钢人裁定：kind 流量测试床）
+## 8. 实现 gate（第二次钢人裁定：kind 流量测试床）
 
 > **裁定变更记录**：原裁定「本地 kind 无真实流量，实现合并到远程真流量环境」。2026-10-08 用户确认本机 docker 可用、kind 集群可重建流量测试床（ingress-nginx + 双版本 demo workload + 合成流量循环），「环境不存在」前提失效。反向钢人（合成流量≠生产流量模式，提前实现或返工）由向后兼容设计兜底：扩展字段全 omitempty、单通道复用、hub 先行发布顺序——生产侧风险不因提前实现放大。
 > **裁定：本轮实现，gate 为下列 kind 测试床四条。**
@@ -160,7 +160,7 @@ kind 测试床 gate（原四条改写为测试床可验证形态）：
 
 测试床构成：kind 集群 + ingress-nginx（canary 权重注解的执行体）+ demo 应用 v1/v2 双 Deployment + 循环 curl 合成流量。测试床本身是部署脚手架（env 仓），不是产品代码。
 
-## 9. 已裁定项（原「未决项」，2026-10-08 拍板）
+## 9. 已裁定项（原「未决项」，拍板）
 
 | 原未决项 | 裁定 | 依据 |
 |---|---|---|
@@ -226,3 +226,4 @@ agentOps.versionMatrix               // 版本矩阵读 targets.agent_version（
 | 2026-10-08 | v1：初稿（Proposed，gate=远程真流量环境） | STATUS #8/#16/#2/#20 四项合并立项 |
 | 2026-10-08 | v2：按 software-story-design 模板补齐（设计目的/概念空间/时序图/ER 图/接口定义/一致性校验/变更历史）；§8 gate 改写为 kind 流量测试床；§9 两条未决项裁定拍板；文档迁入 shared/ | 用户确认本机 docker+kind 可建流量测试床，「环境不存在」前提失效；skill 缺口分析补全 |
 | 2026-10-08 | v3：§4 裁定不建 `task_run_artifacts` 新表（既有 `artifacts` 表已带 task_run_id，新表重复），`Artifacts` 字段降为协议预留；§6 assignee=me 留守至权限控制主线 | 落实阶段核对实际代码发现 §4 设计与 hub 既有上传链路（G-2/G-6/G-14）重复；assignee 依赖未钉的审批权限模型，不提前臆造 |
+| 2026-10-20 | v4：§4 `kind=image` location 由"必须 是 harbor 引用"改为"默认 harbor 引用、registry 可配置"（经 `SDP_JOB_IMAGE_*` / 部署 `--set image.imageAddr` 可指向其他兼容 OCI 的 registry），明确 harbor 仅默认实现、非强制依赖 | 用户裁定镜像仓库可替换，原"必须"措辞与可替换架构意图冲突 |

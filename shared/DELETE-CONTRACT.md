@@ -30,11 +30,11 @@
 | 成功 | `200` / `204` | 节点及其子树移除 |
 | 级联不满足 | `409` | `{ "reasons": [ "platform-eng / svc-a / comp-web：2 条流水线、1 个环境未清理", … ] }`（`reasons` 为逐层、含路径的未清理清单，层级从最深层向上收集） |
 
-### 1.3 实现态（2026-09-22 更新，source-grounded 核对 hub 代码）
+### 1.3 实现态（更新，source-grounded 核对 hub 代码）
 - `DELETE /services/:id` —— `internal/catalog/service/service.go` `ServiceService.Delete`：✅ **已落地**。经窄接口 `ActiveRunCounter.CountActiveByService`（下钻 component → pipeline → run）计数，有活跃 phase → `409 + {reasons}`；否则软删。**不**对"有下级 component"拒绝（§6.4 结论 2：级联软删）。
 - `DELETE /components/:id` —— `internal/component/service/component.go` `ComponentService.Delete`：✅ **已落地**。同上，经 `CountActiveByComponent` 计数；有活跃运行 → `409 + {reasons}`；否则软删（`Base.DeletedAt`）。
 - `DELETE /environments/:id` —— `internal/environment/service/environment.go` `EnvironmentService.Delete`：✅ **已落地（告警式，非拒绝）**。删前统计该环境的配置覆盖条数并以 `applog.Warnf` 记结构化告警日志（**非 `audit_log` 表**），随后硬删（§6.4 #8）；其配置历史行因 FK 已摘（B-14）而存活。
-- **部分落地（2026-09-23 更新）**：§6.4 的"域内级联软删"中 **service→component 段已实现并真集群验证**——`ServiceService.Delete` 在同一事务内级联软删下级 component、硬删 `component_role_bindings`（实测 DB 侧两表 `deleted_at` 时间戳一致、bindings 零残留）；缺陷登记与后续范围（org→service、制品/对象处理）见 `plans/STATUS.md` §16.3。
+- **部分落地（更新）**：§6.4 的"域内级联软删"中 **service→component 段已实现并真集群验证**——`ServiceService.Delete` 在同一事务内级联软删下级 component、硬删 `component_role_bindings`（实测 DB 侧两表 `deleted_at` 时间戳一致、bindings 零残留）；缺陷登记与后续范围（org→service、制品/对象处理）见 `plans/STATUS.md` §16.3。
 - **事务性保障（§4.2 步骤 5）已落地**：活跃运行判定经 `guard func(tx *gorm.DB) error` 回调收进级联事务内复检（`cascade.Deleter.DeleteComponentSubtree / DeleteServiceSubtree` 在触碰任何行之前执行 guard，报活跃 run 即整体回滚返回 409），并发插入无从绕过校验；service 层 fast-path 409 仅作 UX 前置（`plans/STATUS.md` §2 #12 已收口，移入 §1）。
 - 新 console（Vue3 重写版）当前**无服务树删除入口**：`ServiceTreeView.vue` 无删除流、`src/api/catalog.ts` 未封装树删除端点。后端契约（§1.3，`409+{reasons}`）已就绪，删除 UI 属 console 迭代项（`plans/STATUS.md` §2 #13）。
 
@@ -51,7 +51,7 @@
 | 成功 | `200` / `204` | 流水线定义移除（历史运行日志保留） |
 | 有进行中/待审批运行 | `409` | `{ "reasons": [ "1 条运行仍在进行（运行中），需先终止后再删除", … ] }` |
 
-### 2.3 实现态（2026-09-22 更新，source-grounded）
+### 2.3 实现态（更新，source-grounded）
 - ✅ **已落地且语义已对齐**：`internal/pipeline/service/pipeline.go` `PipelineService.Delete` 经 `runRepo.CountActiveByPipeline(id, activePhases)` 判定，`activePhases = {Pending, Running, WaitingApproval}`；有活跃 → `common.DomainErrorWithReasons(KindPipeline, http.StatusConflict, 1, …)`，历史运行（Succeeded/Failed/Cancelled）**放行**。
 - ✅ **409 body 已带 `reasons[]`**：`internal/common/errors.go` 的 `APIError` 增 `Reasons []string`（json `reasons,omitempty`）与构造器 `DomainErrorWithReasons`；`internal/common/response.go` 的 `Envelope` 同增字段，`AbortWithError` / `Fail` 两条序列化路径都已带上。
 - 单测 `internal/pipeline/service/pipeline_delete_test.go`：活跃 → 409 且**不碰 repo**；仅 42 条历史 → 放行，并断言**不再调用** `CountByPipeline`（钉住"任意历史即拒"的旧语义不会回归）。
@@ -67,7 +67,7 @@
 
 ## 4. 后端实现计划（hub，未落地 → 落地）
 
-> 本节为**实施计划**（source-grounded，2026-09-16 核对 `software-distribution-platform-hub`）。目的是把 §1/§2 契约从"前端模拟"落到 hub 真实端点。
+> 本节为**实施计划**（source-grounded，核对 `software-distribution-platform-hub`）。目的是把 §1/§2 契约从"前端模拟"落到 hub 真实端点。
 
 ### 4.1 现状差距
 
@@ -76,7 +76,7 @@
 | `DELETE /services/:id` | `internal/catalog/service/service.go` | ✅ `CountActiveByService` → 活跃运行 `409 + {reasons}`；否则软删 | 无"下属 Component 为空"级联校验（**有意不做**，§6.4 结论 2）；无事务 |
 | `DELETE /components/:id` | `internal/component/service/component.go` | ✅ `CountActiveByComponent` → 同上 | 同左；子资源（pipeline/env）的**级联软删**未做（本轮只做硬规则） |
 | `DELETE /pipelines/:id` | `internal/pipeline/service/pipeline.go` | ✅ `CountActiveByPipeline` → 仅活跃拒绝；409 带 `reasons` | **已对齐契约** |
-| `DELETE /orgs/:id` | `internal/org/service/org.go` | `orgRepo.Delete`（软删，`common.Base` 含 `gorm.DeletedAt`） | 管理员校验在**路由层**（`RegisterAdminRoutes` 平台管理组，2026-09-25 核实）；**不级联 service**（§6.4 裁定 1：org 删除 = 软禁用，物理清空走独立运维流） |
+| `DELETE /orgs/:id` | `internal/org/service/org.go` | `orgRepo.Delete`（软删，`common.Base` 含 `gorm.DeletedAt`） | 管理员校验在**路由层**（`RegisterAdminRoutes` 平台管理组，核实）；**不级联 service**（§6.4 裁定 1：org 删除 = 软禁用，物理清空走独立运维流） |
 | `DELETE /environments/:id` | `internal/environment/service/environment.go` | ✅ 删前统计配置覆盖 + `applog.Warnf` 结构化告警日志（非 audit_log 表）；**不拒绝** | 无"关联运行中发布"校验（hub 无该数据源，见 §6.3 ⑦） |
 
 **统一响应体缺口：已闭合** —— `APIError` 已增 `Reasons []string`（json `reasons,omitempty`）与构造器 `DomainErrorWithReasons`；`Envelope` 同步增字段，`AbortWithError` / `Fail` 两条序列化路径都带上。
@@ -100,7 +100,7 @@
 
 ### 4.4 关联 backlog
 - `hub/STORY-BACKLOG.md` 新增 **B-12：后端 DELETE 级联校验（N-15 / N-5）落地**（见该文 §1）；本轮另增 B-13~B-16（见 §6.7）。
-- **2026-09-22 状态**：B-12 / B-13 / B-14 / B-15 ✅ 已完成；B-16 🟡 部分（源头已堵）。本轮实现清单、验证 gate 与"明确不做"见 `plans/STATUS.md` §3。
+- **状态**：B-12 / B-13 / B-14 / B-15 ✅ 已完成；B-16 🟡 部分（源头已堵）。本轮实现清单、验证 gate 与"明确不做"见 `plans/STATUS.md` §3。
 
 ## 5. 关联文档
 - console 设计决策（前后端分工 + 钢人论证）：[`console/CONSOLE-UI-DESIGN.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) 附 C
@@ -112,7 +112,7 @@
 
 ---
 
-## 6. 附录：删除检查项梳理 + 逐项双向钢人（2026-09-16）
+## 6. 附录：删除检查项梳理 + 逐项双向钢人
 
 > 起因：用户问「"有未清理资源就拒绝" 现在检查哪些内容？删除是不是独立的、没有依赖、有没有可能造成残留？」
 > 本节 source-grounded（核对 `software-distribution-platform-hub` 的 `migrations/`、各 `models/`、各 `service/*.go`、`internal/common/{base,repository}.go`）。
@@ -124,7 +124,7 @@
 | --- | --- | --- | --- | --- |
 | Org | `DELETE /orgs/:id` · `org/handler/org.go` | **软删** | ✅ **平台级守卫**：删除路由挂平台组（`RequirePlatformPermission(user:manage)`，`cmd/hub/main.go` + `org/handler/org.go:RegisterAdminRoutes`），dev 裸挂；软删语义与恢复窗口不变（注释见 `org/service/org.go`） | 递归下级 service/component |
 | Service | `DELETE /services/:id` · `catalog/service/service.go` | **软删** | ✅ **已落地**：删除时统计下属 Component 并**同事务级联软删**（`component_role_bindings` 硬删）；经真集群验证（§6.4） | 同上（递归） |
-| Component | `DELETE /components/:id` · `component/service/component.go` | **软删** | ✅ **已落地**：注入活跃运行计数（Pending/Running/WaitingApproval）→ **409 + {reasons}**（`ERR.05409001`，与 service 层测试一致）；handler 曾把该 409 误报成 500，2026-09-24 修（`errors.As` 透传 `ae.Code`） | 同级流水线数 + 环境数 |
+| Component | `DELETE /components/:id` · `component/service/component.go` | **软删** | ✅ **已落地**：注入活跃运行计数（Pending/Running/WaitingApproval）→ **409 + {reasons}**（`ERR.05409001`，与 service 层测试一致）；handler 曾把该 409 误报成 500，修（`errors.As` 透传 `ae.Code`） | 同级流水线数 + 环境数 |
 | Environment | `environment/service/environment.go` | **硬删** | ✅ **已落地（不拒绝）**：删前统计配置覆盖数并记 `applog.Warnf` 结构化告警日志（非 audit_log 表；§6.4 #8）；生产环境二次确认为 console 侧交互 | 被 `RELEASES.env` 引用即拒 |
 | Pipeline | `DELETE /pipelines/:id` · `pipeline/service/pipeline.go:123` | **软删** | ✅ **有**：`CountActiveByPipeline>0` → `409`（仅**活跃** run 拒：Pending/Running/WaitingApproval；历史终态放行，§2.3） | `mockDeletePipeline` |
 | EnvironmentGroup | `environmentgroup/service/environment_group.go` | 硬删（表已建，B-13） | ✅ **有**：组内有环境 → `409 + {reasons}`（§6.4 #11） | 组内有环境即拒 |
@@ -203,7 +203,7 @@
 #### ⑧ Environment 删除 ← 有配置覆盖行？（现状 cascade 静默删）
 - **钢人**：环境删了，环境级覆盖无意义，级联删最省事（现状）。
 - **假钢人**：**静默删是危险的** —— 用户不知道该环境上有 N 条覆盖参数（可能含 `secret_ref`），删环境毫无提示；更糟的是 `component_config_history.environment_id` **无 cascade**，于是同一次删除**行为不一致**：历史表无该环境行 → 静默删成功；有 → **FK 500**。
-- **判定**：**须处理，但不是"拒绝"**：(a) 删除前统计并**告知**"将随之删除 N 条环境配置覆盖"并写审计；(b) **统一 cascade 语义** —— 建议把 `component_config_history.environment_id` 改为 `ON DELETE SET NULL`（历史保留、解除环境引用），消除 500。**残留：无**（历史有意保留）。→ **2026-09-16 细化决策见 §6.6-2（推荐"去 FK + 加快照列"，覆盖本条的 SET NULL 建议）。**
+- **判定**：**须处理，但不是"拒绝"**：(a) 删除前统计并**告知**"将随之删除 N 条环境配置覆盖"并写审计；(b) **统一 cascade 语义** —— 建议把 `component_config_history.environment_id` 改为 `ON DELETE SET NULL`（历史保留、解除环境引用），消除 500。**残留：无**（历史有意保留）。→ **细化决策见 §6.6-2（推荐"去 FK + 加快照列"，覆盖本条的 SET NULL 建议）。**
 
 #### ⑨ Pipeline 删除 ← 有 run 历史？（现状实现）
 - **钢人**：run 历史是审计资产；拒绝可强制形成归档意识。
@@ -250,9 +250,9 @@
 - **硬删表补齐 `deleted_at` 或改为随父级联**（消除孤儿可见的固定通道）；
 - **cascade 类删除（环境→配置）前置提示 + 审计**。
 
-### 6.5 已拍板决策（2026-09-16）
+### 6.5 已拍板决策
 
-> 用户于 2026-09-16 对原"需产品拍板"四项给出决定。原第 1 项直接拍板；第 2~4 项要求先做双向钢人（见 §6.6）后再定。
+> 用户于 对原"需产品拍板"四项给出决定。原第 1 项直接拍板；第 2~4 项要求先做双向钢人（见 §6.6）后再定。
 
 | # | 决策点 | 结论 | 依据 |
 | --- | --- | --- | --- |
@@ -261,7 +261,7 @@
 | 3 | `pipeline_stages` / `pipeline_task_templates` 补 `deleted_at`？ | **补** | 代码库显式声明了"恢复窗口"设计意图（`org/service/org.go` 注释），而 pipeline **必须**软删（run 历史），故子表补 `deleted_at` 是唯一自洽解。详见 §6.6-3 |
 | 4 | Artifact 孤儿对象对账排期 | **排期，顺序为"先堵源头 → 后做对账"，且对账仅报告不自动删** | 对象误删不可逆；"少删"优于"多删"。先做无猜测的源头治理。详见 §6.6-4 |
 
-**「残留」的定义（用户口径，2026-09-16 澄清）——只指平台侧遗留：**
+**「残留」的定义（用户口径，澄清）——只指平台侧遗留：**
 - ✅ 计入：**DB 行**（孤儿可见 / 静默丢失）、**对象存储对象**、**配置与审计数据**的遗留。
 - ❌ 不计入：**集群侧已部署资源**（helm release / k8s 资源）—— 它是平台**有意保留**的目标态投射结果（决策 1）。
 - 因此 §6.2 残留矩阵中"集群侧已部署资源"**移出残留定义**；§6.3 ④ 的"残留：有（不可观测）"收窄为"平台侧 environments 孤儿行（可控）"。
@@ -269,7 +269,7 @@
 ### 6.6 决策 2 / 3 / 4 的双向钢人论证
 
 > 每项四段：**钢人**（支持该做法的最强论证）→ **假钢人**（反对的最强论证）→ **分歧 + 关键变量** → **判断**。
-> source-grounded（2026-09-16 核对 `software-distribution-platform-hub`）。
+> source-grounded（核对 `software-distribution-platform-hub`）。
 
 ---
 
@@ -308,7 +308,7 @@
   ```
   （`environment_id` 列保留为"尽力引用"，仅去约束；写入时同时落 `environment_key`。backlog B-14）
 
-##### 6.6-2 落地记录（2026-09-22）
+##### 6.6-2 落地记录
 
 **已实现**，与本节的迁移草案一致（backlog B-14 ✅）：
 
@@ -353,7 +353,7 @@
 1. **stages/templates 是"定义（模板）"不是"历史"**，删流水线就是想它消失；留一个"软删的阶段"没有独立恢复场景。
 2. **硬删是更强的保证**：数据**不存在** → **没有任何查询能漏**；而 `deleted_at` 是"有标记但可能漏查"（raw SQL / 手写 join 不受 GORM 默认 scope 保护）。从"消除残留"角度，硬删优于软删。
 3. **硬删在 DB 层已就绪**：父 FK 本就是 `on delete cascade`，只需在服务层显式发硬删。
-4. **`pipeline_versions` 已是定义的专属承载者**（`0002:109`，`snapshot jsonb`，`pipeline_id → pipelines(id) on delete cascade`；快照组装 ✅ **已落地（2026-09-22，C-09/C-03）** —— `PipelineVersionService.Publish`（去重同 body）+ `models.BuildSnapshot`/`currentSnapshot`，非本轮范围的 TODO 已消）→ "恢复定义"有专属机制，结构软删是**冗余的第二套恢复机制**，两套易不一致。
+4. **`pipeline_versions` 已是定义的专属承载者**（`0002:109`，`snapshot jsonb`，`pipeline_id → pipelines(id) on delete cascade`；快照组装 ✅ **已落地（C-09/C-03）** —— `PipelineVersionService.Publish`（去重同 body）+ `models.BuildSnapshot`/`currentSnapshot`，非本轮范围的 TODO 已消）→ "恢复定义"有专属机制，结构软删是**冗余的第二套恢复机制**，两套易不一致。
 5. **软删扩散会增加漏过滤面**：每多一张软删表，就多一处"必须记得过滤"的地方。
 
 **真正的分歧**：stages / templates 是**独立生命周期的实体**，还是 **pipeline 聚合内的部件**？
@@ -371,7 +371,7 @@
 - **(b) 修 `pipelines` 唯一约束**：`unique (component_id, name)` → partial unique index `... where deleted_at is null`（或含 `deleted_at` 的复合唯一）。否则"删了流水线却建不回同名"会立刻变成新的 500。
 - **(c) 补齐模型映射**：`PipelineTaskTemplate` 补 `created_at` / `updated_at`（DDL 有列、模型未映射，API 读不到时间）。
 
-##### 6.6-3 落地记录（2026-09-16）
+##### 6.6-3 落地记录
 
 **(a)(b)(c) 三项已实现** —— 它们是§6.6-3 里"无论选哪个方案都必须做"的部分，不依赖任何产品拍板。
 
@@ -396,7 +396,7 @@
   `CREATE UNIQUE INDEX IF NOT EXISTS "idx_pipelines_component_name_active" ON "pipelines" ("component_id","name") WHERE deleted_at IS NULL`
 - **未跑**：`plans/e2e-smoke.sh`（本地 ingress/hub 未运行）、真实库上的 AutoMigrate 启动验证（Docker daemon 未运行）。落地到环境时需确认：若目标库里已有同名活流水线，建索引会报 duplicate key，须先改重名。
 
-##### 6.6-3 落地记录 · `deleted_at`（2026-09-22）
+##### 6.6-3 落地记录 · `deleted_at`
 
 原"三项里唯一需要产品答案"的项已按 §6.5 决策 3（= **补**）落地（backlog B-15 ✅）：
 
@@ -461,7 +461,7 @@
 | B-12 | 后端 DELETE 级联校验（N-15 / N-5）落地 | §4 |
 | B-13 | **环境分组落库**（`environment_groups` + `environments.group_id`） | `DATA-MODEL.md` §8 |
 | B-14 | `component_config_history` **去 FK + 加 `environment_key` 快照列** | §6.6-2 |
-| B-15 | stages/templates **补 `deleted_at`** + **封父存在性校验** + **修 `pipelines` 唯一约束** | §6.6-3（✅ 后两项 + 模型映射已于 2026-09-16 落地，只剩 `deleted_at`） |
+| B-15 | stages/templates **补 `deleted_at`** + **封父存在性校验** + **修 `pipelines` 唯一约束** | §6.6-3（✅ 后两项 + 模型映射已于 落地，只剩 `deleted_at`） |
 | B-16 | artifacts **源头治理**（级联 + 清理标记 + `expires_at` 生效）+ **孤儿对账（仅报告）** | §6.6-4 |
 
 > **B-12 ~ B-16 状态**：B-12 ✅、B-13 ✅（#11 以 `409 + {reasons}` 实现，见 §6.4）、B-14 ✅（落地记录见 §6.6-2）、B-15 ✅（`deleted_at` 落地记录见 §6.6-3）、**B-16 ✅（只剩域内级联软删一项，见 §6.4）** —— `ArtifactService.Delete` 失败时记结构化日志（不吞错）；`expires_at` 经保留期 GC 生效（`artifact/service/gc.go`，`ARTIFACT_GC_INTERVAL` 默认 `0` = 关闭，先删对象后删行）；`cleanup_state` 清理标记（`migrations/0016`：对象删失败 ⇒ 行**保留** + `pending_deletion` + 下一轮自动重试）；周期性孤儿对账（仅报告、默认关闭）。**仍未做**：Artifact 的域内级联软删（§6.4）——service→component 段已落地并经真集群验证（§1.3），剩余为 org→service 及制品/对象处理（当前权威登记见 `plans/STATUS.md` §2 #9）。

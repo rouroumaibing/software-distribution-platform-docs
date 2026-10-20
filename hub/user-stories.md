@@ -9,7 +9,7 @@
 
 状态标记:✅ 已落地 ｜ 🟡 部分 ｜ ⬜ 未落地(已登记) ｜ ⛔ 刻意不做/裁定不实现
 
-> **状态权威在 [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md)**(2026-09-24 三轮 source-grounded 复核后统一收口)。本文只维护故事与验收视角,每条标记已按实际代码刷新;变更状态先改 STATUS。
+> **状态权威在 [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md)**(三轮 source-grounded 复核后统一收口)。本文只维护故事与验收视角,每条标记已按实际代码刷新;变更状态先改 STATUS。
 
 ---
 
@@ -50,7 +50,7 @@
 - ✅ 作为研发工程师,我希望触发一次流水线运行,并查看整体执行状态和每个任务节点的状态,以便掌握发布进度
 - ✅ 作为研发工程师,我希望运行记录长期保存在数据库里(不是只存在 K8s CR 里),以便几个月后依然能查历史
 - ✅ 作为研发工程师,我希望实时看到任务执行的日志流,而不是等结束后才能看 —— `log_chunk` 落库(B-02)
-- ✅ 作为研发工程师,我希望能取消一个正在运行中的流水线 —— `POST /runs/:id/cancel`(注解→reconciler 落 `Cancelled`,终态 409;2026-09-24 真集群 E2E 过)
+- ✅ 作为研发工程师,我希望能取消一个正在运行中的流水线 —— `POST /runs/:id/cancel`(注解→reconciler 落 `Cancelled`,终态 409;真集群 E2E 过)
 
 ### Epic 8:审批
 - ✅ 作为审批人,我希望在审批阶段收到待办,批准或拒绝后流水线自动继续或终止
@@ -80,7 +80,7 @@
 ### Epic 2:DAG 调度
 - ✅ 作为系统,我希望 Reconcile 每次只推进"依赖已满足的一批任务",而不是一次性铺开整个 DAG,以便自然支持并行子任务和增量恢复
 - ✅ 作为系统,我希望任意一个任务失败后,整个 PipelineRun 停止调度新任务并标记失败,而不是继续跑无意义的后续步骤
-- ✅ 作为研发工程师,我希望某个任务失败后能选择"从失败节点重试"而不是重新跑整条流水线 —— `MessageRerunTask` + `internal/dispatch/rerun_handler.go`(含下游重置 + Failed→Running 复活;C-07 两端齐,2026-09-24 真集群 E2E 过)
+- ✅ 作为研发工程师,我希望某个任务失败后能选择"从失败节点重试"而不是重新跑整条流水线 —— `MessageRerunTask` + `internal/dispatch/rerun_handler.go`(含下游重置 + Failed→Running 复活;C-07 两端齐,真集群 E2E 过)
 
 ### Epic 3:任务执行
 - ✅ 作为系统,我希望脚本类任务的 Job 自动包含"检出代码 → 拉取上游产物 → 执行脚本"三段式初始化,以便脚本作者不用关心这些平台细节
@@ -142,7 +142,7 @@
 
 ## 里程碑(已完成形态)
 
-1. ~~**M1 · 打通单条流水线全链路**~~ ✅ 2026-09-24 真集群 E2E(`e2e-smoke.sh` PASS=15 FAIL=0):hub 触发 → runner Reconcile → Job 执行 → 状态回传 → console 可见
+1. ~~**M1 · 打通单条流水线全链路**~~ ✅ 真集群 E2E(`e2e-smoke.sh` PASS=15 FAIL=0):hub 触发 → runner Reconcile → Job 执行 → 状态回传 → console 可见
 2. ~~**M2 · Console 补上服务树导航 + 流水线可视化编排**~~ ✅ C-01/C-12 + 服务树懒加载
 3. ~~**M3 · 灰度发布**~~ ✅ `pkg/canary` + IngressCanary + 灰度监控面板(精确权重回传为增强项)
 4. 🟡 **M4 · 多集群规模化**:runner chart 已可安装;剩 Agent 版本兼容性检查(STATUS #2)、§9.9 一键接入(STATUS #1)、告警规则(STATUS #5)

@@ -1,12 +1,12 @@
 > **来源**：[CONSOLE-UI-DESIGN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) · 附 E 历史未完成项快照 + 附 G/H/I 实现落地记录（C-01/02、C-12、R-8）
-> **拆分说明**（2026-09-24）：原文 1686 行按章节拆分归档至 `console/features/`，**章节号与原文一致**，外部引用「CONSOLE-UI-DESIGN §N.x」仍有效（章节→文件映射见原文档 §0.4）。
+> **拆分说明**：原文 1686 行按章节拆分归档至 `console/features/`，**章节号与原文一致**，外部引用「CONSOLE-UI-DESIGN §N.x」仍有效（章节→文件映射见原文档 §0.4）。
 > **铁律**：本文件**只追加**——新增修订轮次追加到文件尾，禁止改写历史段落；状态判断一律以 [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 为准，本文件只维护行为规格。
 
 ---
 
-## 附 E：历史未完成项快照（2026-09-09，仅供追溯）
+## 附 E：历史未完成项快照（仅供追溯）
 
-> ⚠️ **本表是历史快照，不是当前状态**。G1–G6 已于 2026-09-06 全部落地。**当前进度请查** [`hub/STORY-BACKLOG.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md)（另有 [`plans/STATUS.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 跟踪当前状态与未完成项）。
+> ⚠️ **本表是历史快照，不是当前状态**。G1–G6 已于 全部落地。**当前进度请查** [`hub/STORY-BACKLOG.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md)（另有 [`plans/STATUS.md`](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 跟踪当前状态与未完成项）。
 
 | ID | 项 | 影响 | 快照时状态 | 后续 |
 | --- | --- | --- | --- | --- |
@@ -17,7 +17,7 @@
 
 ---
 
-## 附 G：实现落地记录 —— C-01 ⌘K 全局搜索 + C-02 暗色主题（2026-09-22）
+## 附 G：实现落地记录 —— C-01 ⌘K 全局搜索 + C-02 暗色主题
 
 > 本附是**实现态**记录（设计规格在 §5.3 / §7.1 / §7.5 / §9.1 / §9.2 / §9.5 / §9.6，**正文未改动**）。
 > 目的：让"文档写了、代码里有没有"一眼可查；并把本轮**刻意不做**与**新发现的偏差**记账，
@@ -74,7 +74,7 @@
 
 ---
 
-## 附 H：实现落地记录 —— C-12 流水线全生命周期（2026-09-22）
+## 附 H：实现落地记录 —— C-12 流水线全生命周期
 
 > 承接 **附 G**（C-01 / C-02）。本附记 §6.1 · §7.4 · 附 D 的落地状态、**显式差异**与顺带修掉的真实缺陷。
 
@@ -98,7 +98,7 @@
    - 派生信号改用**真实落库**的两组配置：`releaseConfig`（chart / manifest 有值）→ 发布任务；`approvalConfig.allowedApprovers` 有值 → 人工审核阶段。
    - 优先级 Release > Approval（与原型 `deriveType` 一致）；两组都填时**显式提示**"按发布任务处理，审批人将被忽略"，不静默丢弃。
    - 顺带收紧：原型用 JS 真值判断，**纯空白串会被误判为已填**（派生出 Release 却没有任何发布配置）；改为 trim 后判空。
-2. **`executionMode` 的调度行为 ✅ 已落地（2026-09-23，C-06）。** 字段存得下、读得回、UI 可切换；hub `buildSpec` 为 serial 阶段按模板顺序派生「紧邻前驱」`DependsOn` 链，runner `serialBlocked()` 据此严格先后 —— serial 阶段里的子任务**不再并发启动**。（本条写于该调度落地前，已更正。）
+2. **`executionMode` 的调度行为 ✅ 已落地（C-06）。** 字段存得下、读得回、UI 可切换；hub `buildSpec` 为 serial 阶段按模板顺序派生「紧邻前驱」`DependsOn` 链，runner `serialBlocked()` 据此严格先后 —— serial 阶段里的子任务**不再并发启动**。（本条写于该调度落地前，已更正。）
 
 ### H.3 「保存」的实际语义（附 D.4 落差的落地形态）
 
@@ -130,7 +130,7 @@ pnpm test:pipeline          ✅ 41/41   ← 本轮新增
 3. **删除了过时的客户端闸门**：列表按 `kind !== 'build'` 拦截编辑，而 `kind` 是自由分类（hub 侧无校验），与可编排范围无关（N-7）。
 4. **类名静默失效隐患**（本轮在写组件**之前**发现并对齐，未进入产物）：列表徽章原计划自造 `st-*` 类，而 `tokens.css` 已有全局 `.b-succ/.b-run/.b-fail/.b-pend/.b-warn`（§8.1 六态）—— 自造类未定义会让状态色**静默丢失**（与 C-02 那轮 `PermissionsTab` 引用未定义令牌同源）。已改为复用全局类。
 
-## 附 I：实现落地记录 —— R-8 服务树规模化（2026-09-22）
+## 附 I：实现落地记录 —— R-8 服务树规模化
 
 > 承接 **附 G**（C-01 / C-02）与 **附 H**（C-12）。本附记 §4.1(R-8) · §5.2 · §5.3 与附 A N-8/N-9 的落地状态、
 > **显式差异**、**顺带修掉的真实缺陷**，以及本轮**仍未做**的部分。
@@ -206,16 +206,16 @@ hub 侧新增 `internal/search/repository/search_dryrun_test.go`：**DB-free 查
 
 ---
 
-## 附 J：修正记账（2026-10-08 追加，不改写上文历史行）
+## 附 J：修正记账（追加，不改写上文历史行）
 
 - **`pnpm test:pipeline` 断言数口径：41 → 63。** 附 H.4 / 附 I.4 所记「41/41」是 C-12 / R-8 落地当时的口径；实测现行 `scripts/pipeline-editor-smoke.mjs` 为 **63/63**（断言随后续迭代扩充）。按「只追加」铁律，上文「41/41」历史行保留不改写，当前口径以本条为准。
 
 ---
 
-## 附 K：实现落地记录 —— 原型缺口补齐轮（2026-10-08，仅原型；console 实现未动）
+## 附 K：实现落地记录 —— 原型缺口补齐轮（仅原型；console 实现未动）
 
 > 承接附 G/H/I/J。本轮性质与前几轮**相反**：不是"文档写了、代码补齐"，而是**原型先补齐、实现后跟进**——
-> 2026-10-08 的缺口分析（运行域「看得到状态、执行不了动作」+ 平台管理占位）当轮在 `CONSOLE-UI-prototype.html`（2562 → 约 2860 行）落齐。
+> 的缺口分析（运行域「看得到状态、执行不了动作」+ 平台管理占位）当轮在 `CONSOLE-UI-prototype.html`（2562 → 约 2860 行）落齐。
 > 设计规格增量见 ui-05 **§7.13**；新增依赖见 ui-09 **附 A 补充**（N-16/N-17）。
 
 ### K.1 落地清单（原型侧，全部带 handler，无装饰控件）
@@ -260,11 +260,11 @@ DOM stub 无头冒烟（vm.runInThisContext）     ✅
 1. **403/404 错误页与全局路由守卫错误态**（§7.9「权限不足错误态」原型仍未展开）；
 2. **日志实时流指示**（WS/SSE 连接态）、下载日志、按 task 折叠分组（现平铺合并展示）；
 3. 运行详情的阶段级时序视图（现仅列表化时间线）；
-4. ~~console 实现侧跟进~~ → 已由 **附 L** 落地（2026-10-08 下午）。
+4. ~~console 实现侧跟进~~ → 已由 **附 L** 落地（下午）。
 
 ---
 
-## 附 L：console 实现侧落地记录（2026-10-08，接 K.4 第 4 条）
+## 附 L：console 实现侧落地记录（接 K.4 第 4 条）
 
 按 §7.13 把原型缺口落到 console 仓真实代码。**落码前先逐项核对了仓内现状**（Explore 全仓映射），结论与 K.2 的预期不同，如实记录：
 
@@ -308,14 +308,14 @@ pnpm test（7 个 smoke 脚本）                   ✅ 全过
 3. **通知已读语义 / assignee=me**（N-2/N-17 后端侧）。
 4. 403/404 错误页（K.4 第 1 条延续）。
 
-### L.5 2026-10-08 追加轮：L.4 四项中三项收口（状态以 STATUS.md 为准）
+### L.5 追加轮：L.4 四项中三项收口（状态以 STATUS.md 为准）
 
 1. **审计日志 ✅**：hub `GET /audit-logs` 落地（`AuditLogRepository.Query` 六维 filter，挂 platformGroup 过平台级 `user:manage`，DryRun 查询形状回归 + 路由测试）；console `api/audit.ts` + `/admin/audit` section（`PlatformAdminView.vue`）。
 2. **通知已读 ✅（console 半边）**：`MainLayout.vue` localStorage 按 token sub 存 `lastReadAt`（60s skew 容忍），打开面板推进游标，修「角标恒亮」；hub 半边设计入 `runner-reflux-spec.md` §6。
 3. **403/404 ✅**：`ErrorView.vue`（双语义）+ router catch-all + `api/http.ts` 响应拦截器（403 → `/forbidden`，`skip403Redirect` 豁免 + 防循环；400/404/409 仍就地呈现）。
 4. **灰度步宽**：协议设计定稿（同 spec §3），实现 gate 真流量环境，未落码。
 
-### L.6 2026-10-08 P2 落实轮（灰度步宽收口 + P2 五项全落码）
+### L.6 P2 落实轮（灰度步宽收口 + P2 五项全落码）
 
 1. **灰度步宽 ✅（runner→hub 回流协议落码）**：`ReleaseDetailView.vue` 轮询 `releaseApi.listByRun`（GET /releases?pipelineRunId=），活跃行 `currentWeight` 优先、无快照退回任务完成数近似 `approxPercent`；协议见 `runner-reflux-spec.md` §3（v3：§4 Artifacts 降为协议预留）。
 2. **日志面板三件 ✅**：`RunMonitorView.vue` —— 下载（Blob 本地导出 `runId-task.log`）、折叠（>8000 字符默认只渲染尾部 + 展开全部）、流式指示（`● 实时` live-dot，运行活跃时显示）。
@@ -324,14 +324,14 @@ pnpm test（7 个 smoke 脚本）                   ✅ 全过
 5. **运行中心组件/触发人筛选 ✅**：hub `FindAll` 5 参（+`triggeredBy`，`GET /runs?triggeredBy=`）；console `RunCenterView` 工具栏组件下拉（`index.components` 供选）+ 触发人输入框；URL 契约 `RunCenterQuery` 增 `componentId`/`triggeredBy`（runcenter-url-smoke 21 → **22** 断言，新增深链往返用例）。
 6. **门禁**：`pnpm build`（vue-tsc + vite）✅；`pnpm test` 7 smoke 全绿（runcenter 22/22、theme-and-search 26/26（+nav 直达断言）、service-tree 63/63（类型标签断言修正为「服务端三型 + nav 仅客户端」）、run-control 22/22）。
 
-### M.1 2026-10-12 原型路线图落地轮（仅原型，console 实现仓未动）
+### M.1 原型路线图落地轮（仅原型，console 实现仓未动）
 
 1. **范围**：`CONSOLE-UI-prototype.html` 内联 JS，路线图（`plans/CONSOLE-UI-PROTOTYPE-ROADMAP-2026-10-12.md`，已删，权威入 ui-12 R5）P0–P2 全部收口：4.2 版本一等对象 + 指定版本回滚（append 新 release 记录；目标版本来源 = 新契约 `GET /components/:id/versions`，N-33）、4.1 版本 diff + 变更说明、4.4 三处高危操作原因必填（配置保存 / 审批 / 凭据轮转）、4.3 触发器 Tab 切换 + cron 校验预览 + 写回 `TRIGGERS`、5.1 审批策略卡 + 时间线、5.2 订阅规则（事件 × 渠道）。
 2. **顺带**：原型 5 项代码小修（TDZ / 审计分类 / 角标 / PAT 安全 / 配置版本 v5）+ 文件名实际落盘改名（文档 §0.2 #11 早已按新名记录，磁盘迟至今日对齐）+ 版本矩阵语义勘误（`GET /package-versions` = 平台自身三版本，组件级矩阵改引 N-33）。
 3. **门禁**：`node --check` 抽 `<script>` SYNTAX_OK；纯函数冒烟（cronParse/cronNext/diffLines）**20/20**——抓出并修复 `*/15` 步长 cron 解析 bug；内容复核 51 个新标记在盘 / 3 个旧模式清零。
 4. **B 类登记**：`GET /components/:id/versions`（hub 侧待立项，N-33）；环境覆盖档执行路径维持 R4 结论（本文不重复登记）。
 
-### M.2 2026-10-12（晚）原型运行时缺陷修复轮（仅原型，console 实现仓未动）
+### M.2（晚）原型运行时缺陷修复轮（仅原型，console 实现仓未动）
 
 1. **背景**：用户以 jsdom 对 M.1 产物做入口级回归（19 个入口），报 2 处崩溃；本轮修复后复验，又由自建 jsdom harness 抓出 1 处功能级死链（用户方法只查报错，漏「不报错但不工作」类）。
 2. **修复 ①（用户报告）启动 TDZ**：`renderNotif()` 在模块加载期被立即调用，而 `NOTIF_READ` 等 const 声明在其后 → `Cannot access 'NOTIF_READ' before initialization` → 脚本中断 → 后续数据块全部未初始化（服务树 / 接入管理 / 通知中心 / PAT / 触发器 / 订阅规则全崩）。**未采用用户建议的单点前移**，改用结构性方案：**全部 17 个 const 数据块统一前移至 boot IIFE 之前**（新增「数据块统一区」，区块注释随行），整类 TDZ 根治——`setTimeout(render,0)` 只挡「启动时同步 render」，挡不住加载期其他调用。

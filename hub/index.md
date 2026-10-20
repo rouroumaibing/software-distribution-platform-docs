@@ -2,7 +2,7 @@
 
 > 控制面实现（Go + Gin + GORM + PG）。代码仓：<https://github.com/rouroumaibing/software-distribution-platform-hub>
 > 状态判断一律以 [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 为准。
-> **归属原则（2026-09-24 修订，范围优先）**：横跨 ≥2 组件的文档整体归 `../shared/`——本域曾收纳的 DATA-MODEL / API-REFERENCE / DELETE-CONTRACT / ACCOUNT-PERMISSION-MODEL / KEYCLOAK / ADR-dispatch-durable-queue 六份横切文档已迁入 shared/（不拆分、不设主从）。
+> **归属原则（修订，范围优先）**：横跨 ≥2 组件的文档整体归 `../shared/`——本域曾收纳的 DATA-MODEL / API-REFERENCE / DELETE-CONTRACT / ACCOUNT-PERMISSION-MODEL / KEYCLOAK / ADR-dispatch-durable-queue 六份横切文档已迁入 shared/（不拆分、不设主从）。
 
 ## hub 消费的跨组件文档（住户在 shared/）
 

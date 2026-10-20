@@ -90,7 +90,8 @@ software-distribution-platform-docs/
 └── plans/
     ├── STATUS.md                   # **平台状态总览（唯一状态权威 + 全局总索引）**：已完成清单（§1）/ 未完成清单（§2）/ 刻意不做（§3）
     ├── FIDELITY-KIND-VS-CLOUD-2026-10-09.md # 保真度差异清单 kind vs 云上（活跃：云上验收 gate 未跑，#10 依赖）
-    └── HARBOR-REGISTRY-INTEGRATION-2026-09-28.md # Harbor 对接盘点（①③收口；② Build→Harbor 留守 open）
+    ├── HARBOR-REGISTRY-INTEGRATION-2026-09-28.md # Harbor 默认对接盘点（registry 可配置、harbor 非强制；①③收口；② Build→Harbor 留守 open）
+    └── HARBOR-DEPENDENCY-GAP-2026-10-20.md # 镜像仓库可替换 Gap 跟踪（设计已定；实现改点 A–D 待落实）
 ```
 
 > **E2E 验收脚本**（e2e-smoke.sh / e2e-cancel-rerun.sh / e2e-canary.sh）：真源在 env 仓 `prod-deplyment/`（云上节点直跑，认证/取数脚本内动态完成），本仓不留副本。
@@ -119,16 +120,17 @@ software-distribution-platform-docs/
 | [runner/index.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/index.md) | runner  | **runner 域入口索引** | —— |
 | [runner/STORY-runner-implementation.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md) | runner  | runner 实现 Story     | §4.2.3 kubebuilder 安装、§4.3 任务处理/DAG 推进、§4.4 授权边界                 |
 | [shared/BUILD-TOOLCHAIN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/BUILD-TOOLCHAIN.md) | 跨组件 | **三组件镜像构建工具链版本要求**（containerd 路线） | §1 版本要求（nerdctl >= 2.x / buildkit >= v0.34）/ §2 build.sh 行为要点 / §3 buildkitd mirrors / §4 落地位置 |
-| [shared/README.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/README.md) | 跨组件 | **跨组件文档目录**（判据：横跨 ≥2 组件整体迁入，不拆分、不设主从；住户 14（2026-10-19 复核，含 BUILD-TOOLCHAIN 新增住户）） | 住户清单 / 维护纪律 / 不入住说明 |
+| [shared/README.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/README.md) | 跨组件 | **跨组件文档目录**（判据：横跨 ≥2 组件整体迁入，不拆分、不设主从；住户 14（复核，含 BUILD-TOOLCHAIN 新增住户）） | 住户清单 / 维护纪律 / 不入住说明 |
 | [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) | 跨组件 | **平台状态总览（唯一状态权威）**：已完成清单 / 未完成清单 / 刻意不做 | §1 已完成（hub/runner/console/跨组件验证）、§2 未完成（10 项，含性质与前置）、§3 刻意不做 |
 | [plans/FIDELITY-KIND-VS-CLOUD-2026-10-09.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/FIDELITY-KIND-VS-CLOUD-2026-10-09.md) | 跨组件 | 保真度差异清单 kind vs 云上（活跃：云上验收 gate 未跑，#10 依赖） | §1 差异项 / §2 收敛结论 |
-| [plans/HARBOR-REGISTRY-INTEGRATION-2026-09-28.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/HARBOR-REGISTRY-INTEGRATION-2026-09-28.md) | 跨组件 | Harbor 对接盘点（①③收口；② Build→Harbor 留守 open） | §1 代码/镜像 / §2 留守 |
+| [plans/HARBOR-REGISTRY-INTEGRATION-2026-09-28.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/HARBOR-REGISTRY-INTEGRATION-2026-09-28.md) | 跨组件 | Harbor 默认对接盘点（registry 可配置、harbor 非强制；①③收口；② Build→Harbor 留守 open） | §结论 默认 registry 全切 / §剩余 open 项 / §变更历史 |
+| [plans/HARBOR-DEPENDENCY-GAP-2026-10-20.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/HARBOR-DEPENDENCY-GAP-2026-10-20.md) | 跨组件 | 镜像仓库可替换 Gap 跟踪（设计已定；实现改点 A–D 待落实，E 已完成） | §1 Gap 定义 / §3 分层盘点 / §5 改点清单 / §7 gate 总表 |
 | [shared/ADR-0001-runner-first-connect-enrollment.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-0001-runner-first-connect-enrollment.md) | 跨组件 | Runner 首连自注册 ADR（跨 hub+runner 线协议） | —— |
 | [shared/E2E-THREE-PIPELINES-2026-09-26.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/E2E-THREE-PIPELINES-2026-09-26.md) | 跨组件 | 三流水线整体 E2E 权威记录（场景/流程/缺口 G-1~G-14） | §9 缺口修复 |
 
 ## 5. 跨组件对齐（重点：跨组件概念必须保持一致）
 
-整体目标（北极星）/ 授权模型（G7）/ 执行模型与进展回收 / 三层边界与部署形态 / 术语消歧 / 目标接入六块对齐内容的**完整视图 → [shared/CROSS-COMPONENT-ALIGNMENT.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/CROSS-COMPONENT-ALIGNMENT.md)**（2026-09-24 自本节迁入——横跨三组件、无单一变更权威，是 shared/ 首位住户）。
+整体目标（北极星）/ 授权模型（G7）/ 执行模型与进展回收 / 三层边界与部署形态 / 术语消歧 / 目标接入六块对齐内容的**完整视图 → [shared/CROSS-COMPONENT-ALIGNMENT.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/CROSS-COMPONENT-ALIGNMENT.md)**（自本节迁入——横跨三组件、无单一变更权威，是 shared/ 首位住户）。
 
 同步纪律：修改任一对齐概念时，**先改各域权威文档，再同步 shared 对齐视图**；两边不一致时以各域权威文档为准。
 
@@ -138,7 +140,7 @@ software-distribution-platform-docs/
 - 文档内部互引统一使用 GitHub blob 链接（代码库级别），不使用相对路径或绝对文件路径。
 - `hub/assets/` 下的架构图源（9 png + 1 pptx）为**独立图源（待接入，可选）**，当前未被任何 md 引用；具体文件名见 hub/assets/ 目录。后续接入到 DATA-MODEL / hub STORY 等文档时再补引用，避免静默腐烂。
 
-### 6.1 文档形态论（2026-09-24 定稿）
+### 6.1 文档形态论（定稿）
 
 > 计划文档天然腐烂（描述"应该是什么"，会过时）；设计文档描述既成事实，不腐烂。目录结构按此分拣，**放错目录一眼可见**。
 
@@ -150,13 +152,13 @@ software-distribution-platform-docs/
 | 裸待办 | 仅 STATUS §2 | 无设计内容的待办条目 | **禁止**为待办建文档；开工且产生设计内容后才建 plans/ 文件 |
 | 真全局文档 | `shared/` | 横跨 ≥2 组件的跨组件文档（整体迁入，不拆分、不设主从） | 判据与住户清单见 `shared/README.md`；当前住户 14（详见 shared/README，已含 ADR-0001、E2E-THREE-PIPELINES、BUILD-TOOLCHAIN） |
 
-### 6.2 归属原则：范围优先（2026-09-24 第二次修订）
+### 6.2 归属原则：范围优先（第二次修订）
 
 - **判据 = 治理范围**：内容横跨 ≥2 个组件（hub / console / runner / 身份基础设施）的文档，**整体迁入 `shared/`**，不以"变更权威在谁"为由留在某组件目录下，也**不做契约/实现拆分、不设主从**。
 - 归属判据 = **治理范围**（旧判据「无单一变更权威才入住」不适用）：权限 / 删除 / 数据模型等虽由 hub 代码先行变更，但治理的是三端行为，按范围判据归 shared/。裁定全程与代价确认（跨目录耦合被明确接受、判据终局）见 [shared/README.md §判据裁定记录](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/README.md)。
 - 各概念的**行为权威仍在实现它的代码**（权限强制点在 hub、schema SSOT=AutoMigrate 等）——文档内的「权威实现在 hub」标注是事实陈述，不是归属主张。
 - 每域 `index.md` 是该域唯一入口页：收录本域自有文档 + 本域消费的 shared 住户交叉引用。域内文档增删必须同步 index。
 
-### 6.3 大文件拆分先例（CONSOLE-UI-DESIGN，2026-09-24）
+### 6.3 大文件拆分先例（CONSOLE-UI-DESIGN）
 
 1686 行单文件超出可解析上限 → 按章节拆入 `console/features/`（`ui-01`~`ui-11`），原文件保留为**索引 stub**（§0 修订史 + §0.4 章节→文件映射）。拆分三原则：**章节号全局唯一且不变**（外部文本引用 `§N.x` 仍有效）、**外部引用落点不变**（stub 文件名保留）、**只追加铁律随文件下放**。后续大文件（>1000 行）达阈值时照此办理。

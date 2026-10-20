@@ -36,7 +36,7 @@
 > 该 secret 改由 `local-kind-dev/deploy/gateway-sdp.yaml` 的 Gateway **https listener** 引用（console chart 已无 ingress 模板）。
 > 改名易让人误判其无用 —— **勿删**。
 
-> **hub 独立路由（2026-09-28 网关拆分）**：hub 对外 API 经 hub chart 的 `templates/httproute.yaml`
+> **hub 独立路由（网关拆分）**：hub 对外 API 经 hub chart 的 `templates/httproute.yaml`
 > （PathPrefix `/api` → hub svc:8080，ClusterIP 明文后端），与 console 的 `PathPrefix /` 拆为**两条独立路由**；
 > 浏览器 `https://www.sdpworkflow.com:8443/api/v1/...` 由网关直连 hub，不经 console nginx 反代。
 > hub service 为 `ClusterIP`（不对外直连）；`local-kind-dev/deploy/kind.yaml` 无 hub 直连的 `30080` 映射。
@@ -119,7 +119,7 @@ TLS 段（#6.5）：用 `cert-build/certs/` 下的产物显式 `kubectl apply` �
   TLS 实际引用点是 `local-kind-dev/deploy/gateway-sdp.yaml:certificateRefs`。
 - console `README.md` 的 TLS 引用不含 `templates/ingress.yaml` 与 `ingress.tlsSecretName`（console chart 无 ingress 模板、values 无此 key）。
 
-### 2026-09-28 网关拆分 + 证书命名对齐 + 脚本迁移（本轮 consolidation）
+### 网关拆分 + 证书命名对齐 + 脚本迁移（本轮 consolidation）
 - **网关拆分**：console nginx 只服务前端 SPA，不反代 `/api`；hub 拥有独立 `HTTPRoute`（`hub` chart `templates/httproute.yaml`，`PathPrefix /api` → hub svc:8080，ClusterIP 明文后端），与 console 各为一条独立路由。hub `service.yaml` 为 `ClusterIP`（不对外直连）；`local-kind-dev/deploy/kind.yaml` 无 hub 直连 `30080` 映射；`local-kind-dev/deploy/gateway-sdp.yaml` / `local-kind-dev/deploy/kind.yaml` 注释与上述一致。前端 `baseUrl` 维持相对 `/api/v1`（经网关直连 hub，无需重建镜像）。
 - **脚本迁移**：根目录 5 个本地联调脚本（`deploy-` / `teardown-` / `undeploy-` / `stop-` / `clean-local.sh`）迁至 `software-distribution-platform-env/local-kind-dev/`；本地测试基础设施 `deploy/`（gateway-sdp.yaml / kind.yaml / envoy tgz）一并迁入 `local-kind-dev/deploy/`（随 env 仓跟踪，envoy `.tgz` 已 gitignore）。脚本 `ROOT` 重定义为上两级、互调用改 `$SCRIPT_DIR`；`undeploy-local.sh` 命名空间 `sdp-system`→`sdp-workflow` 修正。
 

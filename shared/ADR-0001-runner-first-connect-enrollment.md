@@ -1,6 +1,6 @@
 # ADR-0001：Runner 首连自注册（bootstrap-on-first-connect）
 
-- 状态：已采纳（2026-10-07）
+- 状态：已采纳
 - 关联：`DATA-MODEL.md` §9.9（enroll-token 引导，**消费端留守 queued**，§16.5 裁定）、`API-REFERENCE.md`「网关鉴权偏弱」⚠️ 标注、`deploy-local.sh` §9 target 注册
 - 落码：hub `internal/gateway/gateway.go` ServeWS + `internal/target/service/target.go` Enroll；runner `pkg/connector/client.go` WithEnrollInfo + `cmd/runner/main.go` TARGET_VENDOR/TARGET_REGION
 
@@ -48,10 +48,10 @@
 - 不绕 Keycloak、不触 ResourceTarget RBAC：注册走机器凭据通道，与既有 ServeWS 鉴权同层；target 行的后续管理（改/删/配环境）仍走用户 RBAC。
 - 唯一性：`targets.name` 有 uniqueIndex，并发创建输家重读赢家，无重复行。
 
-## 4. 验证记录（2026-10-07，kind 集群实跑）
+## 4. 验证记录（kind 集群实跑）
 
 - **go gates**：hub / runner 两仓 `go build` + `go vet` + `go test` 全绿，`gofmt -l` 零输出。
-- **部署**：hub/runner 镜像经 build.sh 重建（enrollment 改动）→ node_push 入 harbor → helm upgrade（REVISION hub=3 / runner=2）。⚠️ 同 tag + `IfNotPresent` 命中节点旧镜像缓存，须 `ctr images remove` 节点缓存 ref 后 `rollout restart` 强制重拉（复刻 2026-09-26 已知坑）。
+- **部署**：hub/runner 镜像经 build.sh 重建（enrollment 改动）→ node_push 入 harbor → helm upgrade（REVISION hub=3 / runner=2）。⚠️ 同 tag + `IfNotPresent` 命中节点旧镜像缓存，须 `ctr images remove` 节点缓存 ref 后 `rollout restart` 强制重拉（复刻 已知坑）。
 - **E2E 实证**：
   - hub 日志：`gateway: target local-dev auto-enrolled (vendor=kind region=local)` → `gateway: target local-dev connected`；
   - DB：`targets` 表 `local-dev | kind | local | online`（自注册落库，心跳在线）；

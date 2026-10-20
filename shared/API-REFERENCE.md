@@ -1,6 +1,6 @@
 # Hub REST API 参考与 old→new 接口对账
 
-> **权威端点清单（单一真相源）**。本文档由直接读取 `software-distribution-platform-hub/cmd/hub/main.go` 与各 `internal/*/handler/*.go` 的 `RegisterRoutes` 得出（非推测，核对日期 2026-09-22）。
+> **权威端点清单（单一真相源）**。本文档由直接读取 `software-distribution-platform-hub/cmd/hub/main.go` 与各 `internal/*/handler/*.go` 的 `RegisterRoutes` 得出（非推测，核对日期）。
 > Swagger（`hub/docs/docs.go` / `swagger.json` / `swagger.yaml`）是同一清单的自动生成产物，不在此重复。
 > 关联文档：`shared/DATA-MODEL.md`（数据模型）、`shared/DELETE-CONTRACT.md`（删除契约）、`console/CONSOLE-UI-DESIGN.md`（前端 IA / 运行中心）、`runner/STORY-runner-implementation.md`（WS 线协议）。
 
@@ -38,37 +38,37 @@
 - `GET /orgs/:id/service-tree`（读取该 org 的服务树）
 - `POST /services` · `GET /services/:id` · `PUT /services/:id` · `DELETE /services/:id`
 - `GET /service-trees/:id/services`（列出某服务树下的 service）
-- `GET /orgs/:id/services`（**2026-09-22 新增**；按**组织**列其直接子层 service，一次把组织 id 解析成 1:1 服务树再查询 —— console 服务树页懒加载只有组织 id，该端点替它省掉 `GET /orgs/:id/service-tree` 那一跳。组织不存在时错误向上抛，**不静默返回空列表**）
+- `GET /orgs/:id/services`（**新增**；按**组织**列其直接子层 service，一次把组织 id 解析成 1:1 服务树再查询 —— console 服务树页懒加载只有组织 id，该端点替它省掉 `GET /orgs/:id/service-tree` 那一跳。组织不存在时错误向上抛，**不静默返回空列表**）
 - ⚠️ **无全局 `GET /services` 列表端点**（列表只走 `GET /service-trees/:id/services` 或服务树）；与 console 经树导航的使用方式一致。
 
 ### 接入管理（目标注册表）
 - `POST /targets` · `GET /targets`（列表）· `GET /targets/:id` · `PUT /targets/:id` · `DELETE /targets/:id`
 - **语义见 `DATA-MODEL.md` §9**：`targets` 一行 = 一个部署在被管集群内、出站回连 hub 的 Runner Agent（**目标侧**注册表，**不含任何凭据列**）；`environments.target_id` 为 **NOT NULL** 引用本表，故"注册目标"是建环境的前置步骤。
 - ⚠️ **删被环境引用的目标**现为 **FK 报错（500）**，非 `409`（`DELETE-CONTRACT.md` §6 已登记、未修）。
-- ⚠️ **网关鉴权偏弱**：`GATEWAY_TOKEN` 为**全局共享** bearer token，目标身份由 Runner 自报 `X-Target-Name` 决定，**无 per-target enroll token**（`DATA-MODEL.md` §9.1）。**2026-10-07 增量**（ADR-0001）：持有共享 token 且拨号携带 `X-Target-Vendor`/`X-Target-Region` 的 Runner 可对未注册 target **首连自动建行**（GitLab-Runner 式安装即注册，`TargetService.Enroll`）；缺头仍 404。注册自动化已解决，per-target 身份仍未实现（§9.9 消费端留守 queued）。
-- **单机版**（平台与目标同集群）下那一行目标指向的集群**恰好也是平台自身所在集群**，仍是**一行**、不新增对象；**但 runner 的组件身份不因此改变**（2026-09-21 二次裁定，`DATA-MODEL.md` §9.3）。Gen0 安装时 console / hub / runner **同批装齐**，故**平台自身集群那一行在接入管理里天然呈"已装 runner"**、动作是**升级**（`DATA-MODEL.md` §9.3 / §9.9）。
-- **runner 的安装 / 升级是 ① 能力层动作**（2026-09-21 二次裁定）：**逻辑全部落在 hub**，console 只调用 API；runner 是接入侧代理组件、**不属"平台自身"**，故不触发 §5.4 的自升级禁令。目标版本取自**版本矩阵 CM**（`DATA-MODEL.md` §9.9 / §9.10）。
-- ⚠️ **本表只覆盖 `agent` 通道的目标（2026-09-21 裁决）**：`kubeconfig` 直连的集群与 `ssh` 直连的非容器主机**不落 `targets`**，需扩表承载（`DATA-MODEL.md` §9.7）。因此"平台能纳管的目标 = `GET /targets` 的结果"这一推论**已不成立**。
+- ⚠️ **网关鉴权偏弱**：`GATEWAY_TOKEN` 为**全局共享** bearer token，目标身份由 Runner 自报 `X-Target-Name` 决定，**无 per-target enroll token**（`DATA-MODEL.md` §9.1）。**增量**（ADR-0001）：持有共享 token 且拨号携带 `X-Target-Vendor`/`X-Target-Region` 的 Runner 可对未注册 target **首连自动建行**（GitLab-Runner 式安装即注册，`TargetService.Enroll`）；缺头仍 404。注册自动化已解决，per-target 身份仍未实现（§9.9 消费端留守 queued）。
+- **单机版**（平台与目标同集群）下那一行目标指向的集群**恰好也是平台自身所在集群**，仍是**一行**、不新增对象；**但 runner 的组件身份不因此改变**（二次裁定，`DATA-MODEL.md` §9.3）。Gen0 安装时 console / hub / runner **同批装齐**，故**平台自身集群那一行在接入管理里天然呈"已装 runner"**、动作是**升级**（`DATA-MODEL.md` §9.3 / §9.9）。
+- **runner 的安装 / 升级是 ① 能力层动作**（二次裁定）：**逻辑全部落在 hub**，console 只调用 API；runner 是接入侧代理组件、**不属"平台自身"**，故不触发 §5.4 的自升级禁令。目标版本取自**版本矩阵 CM**（`DATA-MODEL.md` §9.9 / §9.10）。
+- ⚠️ **本表只覆盖 `agent` 通道的目标（裁决）**：`kubeconfig` 直连的集群与 `ssh` 直连的非容器主机**不落 `targets`**，需扩表承载（`DATA-MODEL.md` §9.7）。因此"平台能纳管的目标 = `GET /targets` 的结果"这一推论**已不成立**。
 
 **凭据 / 直连 / 接入编排端点（✅ 均已在 hub 落地，通道归属见 `DATA-MODEL.md` §9.5）**
 
-> 下表原为「待补端点（尚未实现）」，2026-09-23 逐项按实际代码审计后**已全部收口**——「状态」列即逐项证据。曾误记为「未实现」的 `parse-kubeconfig`、`/targets` CRUD、`/environments/:id/test` 实为**既有实现**（文档 stale）；`package-versions`、`stage-progress`、`exec` 为本轮新开发。`install`/`upgrade` 的 **runner 侧执行器**属 §9.9 接入引导特性，经钢人裁定**留守 queued**（§16.5）。
+> 下表原为「待补端点（尚未实现）」，逐项按实际代码审计后**已全部收口**——「状态」列即逐项证据。曾误记为「未实现」的 `parse-kubeconfig`、`/targets` CRUD、`/environments/:id/test` 实为**既有实现**（文档 stale）；`package-versions`、`stage-progress`、`exec` 为本轮新开发。`install`/`upgrade` 的 **runner 侧执行器**属 §9.9 接入引导特性，经钢人裁定**留守 queued**（§16.5）。
 
 | 端点 | 用途 | 通道 | 状态 |
 | --- | --- | --- | --- |
-| `POST /credentials` · `GET /credentials` · `GET /credentials/:id` · `PUT /credentials/:id` · `DELETE /credentials/:id` | 凭据托管：**AES-GCM 信封加密落库**（`internal/credentials/codec`，写加密/读解密，明文兼容 legacy），API 只回显 `xxxSet: bool`、永不返回明文；`10_credentials.sql` 幂等种子。`❌只存 ref 方案因项目无外部 secret store 未采用`（见 §16.4 Task #7 裁定） | `kubeconfig` / `ssh` | ✅ 已落地（2026-09-23，Task #7） |
-| `POST /credentials/parse-kubeconfig` | 解析粘贴的 kubeconfig（请求体 `{"raw": "<kubeconfig 原文>"}`），回显 `server` / `caPresent` / `insecureSkipTLS` / `authMethod` / `currentContext` / `defaultNamespace` + `errors`（**拒绝 `exec:` 插件**、缺认证材料；结构化解析，hub 无 client-go）。真集群 E2E 通过（2026-09-23：合法 kubeconfig `errors:[]`，exec 插件被拒）。曾修 `reHasClusters` 缺 `(?m)` 多行标志致 `clusters:` 段误报缺失（回归测试 `credential_test.go`） | `kubeconfig` | ✅ 已落地（`internal/credentials/handler` `ParseKubeconfig`，路由 `POST /credentials/parse-kubeconfig`） |
+| `POST /credentials` · `GET /credentials` · `GET /credentials/:id` · `PUT /credentials/:id` · `DELETE /credentials/:id` | 凭据托管：**AES-GCM 信封加密落库**（`internal/credentials/codec`，写加密/读解密，明文兼容 legacy），API 只回显 `xxxSet: bool`、永不返回明文；`10_credentials.sql` 幂等种子。`❌只存 ref 方案因项目无外部 secret store 未采用`（见 §16.4 Task #7 裁定） | `kubeconfig` / `ssh` | ✅ 已落地（Task #7） |
+| `POST /credentials/parse-kubeconfig` | 解析粘贴的 kubeconfig（请求体 `{"raw": "<kubeconfig 原文>"}`），回显 `server` / `caPresent` / `insecureSkipTLS` / `authMethod` / `currentContext` / `defaultNamespace` + `errors`（**拒绝 `exec:` 插件**、缺认证材料；结构化解析，hub 无 client-go）。真集群 E2E 通过（：合法 kubeconfig `errors:[]`，exec 插件被拒）。曾修 `reHasClusters` 缺 `(?m)` 多行标志致 `clusters:` 段误报缺失（回归测试 `credential_test.go`） | `kubeconfig` | ✅ 已落地（`internal/credentials/handler` `ParseKubeconfig`，路由 `POST /credentials/parse-kubeconfig`） |
 | `POST /environments/:id/test` | 连接测试（**逐项 checklist**，见 console §7.12.5）：配置完整性项结构校验，连通性项如实返回 `skip`（hub 无出站能力），结果持久化到 env | 全部 | ✅ 已落地（`EnvironmentService.Test` / `TestReport`） |
-| `POST /environments/:id/exec` | 直连执行命令 / 脚本：hub 校验请求 → 落 `agent_ops` 台账（`exec`，queued）→ 返回 **202 + 操作句柄** → **创建即经 gateway WS 派发**给目标 runner（离线留守 queued，重连时排水补派）。runner 在目标集群创建 Job（`sh -c`）执行：agent access 用 in-cluster 凭据、kubeconfig access 由 hub 解密 `KubeCredRef` 凭据随 payload 下发（信任边界 = 已认证 gateway WS，runner 是直连执行器）。日志以 `agent_op_log` 差量回传、状态以 `agent_op_status` 回传（非法流转 hub 拒 409，终态不可变）；输出落 `agent_op_logs` 供 SSE 重放。执行镜像 `SDP_AGENT_EXEC_IMAGE`（默认 `busybox:1.36`）、超时 `SDP_AGENT_EXEC_TIMEOUT`（默认 10m） | `agent` / `kubeconfig` | ✅ 全链路已落地（2026-09-23 第十八批 §16.5；`EnvironmentService.Exec` + hub 派发器 + runner `internal/agentops`） |
+| `POST /environments/:id/exec` | 直连执行命令 / 脚本：hub 校验请求 → 落 `agent_ops` 台账（`exec`，queued）→ 返回 **202 + 操作句柄** → **创建即经 gateway WS 派发**给目标 runner（离线留守 queued，重连时排水补派）。runner 在目标集群创建 Job（`sh -c`）执行：agent access 用 in-cluster 凭据、kubeconfig access 由 hub 解密 `KubeCredRef` 凭据随 payload 下发（信任边界 = 已认证 gateway WS，runner 是直连执行器）。日志以 `agent_op_log` 差量回传、状态以 `agent_op_status` 回传（非法流转 hub 拒 409，终态不可变）；输出落 `agent_op_logs` 供 SSE 重放。执行镜像 `SDP_AGENT_EXEC_IMAGE`（默认 `busybox:1.36`）、超时 `SDP_AGENT_EXEC_TIMEOUT`（默认 10m） | `agent` / `kubeconfig` | ✅ 全链路已落地（第十八批 §16.5；`EnvironmentService.Exec` + hub 派发器 + runner `internal/agentops`） |
 | `GET /agent-ops/:id` | 轮询单个操作台账行（id / opType / status / detail / message）——SSE 不可用场景的兜底 | 全部 | ✅ 已落地（`target/handler/agent_op.go`，§16.5） |
 | `GET /targets/:id/agent-ops` | 目标的操作台账分页列表（新→旧），console 操作历史数据源 | 全部 | ✅ 已落地（§16.5） |
 | `GET /agent-ops/:id/stream` | **SSE 流式**：连入即先推当前状态 + 重放持久化日志（seq 序），再增量推 `status` / `log` 事件，终态发 `end` 关流；15s 心跳注释帧防中间层断流。多实例 hub 下订阅为进程内态，回退到轮询端点 + 重放（§16.5 假设记录在案） | 全部 | ✅ 已落地（§16.5） |
 | `POST /targets` · `GET /targets` · `GET /targets/:id` · `PUT /targets/:id` · `DELETE /targets/:id` | 非容器 / 直连目标注册表（`DATA-MODEL.md` §9.7），经 `common.RegisterCRUD` 通用注册，另含 `POST /targets/:id/enroll-token`（§9.9 一次性引导令牌） | `kubeconfig` / `ssh` | ✅ 已落地（`common.RegisterCRUD[models.Target]`） |
-| `GET /package-versions`（暂名） | **版本矩阵**：返回 `console` / `hub` / `runner` 三个版本号（读 `package-versions` ConfigMap 注入的 `PACKAGE_VERSION_*` env，只读；三值由**人工维护**在 `build/hub/versions.yaml`，遵循 SemVer 2.0.0；dev 无 CM 时回 `dev`） | 全部 | ✅ 已落地（`internal/packageversion`，2026-09-23） |
+| `GET /package-versions`（暂名） | **版本矩阵**：返回 `console` / `hub` / `runner` 三个版本号（读 `package-versions` ConfigMap 注入的 `PACKAGE_VERSION_*` env，只读；三值由**人工维护**在 `build/hub/versions.yaml`，遵循 SemVer 2.0.0；dev 无 CM 时回 `dev`） | 全部 | ✅ 已落地（`internal/packageversion`） |
 | `POST /targets/:id/install`（暂名） | **接入编排**：校验目标存在 → 落 `agent_ops` 台账（`install`，版本取版本矩阵 env）→ 返回 **202 + 操作句柄**，**留守 queued**。⚠️ **不派发**：目标尚无 runner 连接，执行器依赖 §9.9 bootstrap 流程（enroll-token 凭据流转），属独立接入引导特性（§16.5 裁定） | `kubeconfig`（bootstrap） | ✅ hub 层已落地；执行器属引导特性（§16.5） |
 | `POST /targets/:id/upgrade`（暂名） | **接入编排**：同 install（`upgrade`）；前置 = `agent_version` 上报 + per-target 身份（`DATA-MODEL.md` §9.9）。**留守 queued 不派发**：自升级需图表来源（版本矩阵只有版本号）+ runner 自身 SA 的 helm 权限，两个产品级前置未决（§16.5 裁定） | `kubeconfig`（bootstrap） | ✅ hub 层已落地；执行器待产品级前置（§16.5） |
 
-> ⚠️ **安全提示**：`kubeconfig` / `ssh` 通道下 **hub 持有"进入目标"的凭据**。风险是**按条线性叠加**、**不是"爆炸半径反转"**（2026-09-21 二次裁定）：凭据与条目**一一对应**、**无共享万能凭据**，单条失守**不横向扩散**；前提是只存 ref、且 ref 指向 hub 信任域之外（`DATA-MODEL.md` §9.5-2 / §9.7）。安全边界重述见 [README.md §5.6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)。
+> ⚠️ **安全提示**：`kubeconfig` / `ssh` 通道下 **hub 持有"进入目标"的凭据**。风险是**按条线性叠加**、**不是"爆炸半径反转"**（二次裁定）：凭据与条目**一一对应**、**无共享万能凭据**，单条失守**不横向扩散**；前提是只存 ref、且 ref 指向 hub 信任域之外（`DATA-MODEL.md` §9.5-2 / §9.7）。安全边界重述见 [README.md §5.6](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)。
 
 ### 组件 / 配置 / 环境 / 制品 / 权限绑定
 - `POST /components` · `GET /components/:id` · `PUT /components/:id` · `DELETE /components/:id`
@@ -102,7 +102,7 @@
 - `GET /pipelines/:id/versions/:version/diff?against=<基准版号>`（以 `against` 为基准看 `:version` 改了什么；**方向性**：`:version` 更旧时 added/removed 互换。两者都必填）
 - `POST /pipelines/:id/versions/:version/rollback`（把**结构**回填到该版，并**记为新的一版**）
 
-### 组件可部署版本（4.2 指定版本回滚目标来源，2026-10-12 登记 · 待立项）
+### 组件可部署版本（4.2 指定版本回滚目标来源，登记 · 待立项）
 - `GET /components/:id/versions`（暂名）：组件全部可部署版本（新→旧；版本号 / 构建时间 / 大小 / SHA256）——console 灰度控制台「回滚到指定版本」的目标来源。与上方 `GET /pipelines/:id/versions` **同构不同体**：前者制品/部署版本，后者结构快照。契约见 [ui-09 附 A · N-33](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-09-backend-deps-api-contract.md)
 
 **语义（与实现一致，勿按其它工具的心智模型推断）**
@@ -141,9 +141,9 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 | `stages[]` | array | 阶段列表，**按 `sequence` 顺序执行** |
 | `stages[].name` | string | 阶段名（→ `pipeline_stages.name`） |
 | `stages[].sequence` | int | 执行顺序，从 1 递增 |
-| `stages[].executionMode` | string | `parallel` \| `serial`：阶段内子任务并行 / 串行（→ `pipeline_stages.execution_mode`）。✅ **已落地（2026-09-22）**：字段可写可读（迁移 `migrations/0010`）；✅ **serial 调度行为已落地（2026-09-23，backlog C-06 闭口）**：`buildSpec` 为 serial 阶段内任务派生「同阶段紧邻前驱」依赖链（手写 `DependsOn` 完全优先），parallel 语义不变 |
+| `stages[].executionMode` | string | `parallel` \| `serial`：阶段内子任务并行 / 串行（→ `pipeline_stages.execution_mode`）。✅ **已落地**：字段可写可读（迁移 `migrations/0010`）；✅ **serial 调度行为已落地（backlog C-06 闭口）**：`buildSpec` 为 serial 阶段内任务派生「同阶段紧邻前驱」依赖链（手写 `DependsOn` 完全优先），parallel 语义不变 |
 | `stages[].tasks[]` | array | 子任务，**按 `displayOrder` 排序** |
-| `stages[].tasks[].type` | string | `Build` \| `Release` \| `Approval`（→ `pipeline_task_templates.type`，runner 派发码）。**派生字段，产品层不暴露为「类型」**：有 `release_config`/`rollout_config` → `Release`（产品语言＝「发布任务」，即阶段任务在做什么），有 `approval_config` → `Approval`（产品语言＝「人工审核阶段」），否则 `Build`（产品语言＝「构建/运行任务」）。三者均为对阶段任务的描述，并非用户可选的类别；`type` 仅作请求体序列化产物进入 hub 供 runner 派发（2026-09-17 用户拍板：UI 不出现 Build/Release/Approval 原词、改用产品语言描述；不引入模版目录） |
+| `stages[].tasks[].type` | string | `Build` \| `Release` \| `Approval`（→ `pipeline_task_templates.type`，runner 派发码）。**派生字段，产品层不暴露为「类型」**：有 `release_config`/`rollout_config` → `Release`（产品语言＝「发布任务」，即阶段任务在做什么），有 `approval_config` → `Approval`（产品语言＝「人工审核阶段」），否则 `Build`（产品语言＝「构建/运行任务」）。三者均为对阶段任务的描述，并非用户可选的类别；`type` 仅作请求体序列化产物进入 hub 供 runner 派发（用户拍板：UI 不出现 Build/Release/Approval 原词、改用产品语言描述；不引入模版目录） |
 | `stages[].tasks[].name` | string | 子任务展示名（→ `pipeline_task_templates.name`） |
 | `stages[].tasks[].displayOrder` | int | 阶段内顺序，从 1 递增 |
 | `stages[].tasks[].image` | string? | Build 类型：镜像（如 `localhost:5000/toolchain/go:1.22`） |
@@ -185,13 +185,13 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 ### 运行 / 审批 / 回滚
 - `POST /pipelines/:id/runs`（触发）· `GET /pipelines/:id/runs`
 - `GET /runs` · `GET /runs/:id` · `GET /runs/:id/tasks` · `GET /runs/:id/progress` · `GET /runs/:id/stage-progress` · `GET /runs/:id/log` · `GET /runs/:id/tasks/:name/log`
-  - `GET /runs` 支持过滤：`phase`（精确匹配）、`componentId`、`createdAfter`（RFC3339，**2026-09-25 新增**，#15 运行时间窗；非法格式 → 400）。
+  - `GET /runs` 支持过滤：`phase`（精确匹配）、`componentId`、`createdAfter`（RFC3339，**新增**，#15 运行时间窗；非法格式 → 400）。
 - `POST /runs/:id/redispatch` · `POST /runs/:id/tasks/:name/rollout`
 - `POST /runs/:id/cancel`（**取消运行**：Runner 把 PipelineRun 置 `Cancelled` 并清掉在途 TaskRun；仅 `Pending`/`Running`/`WaitingApproval` 可取消，终态 → `409` + `{reasons}` `ERR.09409001`）
 - `POST /runs/:id/tasks/:name/rerun`（**单任务重跑**：只重跑该任务及其下游，不重投整个 run。**会把 `Failed` 的运行拉回 `Running`** —— 否则 reconciler 对终态短路，重跑静默无效；`Cancelled` 的运行不会复活）
 - `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision`（审批）
 
-### 通知中心（2026-09-25 新增，#7）
+### 通知中心（新增，#7）
 - `GET /notifications`（登录态；`internal/notification`）：聚合待审批运行为通知流（`pipeline_approvals.status='Pending'`，oldest first，上限 100、默认 50）。响应 `{ data: [ { id, type:"approval", title, body, link, createdAt } ], total }`；`link` 是 SPA 内路由（`/pipelines/:pid/runs/:runId`）。后续新增通知来源（如集群离线告警）只扩 `notification.Service.List`，前端契约不变。
 
 **触发期策略校验（B-11，均在 `buildSpec` 之后、创建 Run 之前）**
@@ -199,7 +199,7 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 - **审批超时**：等待审批超过该任务审批配置的时限后自动判超时；作业 `APPROVAL_TIMEOUT_INTERVAL`（默认 `60s`）扫描。**顺序是先派发 runner 拒绝、再记 hub 侧关闭**（状态 `Cancelled`），目标离线则**顺延**重试，不写坏状态。运维主体记为 `system:approval-timeout`。
 
 ### 跨资源搜索
-- `GET /search?q=&type=&limit=`（**2026-09-22 新增**；console 服务树页搜索与 ⌘K 浮层的导航数据源）
+- `GET /search?q=&type=&limit=`（**新增**；console 服务树页搜索与 ⌘K 浮层的导航数据源）
   - `q`：关键词，**与 `name` 和 `key` 做 `ILIKE` 匹配**（大小写不敏感；`%` / `_` / `\` 会被转义，不会当成通配符）。`q` 为空返回 `[]` —— **不做全表扫描**（"打开浮层即可浏览"是客户端行为）。
   - `type`：逗号分隔，取值 `service` / `component` / `pipeline`；缺省或为空 = 三类全搜。未知取值**返回 400**（`ERR.01400002`），不静默忽略。
   - `limit`：**每类各取**条数，默认 20、上限 50（超过返回 400，`ERR.01400003`）。故响应最多 `len(type) × limit` 条。
@@ -211,7 +211,7 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 
 ### 发布
 - `POST /releases` · `GET /releases`（列表）· `GET /releases/:id` · `PUT /releases/:id` · `DELETE /releases/:id`
-- `GET /releases` 过滤（**2026-09-25 新增**，#14）：`pipelineRunId`（原有）+ `scope=global`（仅取值，其他 → 400）+ `state`（发布视图语义键：`running`→Progressing / `paused`→Paused / `succeeded`→Healthy；非法键 → 400）。`state` 与 Rollout 任务级 Phase 的映射收敛在 `internal/run/service/release.go` 的 `mapReleaseState`。
+- `GET /releases` 过滤（**新增**，#14）：`pipelineRunId`（原有）+ `scope=global`（仅取值，其他 → 400）+ `state`（发布视图语义键：`running`→Progressing / `paused`→Paused / `succeeded`→Healthy；非法键 → 400）。`state` 与 Rollout 任务级 Phase 的映射收敛在 `internal/run/service/release.go` 的 `mapReleaseState`。
 
 ### 制品
 - `GET /components/:id/artifacts` · `GET /artifacts/:id` · `GET /artifacts/:id/download` · `POST /artifacts/upload-url` · `POST /artifacts/storage-url` · `DELETE /artifacts/:id`
@@ -226,10 +226,10 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 ### 权限（主体 / 角色 / 组件角色 / 绑定）
 - `GET /roles` · `GET /component-roles` · `GET /component-roles/:id`
 - ⚠️ **没有用户/主体目录端点，也没有 `GET /users`**（D3）：hub 不存用户表（规范 §2.2），主体一律以 Keycloak `sub` 字符串出现。控制台的授权表单为「**下拉已绑定主体 + 手输 `sub`**」（决策 §3.5 第 4 条 (b′)）；要看全量用户请到 Keycloak 控制台。`GET /roles` 保留但**不可用于新建绑定**（无 `role_id` 列）。
-- ✅ **组件级自定义角色**（2026-09-22 本轮，B-11）：`POST /component-roles` · `PUT /component-roles/:id` · `DELETE /component-roles/:id`。**读**挂裸 `api`（console 角色选择器要用）；**写**与平台级角色同组，开启鉴权后要求平台级 `user:manage`（角色是权限来源，能改角色 = 能给自己加权限）。`orgId` 为空 = 内置（不可改不可删）、非空 = 组织自定义；唯一性 `(org_id, name)`（内置角色名全局唯一）；`orgId` 不可通过 PUT 迁移；`actions` 必须非空；仍被绑定引用时删 `409 + {reasons}`。详见 §2「组件级角色」。
+- ✅ **组件级自定义角色**（本轮，B-11）：`POST /component-roles` · `PUT /component-roles/:id` · `DELETE /component-roles/:id`。**读**挂裸 `api`（console 角色选择器要用）；**写**与平台级角色同组，开启鉴权后要求平台级 `user:manage`（角色是权限来源，能改角色 = 能给自己加权限）。`orgId` 为空 = 内置（不可改不可删）、非空 = 组织自定义；唯一性 `(org_id, name)`（内置角色名全局唯一）；`orgId` 不可通过 PUT 迁移；`actions` 必须非空；仍被绑定引用时删 `409 + {reasons}`。详见 §2「组件级角色」。
 - `POST/GET/DELETE /components/:id/role-bindings`（见上）
-- ✅ **平台级**（2026-09-22 注册，C-10 已落地）：`GET/POST /platform-roles` · `GET/PUT/DELETE /platform-roles/:id` · `GET/POST /platform-role-bindings` · `DELETE /platform-role-bindings/:id`（`GET` 支持 `?orgId=` / `?subjectType=` / `?subjectId=`，且**一并返回已过期的绑定**以便清理）。内置角色（`isSystem`）不可改不可删；角色仍被绑定引用时删除返回 `409 + {reasons}`；主体按 §5.3 校验（`user` = token `sub`；`group` = claim **逐字**、带前导斜杠；`/org:` 为保留前缀，不得作绑定主体）。
-- ✅ **权限模型四表 / 审计 / 申请流**（2026-09-22 第八批，`ACCOUNT-PERMISSION-MODEL.md` §3 / §5.1③ / §6 / §7.2）：
+- ✅ **平台级**（注册，C-10 已落地）：`GET/POST /platform-roles` · `GET/PUT/DELETE /platform-roles/:id` · `GET/POST /platform-role-bindings` · `DELETE /platform-role-bindings/:id`（`GET` 支持 `?orgId=` / `?subjectType=` / `?subjectId=`，且**一并返回已过期的绑定**以便清理）。内置角色（`isSystem`）不可改不可删；角色仍被绑定引用时删除返回 `409 + {reasons}`；主体按 §5.3 校验（`user` = token `sub`；`group` = claim **逐字**、带前导斜杠；`/org:` 为保留前缀，不得作绑定主体）。
+- ✅ **权限模型四表 / 审计 / 申请流**（第八批，`ACCOUNT-PERMISSION-MODEL.md` §3 / §5.1③ / §6 / §7.2）：
   - `GET/PUT/DELETE /resource-ownership`（`?resourceType=&resourceId=`）—— 资源归属**权威源**（§3）；`PUT` 体 `{resourceType, resourceId, ownerOrg, allowedOrgs[]}`。
   - `GET/PUT /role-api-mappings`（`?roleKind=platform|component&roleId=`）· `DELETE /role-api-mappings/:id` —— 「角色 → 接口」映射的**可审阅注册表**（§5.1③）；`PUT` 体 `{roleKind, roleId, actions[]}`（整体替换），启动时 `SyncFromRoles` 与角色定义对账。
   - `POST/GET /permission-requests`（`?status=`）· `POST /permission-requests/:id/approve` · `POST /permission-requests/:id/reject` —— 权限申请审批流（§7.2）；**通过时写绑定并带 `expires_at`**。
@@ -240,7 +240,7 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 ### Runner 网关
 - `GET {GATEWAY_PATH}`（默认 `/gateway/ws`）WebSocket；非 REST。
 
-### /api/v1 之外的非业务端点（main.go，2026-10-07 补录）
+### /api/v1 之外的非业务端点（main.go，补录）
 - `GET /metrics`（**始终挂载**，main.go:444）：B-09 hub 侧指标面，经 `metrics.GinMiddleware()` 采集每请求计数与延迟，`metrics.GinHandler()` 暴露。
 - `ANY /debug/pprof/*any`（**默认关闭**，`cfg.PprofEnabled` 开启时挂载，main.go:569）：转接 `http.DefaultServeMux` 上的 pprof 处理器。
 - `GET /swagger/*any`（**默认关闭**，`cfg.SwaggerEnabled` 开启时挂载，main.go:574）：Swagger UI（`/swagger/index.html`），建议仅在 dev/staging 开启。
@@ -270,7 +270,7 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 ## 4. 删除端点契约（与 `DELETE-CONTRACT.md` 对齐）
 
 - **服务树节点删除**：现 hub **无 `DELETE /api/servicetree/:id`**（该路由不存在）。树节点 ∈ {Service, Component}，对应 `DELETE /services/:id`（service 节点，级联其 components）、`DELETE /components/:id`（叶子）。级联校验 + `409 + {reasons}` 模式不变（详见 `shared/DELETE-CONTRACT.md`）。
-- **流水线删除**：`DELETE /pipelines/:id`（✅ 级联校验**已落地**，2026-10-07 核对 `pipeline/service/pipeline.go`：删除前 `CountActiveByPipeline` 统计活跃 run（`Pending`/`Running`/`WaitingApproval`），存在则 `409 + {reasons}`；**历史终态 run（Succeeded/Failed/Cancelled）不阻止删除**。同契约）。
+- **流水线删除**：`DELETE /pipelines/:id`（✅ 级联校验**已落地**，核对 `pipeline/service/pipeline.go`：删除前 `CountActiveByPipeline` 统计活跃 run（`Pending`/`Running`/`WaitingApproval`），存在则 `409 + {reasons}`；**历史终态 run（Succeeded/Failed/Cancelled）不阻止删除**。同契约）。
 
 ---
 
@@ -284,9 +284,9 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 
 ## 6. 已知缺口（backlog，非文档错误）
 
-- `GET /runs/:id/stage-progress`：`DATA-MODEL.md` §6.5 已确认新增、✅ **已落地（2026-09-23）**——derive-on-read 按 `StageName` 聚合（含定义漂移合成行），供 console §7.6 顶部阶段卡；既有 `GET /runs/:id/progress` 保持不变。
-- ~~`platform_roles` / `platform_role_bindings` HTTP 端点：待补（P1-1）~~ ✅ **已补（2026-09-22，C-10）** —— 见本节上一行。
-- 全局 `/pipelines` 与 `/releases` 列表：**已实现**（2026-09-15 之后的代码新增）。`console/CONSOLE-UI-DESIGN.md` 附 A N-3 的"无全局 /pipelines、无 /releases 端点"与代码不符，N-3 已同步更正；两处冲突时以本文为准。
+- `GET /runs/:id/stage-progress`：`DATA-MODEL.md` §6.5 已确认新增、✅ **已落地**——derive-on-read 按 `StageName` 聚合（含定义漂移合成行），供 console §7.6 顶部阶段卡；既有 `GET /runs/:id/progress` 保持不变。
+- ~~`platform_roles` / `platform_role_bindings` HTTP 端点：待补（P1-1）~~ ✅ **已补（C-10）** —— 见本节上一行。
+- 全局 `/pipelines` 与 `/releases` 列表：**已实现**（之后的代码新增）。`console/CONSOLE-UI-DESIGN.md` 附 A N-3 的"无全局 /pipelines、无 /releases 端点"与代码不符，N-3 已同步更正；两处冲突时以本文为准。
 
 ---
 
@@ -310,5 +310,5 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 - **方向正确**：现 hub 的资源导向 + 父作用域 + 复数统一 CRUD，是支撑"多租户 + 组件为锚 + 运行 / 发布编排"目标的更优形态，且与 console 导航、RBAC action 一一对应；old 的扁平 / 分组 URL 与散落 auth 不适合该目标。
 - **两类真实代价须记录而非忽视**：
   - **能力回退（需决策）**：product / change 是否需要在现模型补回（产品分组、变更历史视图）——若 console 路线图需要，应在 hub 加 `products` 或在 component 加 `changelog` 视图；当前当作"有意精简"，但须在 console 文档显式说明不再提供产品 / 变更一级入口，避免旧前端 / 用户预期落空。
-  - ~~**短期缺口（须补）**：`DELETE-CONTRACT.md` 的 service/component 级联 409 校验、`platform_roles` 端点、`stage-progress`~~ —— 前两项**已于 2026-09-22 落地**（级联 409 见 `DELETE-CONTRACT.md` §6.6；`platform_roles` 端点见本文件「权限」小节 / `STORY-BACKLOG.md` C-10）。
+  - ~~**短期缺口（须补）**：`DELETE-CONTRACT.md` 的 service/component 级联 409 校验、`platform_roles` 端点、`stage-progress`~~ —— 前两项**已于 落地**（级联 409 见 `DELETE-CONTRACT.md` §6.6；`platform_roles` 端点见本文件「权限」小节 / `STORY-BACKLOG.md` C-10）。
 - **文档漂移（本次修正）**：附 A N-3 / 校准 S2 称"无全局 /pipelines、无 /releases 端点"已不成立（代码已加）；`DATA-MODEL.md` 的 `POST /runs`、`DELETE-CONTRACT.md` 的 `DELETE /api/servicetree/:id`、`STORY-hub-implementation.md` 的 `POST /api/pipelines/:pipelineId/runs` 均为旧形态，本次一并修正（见各文档变更记录）。

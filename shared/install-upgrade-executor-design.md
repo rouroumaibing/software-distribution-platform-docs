@@ -1,4 +1,4 @@
-# INSTALL-UPGRADE-EXECUTOR-DESIGN：agent_ops install/upgrade 执行器设计（2026-10-08）
+# INSTALL-UPGRADE-EXECUTOR-DESIGN：agent_ops install/upgrade 执行器设计
 
 - **状态**：Design（设计定稿，本轮落实）
 - **住户依据**：横跨 runner（upgrade 执行体）+ hub（派发/对账）+ console（台账展示）三端，按「范围优先」判据入住 `shared/`
@@ -7,7 +7,7 @@
 
 ## 1. 设计目的
 
-当前系统（三仓 main，2026-10-08）的 agent_ops 台账已受理三种 op（`AgentOpExec/Install/Upgrade`，hub `internal/target/models/agent_op.go:12-15`），但派发器对 install/upgrade **明确跳过**（`cmd/hub/agentop_dispatcher.go:45-48`，等 §9.9 bootstrap），runner 侧 handler 拒绝非 exec 类型（`internal/agentops/handler.go:154-155`）。后果：install/upgrade 台账行**永远 queued**，console「已受理待执行」语义成为死态；平台自升级审批流（#3）即使审批通过也无执行体。本设计目的是**为 install/upgrade 补上执行半程**，使台账从「受理」走到「终态」。
+当前系统（三仓 main）的 agent_ops 台账已受理三种 op（`AgentOpExec/Install/Upgrade`，hub `internal/target/models/agent_op.go:12-15`），但派发器对 install/upgrade **明确跳过**（`cmd/hub/agentop_dispatcher.go:45-48`，等 §9.9 bootstrap），runner 侧 handler 拒绝非 exec 类型（`internal/agentops/handler.go:154-155`）。后果：install/upgrade 台账行**永远 queued**，console「已受理待执行」语义成为死态；平台自升级审批流（#3）即使审批通过也无执行体。本设计目的是**为 install/upgrade 补上执行半程**，使台账从「受理」走到「终态」。
 
 ## 2. 设计逻辑
 
@@ -134,7 +134,7 @@ func BuildUpgradeJobSpec(opID, ns, image string) (*batchv1.Job, error)
 ## 6. 部署前提（非代码缺口，登记）
 
 1. runner SA 需增加 `apps/deployments: patch, get`（自身 ns）——chart values 开关 `runner.selfUpgrade.enabled`，默认 **off**，开启时 chart 自动补 RBAC；
-2. 升级镜像必须预先存在于 harbor（`harbor.sdpworkflow.com/sdp/runner:<version>`），与 #22 镜像入库流程共用；
+2. 升级镜像必须预先存在于**目标镜像仓库（默认 harbor，`harbor.sdpworkflow.com/sdp/runner:<version>`）**，与 #22 镜像入库流程共用；**registry 经 `HARBOR_REGISTRY` / `SDP_RUNNER_IMAGE` 可配置为其他兼容 OCI Distribution 的仓库**，harbor 仅是默认实现、非强制依赖。
 3. #3 的「平台自升级审批流」完整版（审批角色矩阵、到期回收）仍留守——本设计只解除「审批通过后无执行体」的阻塞，审批 UI/角色矩阵等产品语义另行立项。
 
 ## 7. 变更历史
@@ -142,3 +142,4 @@ func BuildUpgradeJobSpec(opID, ns, image string) (*batchv1.Job, error)
 | 日期 | 变更内容 | 原因 |
 |---|---|---|
 | 2026-10-08 | v1 初稿 | STATUS #1 由「留守」转「落实」：用户确认 kind 环境可验证；install 采用 enroll 对账方案绕开鸡生蛋，upgrade 复用 exec Job 模式 |
+| 2026-10-20 | 设计裁定：§6.2 升级镜像"必须预先存在于 harbor"改为"必须预先存在于目标镜像仓库（默认 harbor）"，明确 registry 经 `HARBOR_REGISTRY` / `SDP_RUNNER_IMAGE` 可配置为其他兼容 OCI Distribution 的仓库，harbor 仅默认实现、非强制依赖 | 用户裁定镜像仓库不应强制绑定 Harbor 产品/API |
