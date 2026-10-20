@@ -35,7 +35,7 @@
 - [x] **AC-02 (DAG 调度)**: Given `PipelineRun` CR 已存在，When `PipelineRunReconciler`  reconcile，Then 仅对"依赖全部 Succeeded"的节点创建 `TaskRun`（名称 `{pipelineRunName}-{taskName}`），其余保持 Pending；终态后不再调度。
 - [x] **AC-03 (Build 任务执行)**: Given 一个 Build 类型 TaskRun 变为 runnable，When `TaskRunReconciler` 处理，Then 构建 Job（init 容器 git checkout + 主容器 `sh {ScriptPath} {ScriptArgs…}` 或内联 `command`/`args`）并 `ownerReference` 挂载；Job Succeeded→TaskRun Succeeded，Failed 按 `RetryPolicy` 退避重试，`RetryCount` 耗尽→Failed。成功/失败只看 Job 退出码，不解析输出内容。
 - [x] **AC-04 (审批门禁闭环)**: Given Approval 类型 TaskRun 初始化出 `Status.Approval`，When Hub 经 `approve_task` 帧回写决策，Then `ApproverHandler` 幂等累加 `ApprovedBy`，达到 `RequiredCount` 置 Succeeded（DAG 继续）；任一 `Rejected`→TaskRun Failed（PipelineRun 跟随 Failed）。
-- [x] **AC-05 (Release / 金丝雀)**: Given Release 类型 TaskRun 且带 `RolloutSpec`，When `reconcileDeploy` 创建 `Rollout` 并 watch，Then `RolloutReconciler` 按 `RolloutSpec.Steps` 推进：缩放 canary 副本至步权重、等 canary Pod Ready 再进阶、Pause 步等待；canary Deployment `ReplicaFailure`→自动回滚置 `Degraded`；`RolloutHealthy`→TaskRun Succeeded。不带 `RolloutSpec` 的 Release 走 Job 直接施加 chart/manifest。
+- [x] **AC-05 (Release / 金丝雀)**: Given Release 类型 TaskRun 且带 `RolloutSpec`，When `reconcileDeploy` 创建 `Rollout` 并 watch，Then `RolloutReconciler` 按 `RolloutSpec.Steps` 推进：缩放 canary 副本至步权重、等 canary Pod Ready 再进阶、带 Duration 的 Pause 步到时且健康自动推进（无 Duration 恒 Paused 等外部 resume）；canary Deployment `ReplicaFailure`→自动回滚置 `Degraded`；`RolloutHealthy`→TaskRun Succeeded。不带 `RolloutSpec` 的 Release 走 Job 直接施加 chart/manifest。
 - [x] **AC-06 (状态回写)**: Given 任意 `PipelineRun` 状态变更，When `PipelineRunReconciler.updateStatus` 调用，Then 经长连接异步发 `MessageStatusUpdate`，其 `PipelineRunName` == CRName（Hub 据此命中 run 行）；不阻塞 reconcile 主循环。
 - [x] **AC-07 (无 Runner 降级)**: Given Hub 触发时目标集群无在线连接，When `gateway.Dispatch` 找不到 conn，Then 返回 `ErrNoRunner`，Hub 侧 `Trigger` 将 run 标记 Failed 并返回 503（已在 hub story AC 覆盖）。
 - [x] **AC-08 (非法输入)**: Given `ApplyPipelineRunPayload.Name` 为空 或 `ApproveTaskPayload` 缺 `pipelineRunName`/`taskName`，When handler 解析，Then 返回明确错误（`errMissingName` / `approve payload needs ...`），不创建脏对象。
@@ -175,10 +175,11 @@
 Runner 在发布过程中还会创建/持有以下 K8s 原生对象（受 Rollout `ownerReference` 垃圾回收）：
 - **stable Deployment** (`spec.workloadRef`)：稳定版本，副本数由 `resolveTotalReplicas` 解析：优先 hub 下发的 `RolloutSpec.Replicas`，否则读取线上 stable Deployment 的 `spec.replicas`，默认 2（B-06，rollout_controller.go）。
 - **canary Deployment** (`{workloadRef}-canary`)：金丝雀版本，副本数 = `weightReplicas(weight, total)` = `weight*total/100`。
-- **`-sdp` ClusterIP Service**：`selector: {app: workloadRef}` 同时选 stable+canary Pod，靠副本比做 **DeploymentWeight** 流量切分。
+- **`-sdp` ClusterIP Service**：app-only selector（`{app: <workloadRef>}`，不含版本标签）同时选 stable+canary Pod，靠副本比做 **DeploymentWeight** 流量切分；端口 `http 80 → targetPort`，targetPort 解析链 = env `SDP_ROLLOUT_SVC_TARGET_PORT`（chart values `rollout.serviceTargetPort`）> stable Deployment 第一个声明容器端口 > 8080 兜底（8080 仅兜底非约定，应用监听任意端口，写死既撞端口也打断健康探测）。
+- **`sdp.io/pause-start` annotation**（值 `<stepIndex>|<RFC3339>`，每步独立时钟）：reconciler 在进入带 Duration 的 pause 步时盖章，canary 引擎据此判定「时长已到且当步健康」自动推进；无 Duration 的 pause 恒 Paused 等外部 resume。健康探测按 `healthCheckInterval`（30s）节流，避免事件驱动 reconcile 在缩放瞬时空窗内计满连败触发误回滚。
 
 #### 4.2.2 CRD 生成与关键枚举取值
-- CRD YAML 由 `controller-gen v0.21.0` 生成于 `config/crd/bases/*.yaml`（安装步骤见 §4.2.3）。
+- CRD YAML 由 `controller-gen v0.22.0` 生成于 `config/crd/bases/*.yaml`（安装步骤见 §4.2.3）。
 - 枚举常量（直接引用 `api/v1alpha1`）：
   - `PipelineTaskType`: `Build` / `Release` / `Approval` / `Test`（C-13 转测流水线）
   - `PipelineRunPhase`: `Pending` / `Running` / `WaitingApproval` / `Succeeded` / `Failed` / `Cancelled`
@@ -189,7 +190,7 @@ Runner 在发布过程中还会创建/持有以下 K8s 原生对象（受 Rollou
 
 #### 4.2.3 kubebuilder / controller-gen 安装（开发环境准备）
 
-CRD YAML 由 `controller-gen v0.21.0` 生成于 `config/crd/bases/*.yaml`。`controller-gen` 随 kubebuilder 分发，安装步骤：
+CRD YAML 由 `controller-gen v0.22.0` 生成于 `config/crd/bases/*.yaml`。`controller-gen` 随 kubebuilder 分发，安装步骤：
 
 ```bash
 # 下载并安装 kubebuilder（自带 controller-gen）

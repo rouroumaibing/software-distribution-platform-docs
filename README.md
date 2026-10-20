@@ -90,10 +90,10 @@ software-distribution-platform-docs/
 └── plans/
     ├── STATUS.md                   # **平台状态总览（唯一状态权威 + 全局总索引）**：已完成清单（§1）/ 未完成清单（§2）/ 刻意不做（§3）
     ├── FIDELITY-KIND-VS-CLOUD-2026-10-09.md # 保真度差异清单 kind vs 云上（活跃：云上验收 gate 未跑，#10 依赖）
-    ├── HARBOR-REGISTRY-INTEGRATION-2026-09-28.md # Harbor 对接盘点（①③收口；② Build→Harbor 留守 open）
-    ├── e2e-smoke.sh                # 按页面真实操作顺序的 API 冒烟脚本（走 console ingress）
-    └── e2e-cancel-rerun.sh         # 取消运行 / 单任务重跑的 API 冒烟脚本
+    └── HARBOR-REGISTRY-INTEGRATION-2026-09-28.md # Harbor 对接盘点（①③收口；② Build→Harbor 留守 open）
 ```
+
+> **E2E 验收脚本**（e2e-smoke.sh / e2e-cancel-rerun.sh / e2e-canary.sh）：真源在 env 仓 `prod-deplyment/`（云上节点直跑，认证/取数脚本内动态完成），本仓不留副本。
 
 > **已删档的历史计划文档**（设计信息已迁入各域文档，git 历史可查）：`UNIMPLEMENTED-MODULES-PLAN.md`（批次记录 → 钢人裁定迁 APM §12.1 / DATA-MODEL §6.6·§9.11 / DELETE-CONTRACT §6.6-5）、`PENDING-TASKS-AUDIT-2026-09-23.md`（净结论 → STATUS）、`E2E-VERIFY-PLAN.md`（P6 → DATA-MODEL §9.11）、`ACCOUNT-PERMISSION-DECISIONS.md`（D1–D6 结论 → APM §12）。旧引用中的 §x.y 编号均指删档文档章节。
 

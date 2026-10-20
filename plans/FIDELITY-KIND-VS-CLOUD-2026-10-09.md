@@ -36,11 +36,11 @@
 
 ## 4. 云上首跑前置（Phase 3 输入）
 
-- [ ] 集群 kubeconfig（用户）
-- [ ] 镜像仓库方案：云 registry vs 公网 harbor（用户拍板）
-- [ ] 平台域名 + 证书方案（cert-manager + Let's Encrypt vs 云证书）（用户拍板）
-- [ ] storageClass 名称（查集群 `kubectl get sc`）
-- [ ] deploy 目标参数化：跳过 infra/harbor/kind 段，platform/components 段复用（脚本改造点，Phase 3 时做）
+- [x] 集群 kubeconfig（用户；CCE 托管，HCE 2.0 节点）
+- [x] 镜像仓库方案：集群内自建 harbor（bitnami chart + csi-disk，ELB 443 暴露）
+- [x] 平台域名 + 证书方案：自签 CA（`*.sdpworkflow.com`）+ 内网 DNS；真证书/公网 DNS 留守未拍板
+- [x] storageClass：`csi-disk`（华为 EVS）
+- [x] deploy 目标参数化：`env/prod-deplyment/` 独立脚本链（`hce-2.0-64bit-env.sh` 构建 → `run.sh` 推镜像（`--runtime nerdctl|docker`）→ `hce-2.0-64bit-deploy.sh` 一键部署）
 
 ## 5. 验收 gate 定位（Phase 4）
 
@@ -50,3 +50,19 @@
 3. 发布 pipeline 验收（pre-release/production 语义）
 
 触发时机：里程碑 / 发布前 / 底层依赖升级。
+
+## 6. 云上落地进展（2026-10-19）
+
+差异矩阵逐项落定（验证证据：`env log/2026-10-19-cloud-install.md`、`env log/2026-10-19-cloud-deploy.md`）：
+
+| # | 落定结果 |
+|---|---------|
+| 1 拓扑 | 多节点集群就绪；扩容新节点已实测（Pod 跨节点调度正常） |
+| 2 DNS | `harbor/www.sdpworkflow.com` 已注册内网 DNS 并验证解析 |
+| 3 证书 | 自签 CA 经 privileged DaemonSet 分发全节点（`harbor-ca-trust`）；正规 CA（消除分发）留守待拍板 |
+| 4 入口 | **裁定：CCE 官方 Envoy Gateway 插件**（GatewayClass `envoy-gateway`，按 Gateway listeners 自动建独享 ELB，https=443）；自建 EG 数据面 ClusterIP 无 LB，云上禁用；Gateway Programmed + 端到端 4×200 验证通过 |
+| 6 存储 | postgres/harbor PVC 走 `csi-disk`，全 Bound |
+| 7 issuer | 443 标准端口下 `/keycloak/realms/sdp` 200，issuer 复验通过 |
+
+- **验收 gate（§5）进展（2026-10-19）**：①E2E 冒烟 ✅（e2e-smoke.sh 云上首跑 PASS=15 FAIL=0 + cancel/rerun 定向 E2E PASS=11 FAIL=0，run 终态 Succeeded，脚本内动态取 token/内置 no_proxy，一条命令跑通）；②**canary 真流量 ✅**（e2e-canary.sh PASS=9 FAIL=0：release 流水线 → Rollout 步进 → 50% 双版本 2/2 并存 + NodePort 合成流量 18/22 → 权重快照回流 → 100% 收口）；③发布 pipeline 语义 ✅（Release 任务 RolloutConfig → Rollout CR → canary 引擎 → 快照回流，与 ② 同链贯通）。三项 gate 全绿。
+- 端口裁定修正：本地 kind 8443 为端口映射时代过渡，云上 https listener=443（ELB 下 X-Forwarded-Port=443，issuer 推导不带端口）。
