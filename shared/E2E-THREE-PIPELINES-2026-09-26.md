@@ -1,7 +1,7 @@
 # E2E 三流水线整体测试（构建 / 日常 / 发布）— 测试记录
 
 > 日期：2026-09-26。本文档是本次 E2E 的**目的、场景定义、流程细节与缺口登记**的权威记录。
-> 测试结论 / 结果数据放根目录 `sdp-pipeline-e2e-report.html`（用户分析用），本文只记「怎么测、测什么、发现什么」。
+> 测试结论 / 结果数据随测试轮次记录：kind 轮见本文 §9 运行台账与回归结论；云端轮见 env 仓 `log/2026-10-22-cloud-build-push.md` 缺口全量测试结果表。本文记「怎么测、测什么、发现什么」。
 > 状态：**已完成**。缺口 G-1~G-12 + 回归中发现 G-13/G-14 已全部修复，kind 回归 11/11 通过（见 §9）。
 
 ---
@@ -35,7 +35,7 @@
 
 ### 3.0 基座准备
 1. `SKIP_AUTH=1 ./deploy-local.sh v0.0.1` 部署全栈（postgres → keycloak → hub → runner → console）。
-2. **预注册 target**：`POST /targets {"name":"local-dev","vendor":"kind","region":"local","targetKind":"k8s"}`——hub 网关在带 token 时**不自动注册**未知 target（`gateway.go:113` GetByName 失败即 404）。
+2. **预注册 target**：`POST /targets {"name":"local-dev","vendor":"kind","region":"local","targetKind":"k8s"}`——ADR-0001 首连自注册已落地：持有效 gateway token 且携带 `X-Target-Vendor` / `X-Target-Region` 的未知 target 由网关自动建行（`gateway.go:154-178`），本步预注册非必需（显式预注册可固定 vendor/region 属性）。
 3. 验证 runner 握手：`GET /targets` → `local-dev` `status=online`、心跳更新。
 4. 应用 §2 的 SA shim（Role + RoleBinding × 3 ns）。
 
@@ -121,7 +121,7 @@ G-9 修复前，部署场景用 **Build 任务 + kubectl 镜像 + 内嵌 manifes
 
 1. `nohup ./deploy-local.sh &` 会被会话回收杀死（log 0 字节）→ 必须以前台阻塞方式或托管后台任务跑。
 2. console 镜像构建：vite 清 `output/dist/assets`（63 文件）触发批量删除守卫（阈值 50）→ 部署前 `find <三仓>/output -depth -delete`。
-3. `SKIP_AUTH=1` 只旁路 Keycloak API 鉴权，**不旁路 gateway token**（hub `GATEWAY_TOKEN` 仍设置）→ runner 握手需 token 匹配 + target 预注册，未知 target 404（`gateway.go:113-117`）。
+3. `SKIP_AUTH=1` 只旁路 Keycloak API 鉴权，**不旁路 gateway token**（hub `GATEWAY_TOKEN` 仍设置）→ runner 握手需 token 匹配；未知 target 的处理见 §3.0-2：ADR-0001 起携带 `X-Target-Vendor` / `X-Target-Region` 自动建行，缺头才 404（`gateway.go:154-178`）。
 4. hub 无 `/api/v1/health` 路由（404 正常）；探活用 `GET /api/v1/targets`。
 5. `docker.io/bitnami/kubectl:1.30` tag 不存在。
 6. kind 节点仅 mirror `localhost:5000`，裸名镜像（G-7）一律拉不动。
@@ -141,7 +141,6 @@ G-9 修复前，部署场景用 **Build 任务 + kubectl 镜像 + 内嵌 manifes
 - [x] 发布流水线（审批）：`WaitingApproval` → decision approve → `Succeeded`，sdp-prod nginx-e2e Pod Running
 - [x] 409 反向用例：prod-env 建立后，无审批流水线触发生产 → `409 + reasons`（ERR.08409005）
 - [x] 前端渲染：首页总览（运行统计+最近运行徽章）/ 服务树（E2E Org→Nginx Demo）/ 运行中心（8 条运行+待审批过滤）均真实数据渲染 ✅；制品 Tab 预期为空（G-2/G-8）
-- [x] 根目录 HTML 报告 `sdp-pipeline-e2e-report.html`
 
 ### 运行台账（关键 run）
 | 流水线 | run | 结果 | 备注 |

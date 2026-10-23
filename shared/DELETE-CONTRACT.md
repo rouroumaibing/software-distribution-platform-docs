@@ -212,7 +212,7 @@
 
 #### ⑩ Artifact 删除 ← 对象存储文件
 - **钢人**：对象存储是钱和空间；best-effort 是务实取舍 —— 不能因对象存储抖动就阻塞元数据删除。
-- **假钢人**：`artifact/service/artifact.go:50` 是 `_ = s.store.Delete(...)` —— **吞错 + 无重试 + 无对账**，注释 "nothing to roll back" 等于明说放弃一致性 → **孤儿对象永久累积且不可观测**。且 `expires_at` 列**全仓无任何读取点** → DDL 注释承诺的"后台清理任务"**并不存在**。
+- **假钢人**：以决策时点代码事实为前提——`artifact/service/artifact.go:50` 为 `_ = s.store.Delete(...)`（吞错 + 无重试 + 无对账，注释 "nothing to roll back"），`expires_at` 列无任何读取点，DDL 注释承诺的"后台清理任务"不存在 → **孤儿对象永久累积且不可观测**。（B-16 收口后现状：删除失败记结构化日志不吞错；`expires_at` 经保留期 GC 生效；孤儿对账仅报告——见 §6.6-4 / §6.6-5 与文末 B-16 状态注。）
 - **判定**：可接受**但须补对账**：周期性 GC / 对账任务（列对象 → 比对 `artifacts` 表 → 删孤儿）。**残留：有（不可观测 → 须治理）**。→ 细化决策见 §6.6-4：顺序为"先堵源头、后做对账"，且对账仅报告不自动删。
 
 #### ⑪ EnvironmentGroup 删除 ← 组内有环境？（新表，见 `DATA-MODEL.md` §8）
@@ -424,7 +424,7 @@
 
 #### 决策 4：Artifact 孤儿对象对账是否排期？
 
-**代码事实**
+**代码事实（均为决策时点状态；B-16 收口后的现状见文末 B-16 状态注与 §6.6-5）**
 - `artifact/service/artifact.go:50`：`_ = s.store.Delete(a.StorageKey)` —— **best-effort、吞错、无重试、无对账**，注释自陈 "object already unreferenced; nothing to roll back"。
 - **hub 里没有任何 GC / 定时清理实现**：`expires_at` 仅出现在 DDL（`0002:145`）与模型（`artifact/models/artifact.go:26`），**全仓无任何读取点** → DDL 注释"过期后由后台任务清理存储与本行"**描述的是一个不存在的任务**。
 - `artifacts.component_id ... on delete cascade`（`0002:130`），但 components 是**软删** → **cascade 不触发** → **每次删组件都会批量留下 artifact 行 + 其对象存储文件**（且 `ListByComponent` 不 join components，孤儿**可见**）。

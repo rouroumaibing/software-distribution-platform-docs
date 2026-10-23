@@ -1,6 +1,6 @@
 # 镜像仓库可替换 — Gap 跟踪
 
-> 关联文档：[HARBOR-REGISTRY-INTEGRATION-2026-09-28.md](./HARBOR-REGISTRY-INTEGRATION-2026-09-28.md)（harbor 默认对接现状）、[FIDELITY-KIND-VS-CLOUD-2026-10-09.md](./FIDELITY-KIND-VS-CLOUD-2026-10-09.md)（云上切换目标）。
+> 关联文档：[HARBOR-REGISTRY-INTEGRATION-2026-09-28.md](./HARBOR-REGISTRY-INTEGRATION-2026-09-28.md)（harbor 默认对接现状）、[FIDELITY-KIND-VS-CLOUD-2026-10-09.md](./FIDELITY-KIND-VS-CLOUD-2026-10-09.md)（云上切换目标）；**行为规格见 [shared/features/registry-replaceable.md](../shared/features/registry-replaceable.md)**。
 > 适用范围：docs / env / hub / runner / console 五仓。example / old 与镜像仓库无关，已排除。
 >
 > **状态**：设计层已经裁定——**镜像仓库为可替换后端，Harbor 仅为默认实现、非强制依赖**。相关设计文档（DATA-MODEL §9.10、runner-reflux-spec §4、install-upgrade-executor-design §6、HARBOR-REGISTRY-INTEGRATION）的"唯一/必须"措辞已修正为"默认 harbor、registry 可配置"（见 §E 落点）。本文现只跟踪**实现层**仍把 harbor 钉死为必装/必用的改点（A/B/C/D），设计层 gap 已关闭。
@@ -14,6 +14,8 @@
 ## 2. 结论（一句话）
 
 **设计层：已裁定 registry 可替换、harbor 非强制依赖。实现层：仍四处钉死 harbor**（部署脚本必装、测试断言、chart 默认值、busybox env 缺失），须按 A–D 落实后才能真切换。
+
+> 实现进展：新增 `env/prod-deplyment/deploy-without-harbor.sh` 提供**云上无 harbor 部署路径**（镜像直推 SWR 等任意 OCI registry，不经 harbor），覆盖「部署脚本必装 harbor 本体」缺口（kind 本地联调仍走 harbor）。其余三处（runner 自升级测试断言锁 harbor 前缀、三 chart `imageAddr` 默认值写死、agentops busybox 默认镜像缺 env 覆盖）仍待解耦。
 
 ## 3. 依赖分层盘点（带行号 + 置信度）
 
@@ -83,7 +85,7 @@
 
 - **P0（拆钉死点）**：A（部署脚本可选化）+ B（断言放开）。这两处是"换源即炸"的硬约束，优先解。
 - **P1（去双源误导）**：C（chart 默认值）。属于一致性收口。
-- **P2（补缺口）**：D（busybox 覆盖）+ 第 4 类 Build→Harbor 的 registry 抽象入口（STATUS #22②）。属于"完整可替换"闭环的最后一块。
+- **P2（补缺口）**：D（busybox 覆盖）+ 第 4 类 Build→Harbor 的 registry 抽象入口（STATUS O-22②）。属于"完整可替换"闭环的最后一块。
 
 ## 7. 验证 gate 总表
 

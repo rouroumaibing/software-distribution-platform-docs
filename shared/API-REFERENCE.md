@@ -241,9 +241,9 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 - `GET {GATEWAY_PATH}`（默认 `/gateway/ws`）WebSocket；非 REST。
 
 ### /api/v1 之外的非业务端点（main.go，补录）
-- `GET /metrics`（**始终挂载**，main.go:444）：B-09 hub 侧指标面，经 `metrics.GinMiddleware()` 采集每请求计数与延迟，`metrics.GinHandler()` 暴露。
-- `ANY /debug/pprof/*any`（**默认关闭**，`cfg.PprofEnabled` 开启时挂载，main.go:569）：转接 `http.DefaultServeMux` 上的 pprof 处理器。
-- `GET /swagger/*any`（**默认关闭**，`cfg.SwaggerEnabled` 开启时挂载，main.go:574）：Swagger UI（`/swagger/index.html`），建议仅在 dev/staging 开启。
+- `GET /metrics`（**始终挂载**，`cmd/hub/main.go` 的 `r.GET("/metrics", …)`）：B-09 hub 侧指标面，经 `metrics.GinMiddleware()` 采集每请求计数与延迟，`metrics.GinHandler()` 暴露。
+- `ANY /debug/pprof/*any`（**默认关闭**，`cfg.PprofEnabled` 开启时挂载，`cmd/hub/main.go` 的 `r.Any("/debug/pprof/*any", …)`）：转接 `http.DefaultServeMux` 上的 pprof 处理器。
+- `GET /swagger/*any`（**默认关闭**，`cfg.SwaggerEnabled` 开启时挂载，`cmd/hub/main.go` 的 `r.GET("/swagger/*any", …)`）：Swagger UI（`/swagger/index.html`），建议仅在 dev/staging 开启。
 - 本地制品存储驱动另有根引擎 HMAC 签名路由（见「制品」小节），同样不在 `/api/v1` 组下。
 
 ---

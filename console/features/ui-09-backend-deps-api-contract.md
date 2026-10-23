@@ -52,7 +52,7 @@
 | Run | `GET /runs`（全局列表，`page/pageSize/phase`） | **后端已有**（N-1）；运行中心运行视图的数据源 |
 | Run | `GET /runs/:id/progress` | run.ts ✅ |
 | Run | `GET /runs/:id/stage-progress` | run.ts ✅（后端按 `StageName` 聚合下发） |
-| Run | `POST /runs/:id/redispatch`（全局路径【核对】，hub `cmd/hub/main.go:548`；console `src/api/run.ts:113` 同步） | run.ts ✅ |
+| Run | `POST /runs/:id/redispatch`（全局路径【核对】，hub `cmd/hub/main.go` 的 `scoped.POST("/runs/:id/redispatch", pipelineRunHandler.Redispatch)`；console `src/api/run.ts:113` 同步） | run.ts ✅ |
 | Run | `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision` | run.ts ✅（后端 `h.Approve` 已实现） |
 | Artifact | `GET /components/:componentId/artifacts` `/artifacts/:id` `/download` `/DELETE` | artifact.ts ✅ |
 | Permission | `GET /component-roles`（§7.9 角色选择器数据源）`POST/GET /components/:componentId/role-bindings` `/DELETE /role-bindings/:id` `GET /roles` | permission.ts ✅（**无 `GET /users`**【核对】：hub 不存用户表（D3），主体取「绑定表派生 + 手输 `sub`」，见 ACCOUNT-PERMISSION-DECISIONS §3.5 (b′)） |

@@ -95,8 +95,8 @@ keycloak:
 | --- | --- | --- |
 | `image` | 镜像 | 固定 Keycloak 26.7.4，与 chart `appVersion` 对齐；仓库走 harbor（deploy-local.sh 预推后节点从 harbor 拉） |
 | `hostname` | 对外前端地址 | KC_HOSTNAME（完整 URL 含端口/路径）；dev 留空由 `proxy` 的 `X-Forwarded-*` 推导；设了**必须带 `/keycloak` 路径**（见 §6.5） |
-| `extraEnv` | 附加环境变量 | 首次启动引导 admin 账号（`KEYCLOAK_ADMIN*`）+ `KC_HOSTNAME_STRICT=false`（dev 关 hostname 校验） |
-| `extraVolumes` / `extraVolumeMounts` | 卷 / 挂载 | 把 realm ConfigMap 挂进 `/opt/keycloak/data/import` |
+| `extraEnv` | 附加环境变量 | 首次启动引导 admin 账号（`KEYCLOAK_ADMIN*`）+ `KC_HOSTNAME_STRICT=false`（dev 关 hostname 校验）+ `KEYCLOAK_HTTPS_CERTIFICATE_FILE`/`KEYCLOAK_HTTPS_CERTIFICATE_KEY_FILE`（keycloakx 检测到这对 env 时自动向 `kc.sh start` 追加 `--https-certificate-file/--https-certificate-key-file`，即开启 HTTPS 8443） |
+| `extraVolumes` / `extraVolumeMounts` | 卷 / 挂载 | 把 realm ConfigMap 挂进 `/opt/keycloak/data/import`；把 `hub-keycloak-tls` secret 挂进 `/etc/keycloak-tls`（HTTPS 证书，key= `tls.crt`/`tls.key`，CA 为 `ca.crt`） |
 | `args` | 启动参数 | **替换**镜像 CMD：`start --import-realm` |
 | `database.*` | 数据库 | 接本平台 postgres；chart 自动拼 `KC_DB_URL_*` 等环境 |
 | `ingress.enabled` | 子 chart Ingress | **`false`** —— 平台对外入口走 Envoy Gateway 的 HTTPRoute（本 chart `templates/keycloak-httproute.yaml`，见 §4），不启用 ingress-nginx |
@@ -143,11 +143,13 @@ auth:
 | 资源 | 名字 |
 | --- | --- |
 | StatefulSet | `hub-keycloak` |
-| Service（HTTP） | `hub-keycloak-http` |
+| Service（HTTP + HTTPS） | `hub-keycloak-http`（keycloakx 渲染双端口：`http` 80 + `https` 8443；HTTPRoute 指向 8443） |
 | Service（headless，JGroups） | `hub-keycloak-headless` |
 | DB 密码 Secret（chart 自动生成） | `hub-keycloak-database` |
+| TLS Secret（keycloak HTTPS 证书 + BackendTLSPolicy CA） | `hub-keycloak-tls`（generic 三 key，见 [CERTIFICATES.md](./CERTIFICATES.md) §3） |
 | realm ConfigMap（本项目模板） | `sdp-keycloak-realm` |
 | HTTPRoute（对外 `/keycloak`） | `keycloak`（本 chart `templates/keycloak-httproute.yaml` 渲染，parentRef `sdp-gateway`） |
+| BackendTLSPolicy | `keycloak`（同文件渲染，target `hub-keycloak-http:8443`，校验 `hub-keycloak-http.<ns>.svc.cluster.local`，CA 引用 `hub-keycloak-tls`） |
 
 ---
 
@@ -171,7 +173,9 @@ helm upgrade --install hub build/hub/charts/software-distribution-platform-hub \
 # 4) 验证
 kubectl -n sdp-workflow get pods -l app.kubernetes.io/name=keycloak   # hub-keycloak-0 Running
 kubectl -n sdp-workflow logs hub-keycloak-0 | grep -i "import"        # 看到 realm 导入日志
-kubectl -n sdp-workflow get httproute keycloak                         # /keycloak -> hub-keycloak-http:80（sdp-gateway）
+kubectl -n sdp-workflow get httproute keycloak                         # /keycloak -> hub-keycloak-http:8443（sdp-gateway）
+kubectl -n sdp-workflow get backendtlspolicy keycloak                  # 校验 hub-keycloak-http:8443，CA=hub-keycloak-tls
+kubectl -n sdp-workflow logs hub-keycloak-0 | grep -i "Listening on"   # 应同时出现 http://0.0.0.0:8080 与 https://0.0.0.0:8443
 # issuer 可达性（浏览器与 hub 都要能取到 discovery 文档）：
 curl -k https://www.sdpworkflow.com/keycloak/realms/sdp/.well-known/openid-configuration
 
@@ -189,9 +193,9 @@ curl -k -s -X POST https://www.sdpworkflow.com/keycloak/realms/sdp/protocol/open
 
 ```bash
 # A) 对外（ingress 已开）：https://www.sdpworkflow.com/keycloak/admin/
-# B) 本地端口转发：
-kubectl -n sdp-workflow port-forward svc/hub-keycloak-http 8080:80
-# 浏览器打开 http://localhost:8080/keycloak/admin/   → 用 §7 的 admin 账号登录
+# B) 本地端口转发（HTTPS 8443，与 HTTPRoute 后端一致）：
+kubectl -n sdp-workflow port-forward svc/hub-keycloak-http 8443:8443
+# 浏览器打开 https://localhost:8443/keycloak/admin/   → 用 §7 的 admin 账号登录
 ```
 
 > HTTP 相对路径由 chart `http.relativePath` 决定；本项目**刻意设为 `/keycloak`**（不是 keycloak 默认的 `/auth`）——原因见 §3「坑 4」。
@@ -340,12 +344,12 @@ E2E 证据（全部经网关 https 或 hub API 实测）：discovery 通告 issu
 
 ### 7.1 2026-10-20 口令策略分层裁定（harbor / keycloak 解耦）
 
-平台对默认口令不再「一刀切强制改强口令」，按依赖强度分层处置（详见 STATUS #25）：
+平台对默认口令不再「一刀切强制改强口令」，按依赖强度分层处置（详见 STATUS O-25）：
 
 - **Keycloak（强依赖）—— 保留初始口令 `sdp@12345`**：realm `sdp` 的 `admin` 预置账号已设 `credentials[].temporary: true`（见 §5），Keycloak 在**首次登录时硬性拦截要求改密**（`UPDATE_PASSWORD` requiredAction 等价落地），HTTP API 侧表现为 password grant 返回 `400 invalid_grant "Account is not fully set up"`（见 §6.5）。即「保留初始密码 + 首登强制改密」**已落地，无需改码**；master realm 的 `KEYCLOAK_ADMIN_PASSWORD` 仅用于首次引导（已存在 admin 则失效），保留为 dev 默认。
 - **Harbor（周边依赖）—— 解耦**：见 env 仓 `harbor/values.yaml` —— 删除写死的 `adminPassword`，由 bitnami 随机生成 22 位存 Secret（lookup 持久化，upgrade 不重置），部署后从 Secret 取回（见 `harbor/harbor-command-guide.txt`）。
 - **console 前端职责**：登录说明页（`/login-hint`）须把预置账号明示为「**临时初始密码，仅供首次登录，登录后请立即重置**」，并提供 Keycloak 账户控制台（`{issuer}/account`）入口；生产可置空隐藏凭证块（见 §7 末段）。
-- **生产 hardening 留待 #29（harbor 正规 CA + sdp 项目转 private）收口**：含 master 口令强随机 + 经 `valueFrom.secretKeyRef` 注入、凭据轮换流程。当前不做。
+- **生产 hardening 留待 O-29（harbor 正规 CA + sdp 项目转 private）收口**：含 master 口令强随机 + 经 `valueFrom.secretKeyRef` 注入、凭据轮换流程。当前不做。
 
 ## 8. 相关文档
 
@@ -354,3 +358,9 @@ E2E 证据（全部经网关 https 或 hub API 实测）：discovery 通告 issu
 - [hub DATA-MODEL](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) —— `users` / 授权模型（§7 授权模型）。
 - [README §5.2 授权模型（G7）](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md) —— Keycloak（身份+组）/ k8s RBAC / hub 业务授权三者的边界。
 - 上游：[codecentric/helm-charts · keycloakx](https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx) · [Keycloak 官方](https://github.com/keycloak/keycloak)。
+
+## 9. 变更历史
+
+| 日期 | 变更内容 | 原因 |
+|---|---|---|
+| 2026-10-22 | 设计裁定：keycloak 后端改真 HTTPS——`keycloak.extraEnv` 增 `KEYCLOAK_HTTPS_CERTIFICATE_FILE`/`KEYCLOAK_HTTPS_CERTIFICATE_KEY_FILE`（keycloakx 检测到该对 env 自动追加 `--https-*` 启动参数）、`extraVolumes/extraVolumeMounts` 挂 `hub-keycloak-tls` 到 `/etc/keycloak-tls`；`keycloak-httproute.yaml` 后端端口 80 → 8443 并新增 `BackendTLSPolicy`（target `hub-keycloak-http:8443`，CA=`hub-keycloak-tls`）；§4 验证命令与端口转发同步指向 8443 | 用户裁定 hub 与 keycloak 后端一并改真 TLS 并各配 BackendTLSPolicy；keycloak 证书由 cert-create.sh 新增 `hub-keycloak-http` 组件生成 |

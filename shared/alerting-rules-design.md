@@ -2,7 +2,7 @@
 
 - **状态**：Design（设计定稿，本轮落实）
 - **住户依据**：横跨 hub（指标源 + 通知流）+ runner（指标源）+ env 仓（规则文件部署）三端，按「范围优先」判据入住 `shared/`
-- **覆盖缺口**：STATUS §2 **#5**（集群离线告警规则 + 降级开关预发/灰度验证）
+- **覆盖缺口**：STATUS §2 **O-5**（集群离线告警规则 + 降级开关预发/灰度验证）
 
 ## 1. 设计目的
 
@@ -39,9 +39,9 @@ sdp_hub_gateway_connected_targets{target=...} gauge   # 当前 WS 在线 runner 
 
 ## 3. 核心数据结构 / 接口定义
 
-- **hub 侧**：`metrics.SetGatewayConnectedTargets(n int)`（新增，文本导出器同款）；通知流注入函数复用 `internal/notification` 既有写入路径，签名不变。
+- **hub 侧**：`metrics.SetGatewayConnectedTargets(target string, online bool)`（per-target gauge，文本导出器同款；`internal/metrics/metrics.go:112`）；通知流注入函数复用 `internal/notification` 既有写入路径，签名不变。
 - **env 仓**：`local-kind-dev/alerting/sdp-alerts.yaml`（rules）+ `sdp-alert-test.yaml`（promtool 用例）；kube-prometheus-stack 的 values 覆盖文件（可选部署形态）。
-- **Alertmanager webhook → hub**：`POST /api/v1/alerts/webhook`（新增端点，挂鉴权组 + webhook token），body 为 Alertmanager v2 JSON，映射为通知流条目——**本轮实现最小闭环（Rule→通知流），Alertmanager webhook 端点列入部署前提**。
+- **Alertmanager webhook → hub**：`POST /api/v1/alerts/webhook`（设计端点，挂鉴权组 + webhook token），body 为 Alertmanager v2 JSON，映射为通知流条目——**端点未实现**（hub 全仓无 `alerts` 路由；属运维部署项、单独立项，见 `plans/STATUS.md` §2 O-5）；当前闭环止于 Rule → Alertmanager → 人工响应，告警暂不经 webhook 入通知流。
 
 ## 4. 一致性校验
 
@@ -60,4 +60,5 @@ sdp_hub_gateway_connected_targets{target=...} gauge   # 当前 WS 在线 runner 
 
 | 日期 | 变更内容 | 原因 |
 |---|---|---|
-| 2026-10-08 | v1 初稿 | STATUS #5 由「运维环境项」转「落实」：补 gateway gauge 指标缺口 + 规则文件 + promtool 验证路径 |
+| 2026-10-08 | v1 初稿 | STATUS O-5 由「运维环境项」转「落实」：补 gateway gauge 指标缺口 + 规则文件 + promtool 验证路径 |
+| 2026-10-23 | v2：§3 hub 侧 gauge 签名同步为 per-target 形态（`SetGatewayConnectedTargets(target string, online bool)`，`internal/metrics/metrics.go:112`）；`POST /api/v1/alerts/webhook` 改登记为未实现的设计端点（属运维部署项、单独立项，见 `plans/STATUS.md` §2 O-5），当前闭环止于 Rule → Alertmanager → 人工响应 | 文档 vs 代码全量审计：对齐 metrics.go 实际签名与 hub 无 alerts 路由的事实 |

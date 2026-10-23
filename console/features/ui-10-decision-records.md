@@ -21,7 +21,7 @@
 
 | # | 事实 | 来源 |
 | --- | --- | --- |
-| F1 | **页内 Tab = 嵌套子路由**在本仓库已有先例：组件详情 9 个 Tab 全是 `components/:id/*` 子路由 | `console/src/router/index.ts` L26–42 |
+| F1 | **页内 Tab = 嵌套子路由**在本仓库已有先例：组件详情 11 个 Tab 全是 `components/:id/*` 子路由 | `console/src/router/index.ts` 的 `component-*` 子路由段 |
 | F2 | `/runs` 是**扁平单路由**，指向整页组件 `RunCenterView.vue`（页面本身即第一个视图，无"父容器内容"） | 同上 L45 |
 | F3 | 下钻详情页 `/pipelines/:id`、`/pipelines/:id/runs`、`/pipelines/:id/runs/:runId`、`/releases/:id` 均为 `/runs` 的**同级**路由 | 同上 L48–51 |
 | F4 | 旧 flat 路由保留 redirect 兼容 deep link：`/pipelines`→`/service-tree`、`/releases`→`/runs` | 同上 L58–64 |
@@ -31,7 +31,7 @@
 | F8 | 组件详情各 Tab 是**一等资源**：独立数据源、独立加载、独立权限、独立 `meta.title` | §5.4 / §7.3 |
 | F9 | 后端**现无**全局 `/runs` 端点，跨组件列表需求落在 N-1/N-3 | 附 A |
 
-> 【状态更新】F9 已过期：hub 已注册全局 `GET /runs`（`cmd/hub/main.go:537`，`scoped.GET("/runs", pipelineRunHandler.ListAll)`）。本表为历史决策记录，原表述保留不改写；现口径见 附 A N-1。
+> 【状态更新】F9 已过期：hub 已注册全局 `GET /runs`（`cmd/hub/main.go` 的 `scoped.GET("/runs", pipelineRunHandler.ListAll)`）。本表为历史决策记录，原表述保留不改写；现口径见 附 A N-1。
 
 ### B.2 方案 A：`/runs?view=pipelines`（query）
 
@@ -62,7 +62,7 @@
 
 | # | 论证 | 依据 |
 | --- | --- | --- |
-| C1 | **仓库既有约定更一致**：组件 9 Tab 就是嵌套子路由，运行中心视图与之同构，新人不必学两套规则 | F1 |
+| C1 | **仓库既有约定更一致**：组件 11 Tab 就是嵌套子路由，运行中心视图与之同构，新人不必学两套规则 | F1 |
 | C2 | **面包屑/标题零特判**：父 `/runs` 出第一段，子路由 `meta.title` 出第二段，正好落回"面包屑随路由变化"的路径推导约定 | F7 |
 | C3 | **URL 唯一且自解释**：`/runs/releases` 一眼看懂，不存在"缺省 query 的第二形态" | — |
 | C4 | **与 IA 的真实层级一致**：旧 `/pipelines`、`/releases` 正因"不配当一级菜单"才降级，嵌到 `/runs/...` 明确表达"它们是运行中心的下属视图" | F4 |
@@ -166,7 +166,7 @@
 2. **发布视图是前端聚合** —— 当时 hub 无全局聚合端点（附 A N-3）。过渡手段：服务树索引 + 扫描一屏运行；**数据被截断时 UI 显式提示**「按最近 N 条运行聚合，全局聚合端点待补」，不静默给错数字。
 3. **面包屑落在页内 `.crumb`**（沿用 `ServiceTreeView` / `RunMonitorView` / `PipelineEditorView` 的既有惯例），不是 §7.1 骨架里的**顶栏**面包屑。当时未动 `MainLayout.vue`，因此「左栏恒 5 项、不挂分组标签」的不变量天然不受影响。**（注：原型的面包屑已在顶栏 `#crumb`；真实 console 收敛到顶栏仍属未落地项。）**
 
-**未落地（不属 N-13 范围，勿误读为本轮完成）**：§5.4 组件 9 Tab → 7 主 Tab 收敛、§7.2 Dashboard 待办卡深链（依赖 Dashboard 重写）、§7.1 顶栏面包屑与 ⌘K 搜索浮层、§6.1 流水线 CRUD 缺口的 UI（新建入口 / `kind` 放开 / 流水线级删除）。
+**未落地（不属 N-13 范围，勿误读为本轮完成）**：§5.4 组件 11 Tab → 7 主 Tab 收敛、§7.2 Dashboard 待办卡深链（依赖 Dashboard 重写）、§7.1 顶栏面包屑与 ⌘K 搜索浮层、§6.1 流水线 CRUD 缺口的 UI（新建入口 / `kind` 放开 / 流水线级删除）。
 
 ### B.10 两视图同步落地记录
 
@@ -181,7 +181,7 @@
 
 **门禁结果**：`pnpm test:runcenter` **16/16**、`vue-tsc --noEmit` 通过、`vite build` 通过。
 
-**刻意不做（留作独立待办，勿误读为本轮完成）**：① 发布视图改用 hub 全局 `GET /releases`（console 侧尚无 api 封装，仍走扫描 + kind 聚合）；② 「已暂停」筛选项（N-3）；③ 组件详情 9 Tab → 7 主 Tab 收敛（§5.4）。
+**刻意不做（留作独立待办，勿误读为本轮完成）**：① 发布视图改用 hub 全局 `GET /releases`（console 侧尚无 api 封装，仍走扫描 + kind 聚合）；② 「已暂停」筛选项（N-3）；③ 组件详情 11 Tab → 7 主 Tab 收敛（§5.4）。
 
 ---
 

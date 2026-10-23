@@ -15,7 +15,7 @@
 ## 2. 生成器
 
 - 源（单一真源）：`software-distribution-platform-env/cert-build/cert-create.sh`
-- 行为：对 console / hub / harbor 三个组件各生成——自签 CA（**10000d**，`self-signed-ca-cert.sh`，CA 文件已存在则复用）+
+- 行为：对 console / hub / hub-keycloak-http / harbor 四个组件各生成——自签 CA（**10000d**，`self-signed-ca-cert.sh`，CA 文件已存在则复用）+
   由 CA 签发的 server 证书（**10000d**，SAN 覆盖 `<component>.<ns>.svc` 链 + `*.sdpworkflow.com` +
   `sdpworkflow.com` + `127.0.0.1`；**不含** `localhost`）+ client 证书 / pfx（10000d）。
 - 部署期调用（本地）：`deploy-local.sh` 在 TLS 前置阶段直接运行源脚本 `cert-create.sh`（脚本按自身位置定位**同目录** `self-signed-ca-cert.sh` 与产物目录）；
@@ -30,6 +30,8 @@
 | --- | --- | --- | --- | --- |
 | `console-tls` | generic: `ca.crt` / `server.crt` / `server.key` | 证书由 cert-create.sh 生成；secret 由 **deploy-local.sh TLS 段（#6.5）** 创建 | ① console nginx 443 挂载 `/etc/nginx/ssl`（console chart `deployment.yaml` + `cert.secretName`）<br>② console `BackendTLSPolicy` 校验后端证书（`gatewayRoute.caSecretName`）<br>③ console nginx 只服务前端 SPA；`/api` 由网关的 hub 独立 HTTPRoute 承接（见 hub chart `templates/httproute.yaml`） | 复用同一 CA，统一核心 |
 | `console-ingress-tls` | tls: `tls.crt` / `tls.key`（= 同一 console 证书） | 证书由 cert-create.sh 生成；secret 由 **deploy-local.sh TLS 段（#6.5）** 创建（tls 类型） | Gateway **https listener** 终结外部 HTTPS（`local-kind-dev/deploy/gateway-sdp.yaml` 的 `certificateRefs`） | **在用**，勿删（命名遗留自 ingress 时代） |
+| `hub-tls` | generic: `ca.crt` / `server.crt` / `server.key` | 证书由 cert-create.sh 生成；secret 由 **deploy-local.sh TLS 段（#6.5）** 创建 | ① hub Go 后端 TLS listener 挂 `/etc/hub-tls`（`deployment-hub.yaml` + `HUB_TLS_CERT_FILE`/`HUB_TLS_KEY_FILE`，`cmd/hub/main.go` 按 env 有无切 `ListenAndServeTLS`）<br>② hub `BackendTLSPolicy` 校验后端证书（`gatewayRoute.caSecretName`，validation.hostname=`hub.<ns>.svc.cluster.local`） | 与 console 同一 CA |
+| `hub-keycloak-tls` | generic: `ca.crt` / `tls.crt` / `tls.key` | 证书（component=hub-keycloak-http）由 cert-create.sh 生成；secret 由 **deploy-local.sh TLS 段（#6.5）** 创建 | ① keycloak HTTPS 挂 `/etc/keycloak-tls`（hub values `keycloak.extraEnv` 的 `KEYCLOAK_HTTPS_*` + `extraVolumes/extraVolumeMounts`）<br>② keycloak `BackendTLSPolicy` 校验后端证书（validation.hostname=`hub-keycloak-http.<ns>.svc.cluster.local`） | 与 console 同一 CA |
 | `sdp-ca` | generic: `ca.crt` | **deploy-local.sh #6.6**（用 `cert-build/certs/ca.crt` 创建） | hub `auth.trustedCASecret` 出站信任自签 issuer（`deployment-hub.yaml` 挂 `/etc/sdp-ca` + `SSL_CERT_FILE`） | 本地部署已由 `deploy-local.sh --set auth.trustedCASecret=sdp-ca` 接上 |
 
 > 历史说明：`console-ingress-tls` 命名源自早期 ingress-nginx 时代；网关切到 Envoy Gateway 后，
@@ -37,7 +39,7 @@
 > 改名易让人误判其无用 —— **勿删**。
 
 > **hub 独立路由（网关拆分）**：hub 对外 API 经 hub chart 的 `templates/httproute.yaml`
-> （PathPrefix `/api` → hub svc:8080，ClusterIP 明文后端），与 console 的 `PathPrefix /` 拆为**两条独立路由**；
+> （PathPrefix `/api` → hub svc:8080，后端真 TLS，配 `BackendTLSPolicy` 引用 `hub-tls`），与 console 的 `PathPrefix /` 拆为**两条独立路由**；
 > 浏览器 `https://www.sdpworkflow.com:8443/api/v1/...` 由网关直连 hub，不经 console nginx 反代。
 > hub service 为 `ClusterIP`（不对外直连）；`local-kind-dev/deploy/kind.yaml` 无 hub 直连的 `30080` 映射。
 
@@ -46,9 +48,12 @@
 **方式 A — 本地部署（deploy-local.sh 自动）**：脚本在 TLS 前置阶段**直接运行源脚本** `cert-create.sh`
 （脚本按自身位置定位**同目录** `self-signed-ca-cert.sh` 与产物目录 `certs/`）。**cert-create.sh 本身不建 secret**
 （只生成证书文件，有 kubectl 时另产出 secret 的 dry-run yaml 文件）；真正建 secret 的是 `deploy-local.sh` 的
-TLS 段（#6.5）：用 `cert-build/certs/` 下的产物显式 `kubectl apply` 两个 secret——
-`console-ingress-tls`（tls 类型，`console.crt`/`console.key`）与 `console-tls`（generic 三 key
-`ca.crt`/`server.crt`/`server.key`），幂等（`--dry-run=client -o yaml | kubectl apply`，secret 已存在则更新）。
+TLS 段（#6.5）：用 `cert-build/certs/` 下的产物显式 `kubectl apply` 四个 secret——
+`console-ingress-tls`（tls 类型，`console.crt`/`console.key`）、`console-tls`、`hub-tls`、`hub-keycloak-tls`
+（后三个均 generic：`console-tls`/`hub-tls` 用 `ca.crt`/`server.crt`/`server.key` 三 key，
+`hub-keycloak-tls` 用 `ca.crt`/`tls.crt`/`tls.key` 三 key），幂等（`--dry-run=client -o yaml | kubectl apply`，secret 已存在则更新）。
+
+> 云上无 harbor 路径的 `prod-deplyment/deploy-without-harbor.sh` 执行**同一套 TLS 前置**（cert-create.sh 生成 + 显式建 4 secret + sdp-ca），并额外应用平台网关与 Envoy proxy 资源预检；其 secret 接线与 deploy-local.sh 一致，不依赖 cert-create.sh 的输出命名（`*-server-secret` 不匹配平台期望）。
 
 **方式 B — 目标环境无 env 仓时手工执行**：
 
@@ -67,6 +72,14 @@ TLS 段（#6.5）：用 `cert-build/certs/` 下的产物显式 `kubectl apply` �
        --from-file=server.key=certs/console.key
    kubectl -n sdp-workflow create secret tls console-ingress-tls \
        --cert certs/console.crt --key certs/console.key
+   kubectl -n sdp-workflow create secret generic hub-tls \
+       --from-file=ca.crt=certs/ca.crt \
+       --from-file=server.crt=certs/hub.crt \
+       --from-file=server.key=certs/hub.key
+   kubectl -n sdp-workflow create secret generic hub-keycloak-tls \
+       --from-file=ca.crt=certs/ca.crt \
+       --from-file=tls.crt=certs/hub-keycloak-http.crt \
+       --from-file=tls.key=certs/hub-keycloak-http.key
    ```
 4. （本地部署）hub 出站信任：确保 hub chart `auth.trustedCASecret=sdp-ca`
    （deploy-local.sh 用 `cert-build/certs/ca.crt` 另建 generic secret `sdp-ca`，key 为 `ca.crt`，**无需单独手工创建**）。生产用公共 CA 时留空。
@@ -120,13 +133,19 @@ TLS 段（#6.5）：用 `cert-build/certs/` 下的产物显式 `kubectl apply` �
 - console `README.md` 的 TLS 引用不含 `templates/ingress.yaml` 与 `ingress.tlsSecretName`（console chart 无 ingress 模板、values 无此 key）。
 
 ### 网关拆分 + 证书命名对齐 + 脚本迁移（本轮 consolidation）
-- **网关拆分**：console nginx 只服务前端 SPA，不反代 `/api`；hub 拥有独立 `HTTPRoute`（`hub` chart `templates/httproute.yaml`，`PathPrefix /api` → hub svc:8080，ClusterIP 明文后端），与 console 各为一条独立路由。hub `service.yaml` 为 `ClusterIP`（不对外直连）；`local-kind-dev/deploy/kind.yaml` 无 hub 直连 `30080` 映射；`local-kind-dev/deploy/gateway-sdp.yaml` / `local-kind-dev/deploy/kind.yaml` 注释与上述一致。前端 `baseUrl` 维持相对 `/api/v1`（经网关直连 hub，无需重建镜像）。
+- **网关拆分**：console nginx 只服务前端 SPA，不反代 `/api`；hub 拥有独立 `HTTPRoute`（`hub` chart `templates/httproute.yaml`，`PathPrefix /api` → hub svc:8080，后端真 TLS，配 `BackendTLSPolicy` 引用 `hub-tls`），与 console 各为一条独立路由。hub `service.yaml` 为 `ClusterIP`（不对外直连）；`local-kind-dev/deploy/kind.yaml` 无 hub 直连 `30080` 映射；`local-kind-dev/deploy/gateway-sdp.yaml` / `local-kind-dev/deploy/kind.yaml` 注释与上述一致。前端 `baseUrl` 维持相对 `/api/v1`（经网关直连 hub，无需重建镜像）。
 - **脚本迁移**：根目录 5 个本地联调脚本（`deploy-` / `teardown-` / `undeploy-` / `stop-` / `clean-local.sh`）迁至 `software-distribution-platform-env/local-kind-dev/`；本地测试基础设施 `deploy/`（gateway-sdp.yaml / kind.yaml / envoy tgz）一并迁入 `local-kind-dev/deploy/`（随 env 仓跟踪，envoy `.tgz` 已 gitignore）。脚本 `ROOT` 重定义为上两级、互调用改 `$SCRIPT_DIR`；`undeploy-local.sh` 命名空间 `sdp-system`→`sdp-workflow` 修正。
 
 ## 7. 密钥轮换 / 过期
 
-- CA 10000d、server / client 10000d。轮换时在生成器目录重跑（复用已有 CA 或一并重签），再用产物**重建**两个 secret
+- CA 10000d、server / client 10000d。轮换时在生成器目录重跑（复用已有 CA 或一并重签），再用产物**重建**对应 secret
   （脚本自身不 apply：本地重跑 deploy-local.sh，或按 §4 方式 B 手工 `kubectl apply`）；
   或按 §5 用真实证书覆盖。
 - 集群内挂载是否自动滚动取决于 chart 是否用 secret hash 注解触发重启；当前 console / hub 未强制，
   必要时手动 `kubectl -n sdp-workflow rollout restart deploy/console deploy/hub`。
+
+## 8. 变更历史
+
+| 日期 | 变更内容 | 原因 |
+|---|---|---|
+| 2026-10-22 | 设计裁定：网关后端全面 TLS 化——`cert-create.sh` 组件清单扩为 console / hub / hub-keycloak-http / harbor 四个；新增 `hub-tls`（generic 三 key，hub Go 后端 TLS listener + hub BackendTLSPolicy CA）与 `hub-keycloak-tls`（generic 三 key，keycloak HTTPS + keycloak BackendTLSPolicy CA）两个 secret 契约；hub 独立路由说明由"ClusterIP 明文后端"修正为"后端真 TLS + BackendTLSPolicy"；§4 方式 A/B 同步补齐四 secret 创建 | 用户裁定 hub 与 keycloak 后端一并改真 TLS 并各配 BackendTLSPolicy（envoy 后端证书校验）；网关级资源维持留在 env 不进三仓 chart |

@@ -526,7 +526,7 @@ environment_groups ──1:N──▶ environments  (environments.group_id，可
 
 | 列 | 类型 | 说明 |
 | --- | --- | --- |
-| `name` | varchar(128) unique | 目标名。Runner 连网关注自报（`X-Target-Name` header），hub 据此 `GetByName` 定位；查不到 → `404 unknown target` |
+| `name` | varchar(128) unique | 目标名。Runner 连网关注自报（`X-Target-Name` header），hub 据此 `GetByName` 定位；**首连自注册（ADR-0001）**：持有效 gateway token 且携带 `X-Target-Vendor` / `X-Target-Region` 的未注册 target 由 hub 自动建行（`Enroll`），仅缺 target 名或缺注册属性才返回 `404 unknown target`（`internal/gateway/gateway.go:154-178`） |
 | `vendor` / `region` | varchar | `aliyun` / `tencent` / `aws` / `self-hosted` …；**多厂商、多 region 是设计前提** |
 | `status` | varchar(32) | `online` / `offline`，由网关连接 / 断开触发 `Heartbeat` 翻转 |
 | `agent_version` / `last_heartbeat_at` | | Runner 版本与心跳 |
@@ -677,7 +677,7 @@ exec 的两条执行路径（runner `internal/agentops`）：`agent` access 用 
 **数据流（全部在 hub 侧）**
 
 1. console 提交"接入一个目标" → `POST /targets` 预注册 + 提交 kubeconfig（`POST /credentials`，**只存 ref**）。
-2. hub 从**版本矩阵 CM**（§9.10）取 runner 版本 → 向目标集群下发安装（helm chart + 镜像）。镜像统一取自**平台 harbor**：`harbor.sdpworkflow.com/sdp/*`（镜像全切裁定，STATUS #22；含 runner 任务默认镜像 `git`/`curl`/`helm`/`kubectl`/`busybox` 五件，扁平命名映射见 runner `pkg/executor/job_builder.go`）。
+2. hub 从**版本矩阵 CM**（§9.10）取 runner 版本 → 向目标集群下发安装（helm chart + 镜像）。镜像统一取自**平台 harbor**：`harbor.sdpworkflow.com/sdp/*`（镜像全切裁定，STATUS O-22；含 runner 任务默认镜像 `git`/`curl`/`helm`/`kubectl`/`busybox` 五件，扁平命名映射见 runner `pkg/executor/job_builder.go`）。
 3. runner 起来后**出站回连** hub 网关，`Heartbeat` 置 `online`；**kubeconfig 使命就此结束**。
 4. 升级：比对 CM 里的 runner 版本 vs `targets.agent_version`，有差异则执行升级。
 
@@ -696,7 +696,7 @@ exec 的两条执行路径（runner `internal/agentops`）：`agent` access 用 
 
 ### 9.10 版本矩阵（`package-versions` ConfigMap，**二次裁定**）
 
-**机制**：部署平台时把**指定版本**的 console / hub / runner 镜像**一并推入镜像仓库**；三者的版本对应关系由一份 **ConfigMap** 维护，**集成在 hub 的 chart 内**随 hub 一起分发。接入管理的安装 / 升级**按该 CM 取值**。镜像仓库 = **平台默认 harbor**（`harbor.sdpworkflow.com`，sdp project，443 无显式端口；起为平台默认镜像事实源，harbor 为默认 registry 而非强制依赖；`localhost:5000` 仅作 harbor 未起时的 bootstrap 中转——详见 env 仓 `harbor/` 与 STATUS #22）。**registry 为可配置后端**：镜像地址经 `imageAddr` / `HARBOR_REGISTRY` / `HARBOR_PROJECT` 注入，可指向私有 harbor、云厂商镜像仓库、公网 harbor 或纯 docker registry 等任意兼容 OCI Distribution 的仓库，平台不钉死 harbor 产品或 harbor 专属 API。
+**机制**：部署平台时把**指定版本**的 console / hub / runner 镜像**一并推入镜像仓库**；三者的版本对应关系由一份 **ConfigMap** 维护，**集成在 hub 的 chart 内**随 hub 一起分发。接入管理的安装 / 升级**按该 CM 取值**。镜像仓库 = **平台默认 harbor**（`harbor.sdpworkflow.com`，sdp project，443 无显式端口；起为平台默认镜像事实源，harbor 为默认 registry 而非强制依赖；`localhost:5000` 仅作 harbor 未起时的 bootstrap 中转——详见 env 仓 `harbor/` 与 STATUS O-22）。**registry 为可配置后端**：镜像地址经 `imageAddr` / `HARBOR_REGISTRY` / `HARBOR_PROJECT` 注入，可指向私有 harbor、云厂商镜像仓库、公网 harbor 或纯 docker registry 等任意兼容 OCI Distribution 的仓库，平台不钉死 harbor 产品或 harbor 专属 API。
 
 | 要点 | 约定 |
 | --- | --- |

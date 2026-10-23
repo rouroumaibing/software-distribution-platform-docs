@@ -13,7 +13,7 @@
 
 > 裁定语义：目录位置表达的是**文档的治理范围主张**（这份内容属于整个平台），不是变更流程的镜像。防腐不靠位置，靠本 README 的维护纪律 + STATUS 指针协议 + 各域 index 交叉引用。
 
-## 当前住户（14）
+## 当前住户（15）
 
 | 文件 | 横跨范围 |
 | --- | --- |
@@ -31,6 +31,7 @@
 | [alerting-rules-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/alerting-rules-design.md) | 离线告警规则：hub/runner 指标 → Prometheus rules（env 仓部署）→ 通知流（跨三端永久设计文档） |
 | [ADR-0001-runner-first-connect-enrollment.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-0001-runner-first-connect-enrollment.md) | Runner 首连自注册 ADR（跨 hub+runner 线协议）；自根 plans/ 迁入 shared/ |
 | [E2E-THREE-PIPELINES-2026-09-26.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/E2E-THREE-PIPELINES-2026-09-26.md) | 三流水线整体 E2E 权威记录（跨组件）；自根 plans/ 迁入 shared/ |
+| [ADR-0002-runner-install-bootstrap.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-0002-runner-install-bootstrap.md) | Runner 安装引导 ADR（join-bundle API：网关 URL + CA 信任根 + enroll token 一次性下发，安装数据收编为 hub 能力） |
 
 ## 维护纪律
 

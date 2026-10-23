@@ -30,7 +30,7 @@
 
 ## 6. 目标接入与执行后端（② 接入层展开）
 
-`targetKind` × `access` 两个正交维度、能力矩阵、三通道互补与凭据风险 → **[shared/DATA-MODEL.md §9.5](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)**；直连扩表形状与凭据加密落库 → §9.7；runner 安装 / 升级编排 → §9.9；版本矩阵 CM → §9.10；agent_ops 台账与直连执行全链路（协议裁定 / Job 执行语义 / install·upgrade 留守 queued）→ **DATA-MODEL §9.5 agent_ops 段**（现状登记 → **[plans/STATUS.md §2](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md)** #1）。
+`targetKind` × `access` 两个正交维度、能力矩阵、三通道互补与凭据风险 → **[shared/DATA-MODEL.md §9.5](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md)**；直连扩表形状与凭据加密落库 → §9.7；runner 安装 / 升级编排 → §9.9；版本矩阵 CM → §9.10；agent_ops 台账与直连执行全链路（协议裁定 / Job 执行语义 / install·upgrade 留守 queued）→ **DATA-MODEL §9.5 agent_ops 段**（现状登记 → **[plans/STATUS.md §2](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md)** O-1）。
 
 ---
 

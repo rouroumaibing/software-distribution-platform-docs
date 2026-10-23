@@ -2,8 +2,8 @@
 
 - **状态**：Design（设计定稿，本轮落实；实现 gate = kind 流量测试床，见 §8）
 - **住户依据**：横跨 runner（发送）+ hub（落库）+ console（消费）三端，按「范围优先」判据入住 `shared/`（原 plans/ 位置废止）
-- **覆盖缺口**：STATUS §2 **#8**（canary `CurrentWeight` 回传）、**#16**（TaskRun 产物/结果落库）、**#2**（agent_version / per-target 身份上报）、**#20 的 hub 侧半边**（通知已读 + 审批 assignee）
-- **性质**：这是 STATUS 盘点结论中**唯一协议级真缺口**。四件事共享同一条 runner→hub 回流通道，一次立项全部解决。
+- **覆盖缺口**：STATUS 盘点 **#8**（canary `CurrentWeight` 回传）、**O-16**（TaskRun 产物/结果落库）、**#2**（agent_version / per-target 身份上报）、**#20 的 hub 侧半边**（通知已读 + 审批 assignee）
+- **性质**：四件事共享同一条 runner→hub 回流通道，一次立项全部解决。
 
 ---
 
@@ -14,14 +14,14 @@
 | runner→hub 已有两条上行消息：`MessageStatusUpdate`（run phase + TaskRunStatusSummary 列表）、`MessageLogChunk` | runner `api/v1alpha1/gateway_payloads.go:9-28` |
 | hub 侧 `ApplyStatus` 持久化 run/task 相位 | hub `internal/run/service/pipeline_run.go:378` |
 | `RolloutRun` 模型**已建**（phase / currentStepIndex / currentWeight / start/completion），AutoMigrate 已含 | hub `internal/run/models/rollout_run.go:13-26`、`internal/db/db.go:96` |
-| 但 `TaskRunStatusSummary` **没有** rollout/权重/产物字段，runner 也**不上报** agent_version → `RolloutRun` 行始终没有数据来源，`targets.agent_version` 永远为空 | runner `api/v1alpha1/pipelinerun_types.go:270-278` |
-| Rollout 写路径全部收口在 runner 侧 reconciler（注解驱动），runner 产出 `CurrentWeight` 后无处可送 | runner `RolloutControlPayload` 注释、`gateway.go` 下行分发 |
+| `TaskRunStatusSummary` **已带** `Rollout *RolloutStatusSummary`（phase / step / weight / workloadRef），runner 握手发 `MessageAgentInfo` 自证版本 → hub 覆盖写快照 + `targets.agent_version` 落库；`RolloutRun` 行有真实数据来源（canary 权重回流 + 身份帧均已落码并经 kind / 云上实测，见 `plans/STATUS.md` §1.4；O-16 产物为协议预留 omitempty，见 §4） | runner `api/v1alpha1/pipelinerun_types.go:286`、`cmd/runner/main.go:95`、`pkg/connector/client.go:248`；hub `internal/run/service/pipeline_run.go:546`（`UpsertSnapshot`）、`internal/run/service/rollout_run.go:75`、`cmd/hub/main.go:358`（`SetAgentInfoHandler`）；测试 `internal/run/service/rollout_reflux_test.go` |
+| Rollout 写路径收口在 runner 侧 reconciler（注解驱动），runner 产出的 `CurrentWeight` 经 `RolloutStatusSummary` 随 StatusUpdate 上行落 hub | runner `RolloutControlPayload` 注释、`gateway.go` 下行分发 |
 
 ## 2. 设计目的与总原则
 
 ### 2.1 设计目的（为什么要做）
 
-当前系统（三仓 main 分支）的执行态回流是**半程**的：runner 在目标集群内完成了灰度步进、产物产出、版本自证三件事，但 hub 侧的 `rollout_runs` 行恒空、`task_run_artifacts` 无从谈起、`targets.agent_version` 恒为空串。后果：① console 灰度控制台用任务完成数**猜测**权重（`ReleaseDetailView.vue` 注释自述），步宽调节没有真实反馈环；② 构建产物只能靠人工从目标集群捞取，签名下载通道（B-16）形同虚设；③ 版本兼容性检查（#2 下半）因无版本数据无法实现。本设计目的是**打通 runner→hub 的执行态回流后半程**，使 hub 成为执行态的完整权威镜像。
+本协议立项时（三仓 main 分支）的执行态回流是**半程**的：runner 在目标集群内完成了灰度步进、产物产出、版本自证三件事，但 hub 侧的 `rollout_runs` 行恒空、`targets.agent_version` 恒为空串。后果：① console 灰度控制台用任务完成数**猜测**权重（`ReleaseDetailView.vue` 注释自述），步宽调节没有真实反馈环；② 构建产物只能靠人工从目标集群捞取，签名下载通道（B-16）形同虚设；③ 版本兼容性检查（#2 下半）因无版本数据无法实现。本设计目的是**打通 runner→hub 的执行态回流后半程**，使 hub 成为执行态的完整权威镜像。
 
 ### 2.2 概念空间
 
@@ -81,7 +81,7 @@ sequenceDiagram
 - **触发时机**：Rollout reconciler 每次 Status 变更即发一次 StatusUpdate（权重是低频量，不会打爆通道）。
 - **历史步骤序列**：hub 攒（`rollout_runs` 增 `step_history` jsonb 追加），runner 保持无状态——runner 缓存 status 历史会引入 CR 重启丢历史的边界问题。
 
-## 4. #16 TaskRun 产物/结果落库
+## 4. O-16 TaskRun 产物/结果落库
 
 ```go
 type TaskArtifactReport struct {
@@ -109,8 +109,8 @@ erDiagram
     task_runs ||--o{ pipeline_approvals : "审批型任务"
 ```
 
-- **实现裁定（v3）**：核实 hub 既有 `artifacts` 表已带 `task_run_id` 外键，且制品上传链路（G-2/G-6/G-14：`RegisterProduced` param-substituted 幂等登记）完备——本节原设计的独立新表 `task_run_artifacts` **会与既有表重复**，裁定不建。回流通道 `Artifacts` 字段**保留为协议预留**（`omitempty`，本轮不实现生产者）；digest/size 元数据增强归制品上传协议扩展（STATUS #22② 立项），届时直接挂既有 `artifacts` 表。
-- `kind=image` 的 location **默认**是 harbor 引用（与 #22①② 的 Build→Harbor 对接共用命名约定）；**registry 为可配置后端**，经 `SDP_JOB_IMAGE_*` / 部署 `--set image.imageAddr` 可指向其他兼容 OCI Distribution 的 registry，harbor 仅是默认实现、非强制依赖。
+- **实现裁定（v3）**：核实 hub 既有 `artifacts` 表已带 `task_run_id` 外键，且制品上传链路（G-2/G-6/G-14：`RegisterProduced` param-substituted 幂等登记）完备——本节原设计的独立新表 `task_run_artifacts` **会与既有表重复**，裁定不建。回流通道 `Artifacts` 字段**保留为协议预留**（`omitempty`，本轮不实现生产者）；digest/size 元数据增强归制品上传协议扩展（STATUS O-22② 立项），届时直接挂既有 `artifacts` 表。
+- `kind=image` 的 location **默认**是 harbor 引用（与 O-22①② 的 Build→Harbor 对接共用命名约定）；**registry 为可配置后端**，经 `SDP_JOB_IMAGE_*` / 部署 `--set image.imageAddr` 可指向其他兼容 OCI Distribution 的 registry，harbor 仅是默认实现、非强制依赖。
 - **上报失败重试预算（已裁定）**：3 次指数退避（1s/2s/4s），最终放弃仅记 runner 侧 warning 日志，不阻塞 run 相位推进——产物是增强数据，不是相位依赖。
 
 ## 5. #2 agent_version / per-target 身份
@@ -130,7 +130,7 @@ type AgentInfoPayload struct {
 }
 ```
 
-- **per-target 身份**：维持 ADR-0001 决策（enroll-token 一次性 bootstrap）。身份帧带 `enrolledTargetID`，hub 校验帧内 ID 与当前 WS 连接注册的 target 一致，不一致记审计 + 拒写（防串号注册）。完整 per-target 凭据仍归 #1 执行器立项。
+- **per-target 身份**：维持 ADR-0001 决策（enroll-token 一次性 bootstrap）。身份帧带 `enrolledTargetID`，hub 校验帧内 ID 与当前 WS 连接注册的 target 一致，不一致记审计 + 拒写（防串号注册）。完整 per-target 凭据仍归 O-1 执行器立项。
 - **兼容性判定（已裁定初版语义）**：hub 只落库 + 展示，不做拒绝（kill switch）；后续需要强制阻断时再加版本下限配置——先有数据，后有策略。
 
 ## 6. #20 hub 侧半边（通知已读 + assignee）
@@ -223,7 +223,8 @@ agentOps.versionMatrix               // 版本矩阵读 targets.agent_version（
 
 | 日期 | 变更内容 | 原因 |
 |---|---|---|
-| 2026-10-08 | v1：初稿（Proposed，gate=远程真流量环境） | STATUS #8/#16/#2/#20 四项合并立项 |
+| 2026-10-08 | v1：初稿（Proposed，gate=远程真流量环境） | STATUS #8/O-16/#2/#20 四项合并立项 |
 | 2026-10-08 | v2：按 software-story-design 模板补齐（设计目的/概念空间/时序图/ER 图/接口定义/一致性校验/变更历史）；§8 gate 改写为 kind 流量测试床；§9 两条未决项裁定拍板；文档迁入 shared/ | 用户确认本机 docker+kind 可建流量测试床，「环境不存在」前提失效；skill 缺口分析补全 |
 | 2026-10-08 | v3：§4 裁定不建 `task_run_artifacts` 新表（既有 `artifacts` 表已带 task_run_id，新表重复），`Artifacts` 字段降为协议预留；§6 assignee=me 留守至权限控制主线 | 落实阶段核对实际代码发现 §4 设计与 hub 既有上传链路（G-2/G-6/G-14）重复；assignee 依赖未钉的审批权限模型，不提前臆造 |
 | 2026-10-20 | v4：§4 `kind=image` location 由"必须 是 harbor 引用"改为"默认 harbor 引用、registry 可配置"（经 `SDP_JOB_IMAGE_*` / 部署 `--set image.imageAddr` 可指向其他兼容 OCI 的 registry），明确 harbor 仅默认实现、非强制依赖 | 用户裁定镜像仓库可替换，原"必须"措辞与可替换架构意图冲突 |
+| 2026-10-23 | v5：§1 现状同步至代码实际（#8 canary 权重回流 / #2 agent_version 身份帧已落码并经 kind + 云上实测；O-16 维持协议预留）；头部缺口清单去「STATUS §2」指向（#8/#2 已不在未完成清单） | 文档 vs 代码全量审计：§1「现状」承诺按实际代码编写，须随实现闭环更新 |

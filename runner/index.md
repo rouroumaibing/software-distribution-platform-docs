@@ -9,6 +9,7 @@
 | --- | --- |
 | [STORY-runner-implementation.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md) | runner 实现 Story：§4.2.3 kubebuilder 安装、§4.3 任务处理与 DAG 推进、§4.4 授权边界 |
 | [kubebuilder-install.txt](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/kubebuilder-install.txt) | Kubebuilder / controller-gen 命令记录（CRD / RBAC / deepcopy 生成） |
+| [features/target-bootstrap.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/features/target-bootstrap.md) | Runner 目标机自举（join-bundle 安装引导）特性规格：两条安装路径、模板占位符契约、信任锚两态、验收（补充 ADR-0002 决策记录） |
 
 ## features/ 与 plans/（按需建立）
 

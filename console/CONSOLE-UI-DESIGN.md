@@ -8,7 +8,7 @@
 
 ---
 
-## 0. 文档边界与修订史索引
+## 0. 文档边界与章节约定
 
 ### 0.1 章节号稳定性约定
 
@@ -28,9 +28,33 @@
 | 附 A / 附 B / 附 C | 后端依赖与待确认 / N-13 决策 / 服务树删除决策 | 新 |
 | 附 D | API 契约与三层数据模型 / 三态子任务表单 | 旧文 附 A 迁入 |
 | 附 E | 历史未完成项快照 | 旧文 附 B 迁入 |
-| 计划 §4.1–§4.5（前端设计补全） | [ui-12-console-completion-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-12-console-completion-design.md) | 四期 15 工作项逐项设计（交互/权限矩阵/五态/契约引用/决策挂钩）；配套契约/spec 已并入 ui-12（修订 R3）后删除 |
+| 计划 §4.1–§4.5（前端设计补全） | [ui-12-console-completion-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-12-console-completion-design.md) | 四期 15 工作项逐项设计（交互/权限矩阵/五态/契约引用/决策挂钩）；配套契约/spec 已并入 ui-12（见 ui-12 变更历史 R3）后删除 |
 
-### 0.2 修订史索引（v1 → v4.5 + 实现同步，21 轮）
+## 0.4 章节拆分布局
+
+原文 1686 行，正文按章节拆入 `console/features/`（每份文件头部标注来源与只追加铁律）；本文件保留为**事实源索引 stub**。章节号全局唯一且不变，文本引用「§N.x」按下表定位：
+
+| 原文章节 | 拆分后文件 |
+| --- | --- |
+| §1 / §2 / §3 | `features/ui-01-goals-users-competitors.md` |
+| §4 | `features/ui-02-scope.md` |
+| §5 | `features/ui-03-information-architecture.md` |
+| §6 | `features/ui-04-task-flows.md` |
+| §7 | `features/ui-05-page-layouts.md` |
+| §8 | `features/ui-06-interactions.md` |
+| §9 | `features/ui-07-visual-system.md` |
+| §10 + 附 F | `features/ui-08-testing-acceptance.md` |
+| 附 A + 附 D | `features/ui-09-backend-deps-api-contract.md` |
+| 附 B + 附 C | `features/ui-10-decision-records.md` |
+| 附 E + 附 G/H/I | `features/ui-11-implementation-records.md` |
+
+> 新增修订轮次的追加落点：设计规格变更 → 追加到对应 `ui-*.md` 文件尾；新一轮落地记录 → 参照附 G/H/I 形态追加到 `ui-11-implementation-records.md`（或新建 `ui-12-*`）；修订史索引 → 见文末「变更历史」章节。
+
+## 变更历史
+
+> 本节收口设计演进与各轮修订决策（含日期与理由），按 clean-change-comments 规则 4 收口于此；正文只描述当前设计状态。
+
+### 变更历史 · 0.2 修订史索引（v1 → v4.5 + 实现同步，21 轮）
 
 > 详细原文保留在 §0.3。索引表用途：**一次修订动了哪些章节，回查时先看这里**（审计发现「修订史跑在正文前面」是本文档历史最常见的病灶，故建索引）。
 
@@ -52,13 +76,13 @@
 | 14 | 同步 | **** | **R-8 服务树规模化落地**：懒加载（展开才请求，改走附 A N-9 新增的 `GET /orgs/:id/services`） + **服务端搜索**（hub 新端点 `GET /search`，附 A N-8，结果带所属路径） + 虚拟滚动（≥200 节点窗口化） + 独立滚动容器；hub 新增 `internal/search`（三类各取 limit 条 / ILIKE + 元字符转义 / 精确命中优先排序）；⌘K 浮层改**服务端优先、客户端索引兜底**（降级时浮层明示）；门禁加 `pnpm test:service-tree`（22 条断言）。落地记录、**显式差异**与顺带修掉的真实缺陷见 **附 I** | §4.1(R-8)、§5.2、§5.3、§5.1.1、附 A(N-8/N-9)、附 D、附 I |
 | 15 | 同步 | **** | **原型缺口补齐轮（仅原型，console 实现未动）**：针对「看得到状态、执行不了动作」——**单次运行详情页**（stage/task 时间线 + phase 感知动作区）、**审批操作**（批准/驳回 + 意见 + 审计）、**终止/重跑/仅失败任务**（消费既有 cancel/decision/redispatch 桩）、**灰度控制台弹窗**（步宽/暂停/晋级/回滚）、**带参触发对话框**、运行中心**分页 + 时间范围筛选**（`?createdAfter=` 已落地）、**顶栏通知中心**、平台管理补齐（组映射可编辑 + 平台用户表 + **审计日志** + 目标注册/Runner 安装升级/凭据轮转与新建）、制品页**版本矩阵**（`GET /package-versions` 消费 UI）、个人中心/退出弹窗。规格增量见 ui-05 **§7.13**（新增节）；依赖 **N-16/N-17** 见 ui-09 附 A 补充；落地记录与显式差异（含 `canceled` vs `Cancelled` 枚举命名）见 ui-11 **附 K**；运行详情 URL 形态【待拍板】 | §7.1、§7.6、§7.7、§7.9、附 A(N-16/N-17)、ui-05 §7.13、ui-09、ui-11 附 K |
 | 16 | 实现 | **（下午）** | **§7.13 落码到 console 仓**：先全仓核对，**多数 P0 缺口仓内已实现**（RunMonitorView 详情/审批/取消/重跑、TriggerRunDialog、PaginationBar、通知铃铛、AgentOpsView 安装升级、rollout 控制——K.2 预期与仓情不符，见附 L.1 对照表）；本轮实际落 6 项：①时间范围筛选全链路（`?time=` URL 契约 + `timeToCreatedAfter` 下推 hub `?createdAfter=`，runcenter smoke 16→21 断言）②注册接入目标 Modal（kubeconfig 预检 + 一次性 enrollToken 展示 + Target 补 `targetKind` + 表加类型列）③显式凭据轮转（rotateMode 值必填）④版本矩阵消费（`api/packageversion.ts` + AgentOpsView 展示，落点改 Runner 域——端点实为平台三版本部署常量，非制品域）⑤个人中心下拉 ⑥通知 30s 轮询。门禁：vue-tsc+vite build ✅、7 smoke 全绿。**B 类上报**：审计日志（hub 有表/仓储无查询端点，N-16）、灰度步宽（CurrentWeight 回流缺口）、通知已读语义、403/404 页 —— 均未做假实现 | ui-11 附 L、§7.13、附 A(N-16) |
-| 17 | 实现 | **（傍晚）** | **B 类缺口收口轮（双向钢人裁定驱动）**：①审计日志全链路——hub 新增 `GET /audit-logs`（`AuditLogRepository.Query` 六维 filter + limit 钳制，**挂 platformGroup 过平台级 `user:manage`** 非裸挂；DryRun 查询形状回归 3 案 + 路由注册测试），console `api/audit.ts` + `/admin/audit` section；②通知已读游标（localStorage 按 sub 存 `lastReadAt` + 60s skew 容忍，修「角标恒亮」负 UX 债；hub 半边入 `runner-reflux-spec` §6）；③403/404 全局错误态（`ErrorView.vue` + router catch-all + http 拦截器 403 统一跳 `/forbidden`，`skip403Redirect` 豁免口）；④runner 五默认镜像切 `harbor.sdpworkflow.com/sdp/*`（harbor 重装入 kind + CoreDNS rewrite→网关 ClusterIP + kubelet CRI mirror 443 拉取实测 Succeeded；五镜像本体入库被宿主 docker daemon 网络问题阻塞，见 STATUS #22）；⑤runner→hub 回流协议 spec 定稿（`shared/runner-reflux-spec-2026-10-08.md`，实现 gate=真流量）。门禁：hub `go test ./...` 全绿、runner gate 全绿、console build+171 断言全绿 | ui-11 附 L.5、shared/runner-reflux-spec、STATUS §1/§2 |
+| 17 | 实现 | **（傍晚）** | **B 类缺口收口轮（双向钢人裁定驱动）**：①审计日志全链路——hub 新增 `GET /audit-logs`（`AuditLogRepository.Query` 六维 filter + limit 钳制，**挂 platformGroup 过平台级 `user:manage`** 非裸挂；DryRun 查询形状回归 3 案 + 路由注册测试），console `api/audit.ts` + `/admin/audit` section；②通知已读游标（localStorage 按 sub 存 `lastReadAt` + 60s skew 容忍，修「角标恒亮」负 UX 债；hub 半边入 `runner-reflux-spec` §6）；③403/404 全局错误态（`ErrorView.vue` + router catch-all + http 拦截器 403 统一跳 `/forbidden`，`skip403Redirect` 豁免口）；④runner 五默认镜像切 `harbor.sdpworkflow.com/sdp/*`（harbor 重装入 kind + CoreDNS rewrite→网关 ClusterIP + kubelet CRI mirror 443 拉取实测 Succeeded；五镜像本体入库被宿主 docker daemon 网络问题阻塞，见 STATUS O-22）；⑤runner→hub 回流协议 spec 定稿（`shared/runner-reflux-spec-2026-10-08.md`，实现 gate=真流量）。门禁：hub `go test ./...` 全绿、runner gate 全绿、console build+171 断言全绿 | ui-11 附 L.5、shared/runner-reflux-spec、STATUS §1/§2 |
 | 18 | 设计 | **** | **前端设计补全计划落实（四期 15 工作项）**：把 `plans/CONSOLE-FRONTEND-DESIGN-COMPLETION-PLAN-2026-10-11.md` 及其三份后端契约、四份前端 spec、五态规范、7 项决策钢人论证，**逐项落实到 console 设计文档体系**——① 新建 `features/ui-12-console-completion-design.md`（按工作项 4.1–4.5 / 5.1–5.5 / 6.1–6.5 / §4.1–4.5 落地 入口/交互/权限矩阵（`role.go` §7 词表）/五态/契约引用/决策挂钩）② 后端净缺口续接 `ui-09` 附 A（N-18–N-32，挂钩决策 #1–#7）③ 7 项决策钢人论证折叠入 `ui-10` 附 E ④ 配套 companion 原型 `CONSOLE-UI-补全原型.html`。**关键判定**：多数 P0/P1 后端底座已存在，前端本质是 UI 补全；`RolloutPhase` 缺 `Failed`/`RolledBack` 为净缺口（更正计划"paused 混用"误判）；共享五态规范兼第四期 §4.1 | ui-12、`ui-09` 附 A(N-18~N-32)、`ui-10` 附 E、`plans/CONSOLE-DECISIONS-STEELMAN-2026-10-11.md`、`CONSOLE-UI-补全原型.html` |
 | 19 | 原型 | **（下午）** | **补全内容分布集成进主控原型（14 工作项）**：companion 原型「15 工作项独立左栏」形态被评审否决（位置不对 + 违背左栏恒 5）——补全内容改为逐项嵌入 `CONSOLE-UI-prototype.html` 原有页面：组件详情新增「变量与密钥」Tab(5.3)、接入管理「Runner」Tab(6.3)、运行中心第三视图「审批」(5.1)、配置工具栏「⟳ 版本历史」抽屉(4.1/4.2)、编排工具栏「⚙ 触发器」弹窗(4.3)、灰度晋级/回滚必填原因(4.4)、发布视图 `rolled_back`/`verified`/`configuring` 徽章(4.5)、日志 Tab「● 实时流」徽章(5.5)、服务树节点治理卡片(6.1)、审计分类筛选(5.4)；通知中心(5.2)/PAT(6.4)/全局制品库(6.2) 经顶栏铃铛 / 用户菜单 / 制品 Tab 链接进入，**不占左栏（恒 5 不变）**。内联 JS `node --check` 通过（191,803 字符）。companion 原型先改指针页，随后按用户决定**删除**（文档体系无死链：仅 §0.2 #18 历史行提及）。原型实际落点与 ui-12 设计入口的差异对账见 **ui-12 附 A** | ui-12 附 A、`CONSOLE-UI-prototype.html` |
 | 20 | 原型 | **** | **原型路线图落地轮（4.1 / 4.2 / 4.3 / 4.4 / 5.1 / 5.2 收口）**：4.2 版本一等对象 + 指定版本回滚（append 新 release 记录、新契约 `GET /components/:id/versions` = N-33）、4.1 版本 diff + 变更说明、4.4 高危原因必填三处扩展、4.3 触发器 Tab / cron 校验预览 / 写回、5.1 审批策略卡 + 时间线、5.2 订阅规则；顺带 5 项代码小修 + 文件名实际落盘对齐（#11 早记录）+ 版本矩阵语义勘误。权威：ui-12 R5 / ui-10 E.8 / ui-09 N-33；plan 已删 | ui-12 R5、ui-10 附 E.8、ui-09 附 A(N-33)、`CONSOLE-UI-prototype.html` |
 | 21 | 修复 | **（晚）** | **原型运行时缺陷修复轮（jsdom 门禁）**：用户 jsdom 回归报 2 处崩溃——①`renderNotif()` 加载期调用早于 `NOTIF_READ` 声明 → TDZ 脚本中断、后续数据块全未初始化；②服务树 `${nodeGovernanceHtml(node)}` 在 IIFE 外求值 → `node is not defined`。修复：①**全部 17 个 const 数据块前移至 boot 之前**（「数据块统一区」，整类 TDZ 根治，强于单点前移）②插值移入 IIFE。复验时 jsdom harness 另抓出 ③**铃铛下拉深链全死**（`stopPropagation` 吞掉 `#topbar` 委托 → 通知中心整页不可达），drop handler 内直接 `go()` 修复。门禁：加载零报错 + 64 入口穷举 + **34/34 行为断言**。落地记录见 ui-11 **M.2** | ui-11 M.2、`CONSOLE-UI-prototype.html` |
 
-### 0.3 修订史原文（v1 → v4.5，逐条保留）
+### 变更历史 · 0.3 修订史原文（v1 → v4.5，逐条保留）
 
 > **重设计范围（本次用户拍板）**：① 信息架构与导航 ② 总览 Dashboard ③ 组件详情 Tab 收敛 ④ 流水线创建/编辑/删除/更新（CRUD）全面设计 ⑤ 双主题视觉系统。
 > 导航方向：**左栏极简固定导航（恒 5 项）+ 服务树独立页（懒加载）**；视觉方向：**明/暗双主题**。
@@ -91,28 +115,3 @@
 > ① **删「最近访问」**：它仍是"随用户行为变长的列表"，属于 v2 没清干净的尾巴（与"左栏条目数恒定"自相矛盾）；高频组件的 1 击直达改由 **⌘K 搜索（≤2 步）** 单独承担。
 > ② **删「流水线」「发布」两个顶层菜单**：它们是**资源的两个视图**，不是导航目的地；跨组件浏览**并入「运行中心」**（v3 时为 运行 / 流水线 / 发布 三视图；**v4.4 起为 运行 / 发布 两视图**，流水线列表归属「组件详情 · 交付 · 流水线」），左栏只保留一个"跨组件巡视"入口。
 > 受影响章节：§1(S1/S2/S5)、§2(E)、§4(R-1/R-2)、§5.1、§5.1.1、§5.5、§7.1、§7.2、§8.4、§10.2、附 A(N-3/N-10/N-11)。
-
----
-
-
----
-
-## 0.4 章节拆分布局
-
-原文 1686 行，正文按章节拆入 `console/features/`（每份文件头部标注来源与只追加铁律）；本文件保留为**事实源索引 stub**（§0 修订史索引常驻此处）。章节号全局唯一且不变，文本引用「§N.x」按下表定位：
-
-| 原文章节 | 拆分后文件 |
-| --- | --- |
-| §1 / §2 / §3 | `features/ui-01-goals-users-competitors.md` |
-| §4 | `features/ui-02-scope.md` |
-| §5 | `features/ui-03-information-architecture.md` |
-| §6 | `features/ui-04-task-flows.md` |
-| §7 | `features/ui-05-page-layouts.md` |
-| §8 | `features/ui-06-interactions.md` |
-| §9 | `features/ui-07-visual-system.md` |
-| §10 + 附 F | `features/ui-08-testing-acceptance.md` |
-| 附 A + 附 D | `features/ui-09-backend-deps-api-contract.md` |
-| 附 B + 附 C | `features/ui-10-decision-records.md` |
-| 附 E + 附 G/H/I | `features/ui-11-implementation-records.md` |
-
-> 新增修订轮次的追加落点：设计规格变更 → 追加到对应 `ui-*.md` 文件尾；新一轮落地记录 → 参照附 G/H/I 形态追加到 `ui-11-implementation-records.md`（或新建 `ui-12-*`）；修订史索引 → 本文件 §0.2。

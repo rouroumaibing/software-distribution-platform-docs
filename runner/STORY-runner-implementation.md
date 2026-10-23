@@ -56,7 +56,7 @@
   - 动态开关: 不涉及（M1）。
 - **[x] 可服务性与监控 (Serviceability)**
   - 核心日志: 全链路带 `target`/`pipelineRunName`/`taskName` 上下文（如 `dispatch: created PipelineRun ... on target %s`、`rollout: scale %s failed`），可经 TraceID 关联。
-  - 监控告警: ✅ 已接入—— `pkg/metrics` Prometheus 计数器/仪表 + 失败告警，经 controller-runtime 内置 metrics server 暴露 `/metrics`（B-09）；降级开关 `SDP_LOG_STREAMING` / `SDP_CANARY_INGRESS` / `SDP_ALERTING`。告警规则与预发/灰度验证属运维环境项（[STATUS](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) #5）。
+  - 监控告警: ✅ 已接入—— `pkg/metrics` Prometheus 计数器/仪表 + 失败告警，经 controller-runtime 内置 metrics server 暴露 `/metrics`（B-09）；降级开关 `SDP_LOG_STREAMING` / `SDP_CANARY_INGRESS` / `SDP_ALERTING`。告警规则与预发/灰度验证属运维环境项（[STATUS](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) O-5）。
 
 ---
 
