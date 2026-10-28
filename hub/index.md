@@ -18,6 +18,7 @@
 | [runner-reflux-spec.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/runner-reflux-spec.md) | runner→hub 执行态回流协议（hub 为落库权威：ApplyStatus 扩展/身份帧对账/通知已读） |
 | [install-upgrade-executor-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/install-upgrade-executor-design.md) | agent_ops install/upgrade 执行器（hub 派发放行 + 双对账终态判定） |
 | [alerting-rules-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/alerting-rules-design.md) | 离线告警规则（hub gateway gauge 指标补齐 + 通知流注入） |
+| [NETWORKING-GATEWAY.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/NETWORKING-GATEWAY.md) | 平台入口网关：Gateway 级资源归运行方/脚手架，本仓 chart 只带 hub/keycloak HTTPRoute + BackendTLSPolicy；部署顺序、WS 长连 Policy 入口与运维 |
 
 完整住户清单与维护纪律见 [shared/README.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/README.md)。
 

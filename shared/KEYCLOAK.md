@@ -351,7 +351,40 @@ E2E 证据（全部经网关 https 或 hub API 实测）：discovery 通告 issu
 - **console 前端职责**：登录说明页（`/login-hint`）须把预置账号明示为「**临时初始密码，仅供首次登录，登录后请立即重置**」，并提供 Keycloak 账户控制台（`{issuer}/account`）入口；生产可置空隐藏凭证块（见 §7 末段）。
 - **生产 hardening 留待 O-29（harbor 正规 CA + sdp 项目转 private）收口**：含 master 口令强随机 + 经 `valueFrom.secretKeyRef` 注入、凭据轮换流程。当前不做。
 
-## 8. 相关文档
+## 8. 运维：既有集群补挂 `basic` client scope
+
+**症状**：hub 全部鉴权路由（含 `/api/v1/userinfo`）恒 401，GIN 日志只见 auth 中间件通过但下游报 `no RBAC subject on context`；解码 access token 发现 **`sub` 缺失**（判别特征：同一授权响应里 id_token 有 `sub`、access_token 没有）。
+
+**根因**：KC 25 起 access token 的 `sub` 由内置 `basic` client scope 提供。`--import-realm` 导入的 realm 若沿用 KC 24 前的 `defaultClientScopes` 旧清单（`web-origins/acr/profile/roles/email`），两个业务客户端 `sdp-console` / `sdp-backend` 就都没有 `basic` —— 内置客户端（account/admin-cli 等）不受影响。种子已修复（realm configmap 补 `"basic"`）；但 **`--import-realm` 不覆盖已存在 realm**，既有集群须手工补挂。
+
+**操作**（幂等；经 master admin 拿 token，路径带 `/keycloak` relativePath 前缀）：
+
+```bash
+kubectl -n sdp-workflow port-forward --address 0.0.0.0 svc/hub-keycloak-http 8081:80 >/tmp/kc.log 2>&1 &
+AT=$(curl -s -X POST http://localhost:8081/keycloak/realms/master/protocol/openid-connect/token \
+  -d "grant_type=password&client_id=admin-cli&username=admin&password=sdp@12345" \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+python3 - "$AT" <<'PY'
+import json, sys, urllib.request
+AT, BASE = sys.argv[1], "http://localhost:8081/keycloak/admin/realms/sdp"
+def get(p):
+    return json.load(urllib.request.urlopen(urllib.request.Request(BASE+p, headers={"Authorization":"Bearer "+AT})))
+def put(p):
+    return urllib.request.urlopen(urllib.request.Request(BASE+p, headers={"Authorization":"Bearer "+AT,"Content-Type":"application/json"}, data=b"{}", method="PUT")).status
+basic = {s['name']: s['id'] for s in get('/client-scopes')}['basic']
+for c in get('/clients'):
+    defaults = [s['name'] for s in get(f"/clients/{c['id']}/default-client-scopes")]
+    if 'basic' not in defaults:
+        print(f"ADDED basic -> {c['clientId']}: HTTP {put(f'/clients/{c['id']}/default-client-scopes/{basic}')}")
+    else:
+        print(f"OK {c['clientId']}")
+PY
+kill %1 2>/dev/null
+```
+
+执行后重新登录获取新 token 即恢复（无需重启 hub）。
+
+## 9. 相关文档
 
 - [hub ACCOUNT-PERMISSION-MODEL](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCOUNT-PERMISSION-MODEL.md) —— **下游规范**：账号与权限（三条不动式、鉴权两段式、RBAC 引擎、审计、权限申请审批）。**本文只讲「认证子系统如何部署」；「权限如何判定」以该文为准。**
 - [hub API-REFERENCE](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/API-REFERENCE.md) —— API 端点与鉴权约定。
@@ -359,8 +392,9 @@ E2E 证据（全部经网关 https 或 hub API 实测）：discovery 通告 issu
 - [README §5.2 授权模型（G7）](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md) —— Keycloak（身份+组）/ k8s RBAC / hub 业务授权三者的边界。
 - 上游：[codecentric/helm-charts · keycloakx](https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx) · [Keycloak 官方](https://github.com/keycloak/keycloak)。
 
-## 9. 变更历史
+## 10. 变更历史
 
 | 日期 | 变更内容 | 原因 |
 |---|---|---|
 | 2026-10-22 | 设计裁定：keycloak 后端改真 HTTPS——`keycloak.extraEnv` 增 `KEYCLOAK_HTTPS_CERTIFICATE_FILE`/`KEYCLOAK_HTTPS_CERTIFICATE_KEY_FILE`（keycloakx 检测到该对 env 自动追加 `--https-*` 启动参数）、`extraVolumes/extraVolumeMounts` 挂 `hub-keycloak-tls` 到 `/etc/keycloak-tls`；`keycloak-httproute.yaml` 后端端口 80 → 8443 并新增 `BackendTLSPolicy`（target `hub-keycloak-http:8443`，CA=`hub-keycloak-tls`）；§4 验证命令与端口转发同步指向 8443 | 用户裁定 hub 与 keycloak 后端一并改真 TLS 并各配 BackendTLSPolicy；keycloak 证书由 cert-create.sh 新增 `hub-keycloak-http` 组件生成 |
+| 2026-10-27 | kind 集群端到端验证发现并修复：realm 种子 `defaultClientScopes` 沿用 KC 24 前旧清单、缺 `basic` scope（KC 25+ access token 的 `sub` mapper 在该 scope），导致业务客户端 token 无 `sub`、hub 鉴权路由恒 401；种子两处补 `"basic"` 并加防回退注释，新增 §8 既有集群手工补挂操作（幂等脚本） | hub 对外 401 的根因定位（id_token 有 sub、access_token 无 sub 为判别特征）；`--import-realm` 不覆盖存量 realm，既有集群须手工补挂 |

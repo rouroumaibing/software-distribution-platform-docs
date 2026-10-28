@@ -338,5 +338,24 @@ pnpm test（7 个 smoke 脚本）                   ✅ 全过
 3. **修复 ②（用户报告）服务树 `node is not defined`**：`${nodeGovernanceHtml(node)}` 写在 IIFE 闭合之后，而 `node` 是 IIFE 内 const → 服务树每次渲染必崩。修法：插值移入 IIFE 返回的模板内（治理卡片与节点信息同 pane，语义本就如此）。
 4. **修复 ③（harness 抓出）铃铛下拉深链全死**：`#notifDrop` click handler 首行 `e.stopPropagation()`，事件到不了 `#topbar` 委托监听（`go()` 在内）→ 通知条目与「查看全部通知 →」只关下拉不跳转；左栏无通知中心入口 ⇒ **5.2 通知中心整页不可达**。修法：drop handler 内对 `[data-nav]` 直接 `go(nav.dataset.nav, runTab, runFilter)`。同类审计：全文件 4 处 `stopPropagation`，另 3 处（userBtn / userDrop / notifBtn）均在各自 handler 内直接导航，无此患。
 5. **门禁（复现用户方法并加强）**：受管 node 工作区装 jsdom 自建 harness——① 加载零报错（TDZ gate）② 逐页穷举 **64 个交互入口**（导航 / 动作 / Tab / 树节点 / 子 pill；destructive 动作黑名单）+ **11 个弹窗 settle**（含输入填充、原因必填拦截、回滚 append 路径）③ **34/34 行为断言**：触发器 Tab 切换 + cron 合法 / 非法预览 + 保存写回（重开校验持久化）、灰度回滚（原因必填拦截 → append 新 release 记录 + 「（历史）」标记 + toast）、配置版本两版本 diff 输出 + 回滚 append vN、凭据轮转原因必填、PAT 无「永不过期」+ admin 二次确认 + 明文仅展示一次、铃铛角标标记已读后 -1。
+
+### M.3（设计裁定）个人中心角色来源 = `/api/userinfo`（非 `profile.realm_access`）
+
+> 来源：`shared/ACCOUNT-PERMISSION-MODEL.md` §10 #13 双向钢人（全文 `shared/ACCOUNT-PERMISSION-STEELMAN-2026-10-27.md`）。本段为对 §M 行 293「个人中心展示 realm 角色 from Keycloak profile」的设计层更正，**不改写该行历史记录**，仅标明角色展示的权威来源已裁定切换。
+
+1. **裁定**：个人中心的**身份**四字段（姓名 / 用户名 / 邮箱 / sub）仍来自 `oidc-client-ts` 的 `profile`（OIDC 标准、零额外往返、dev 降级简单）；**授权相关展示**（平台角色 `roles` / 组织 `orgs`）**必须来自 hub `GET /api/userinfo`**，禁止读 `profile.realm_access`。
+2. **理由**：`realm_access`（Keycloak realm 级）与 hub 平台角色（RBAC 表级）是两套命名空间；个人中心若显示 `realm_access`，会与「用户与权限」页显示的 hub 平台角色冲突，制造「两个角色来源」歧义。hub 是唯一权限权威（§2.1 / §2.2），授权展示的唯一真相源应为 `/api/userinfo`。
+3. **实现落点（Task 10）**：console 新增 `userinfoApi`（`GET /api/userinfo`），`auth` store 在 `init`（登录恢复 / 回调后）拉取并缓存 `roles` / `orgs`；`MainLayout` 个人中心改用 `userinfo.roles`（标注「平台角色」），`profile` 仅留身份四字段。`/api/userinfo` 不可用时角色区静默降级为空，不阻断登录态。
+4. **红线澄清**：§8 #1「前端不解析 token」精确为「应用代码不据 token 声明做授权判定」；`oidc-client-ts` 库级解析（renew / Bearer 注入 / `user.expired` 登录态）不可避免、不在红线范围。console 当前无 `if token.roles.includes` 类授权判断，安全语义已达成。
 6. **harness 抓 bug 经过（留痕）**：初版 17/21 → 4 个 FAIL 中定位 3 个为 harness 自身缺陷（徽章选择器 `.badge` vs 实际 `.hint`、`hidden` 属性 vs `style.display`、T3 导航路径假设错误——T2 后页面停在运行中心），1 个为真 bug（即修复 ③）。
 7. **遗留**：用户路线图仍开放项（4.2 版本详情 / 晋级、4.3 上游触发与触发来源列、5.1 策略配置界面、5.3 / 5.4 / 5.5 / 6.x 及第四期）不在本轮范围；console 实现仓仍未动。
+
+## 附 N-36 · M1 用户与组管理页 console 落地（2026-10-27）
+
+`PlatformAdminView.vue`（permissions section）按 ui-05 §7.14 M1 实现「用户 / 用户组」两区，紧邻平台角色区之前：
+
+1. **用户区**：列表（用户名 / 邮箱 / 启用态 + 待改密徽章）+ 行动作（重置密码、启用/停用）+ 新建用户弹窗。一次性临时口令经 `pwShow` 弹窗只展示一次（与 enroll-token 同语义）+ 复制按钮。
+2. **用户组区**：列表（组名 / 路径，`/org:*` 载体组标「系统管理」只读）+ 建组弹窗（客户端校验与 hub `validateRBACGroupName` 对齐：非空、禁 `/`、禁 `org`/`org:*`）+ 成员管理弹窗（目录用户下拉添加 / 移出）。
+3. **降级语义**：目录代理不可用（KC 未配置 → 404）时 `dirAvailable=false`，两区整块隐藏，M2/M3 授权表单退化「已绑定主体 + 手输」不变。
+4. **门禁**：vue-tsc 通过；8 套 smoke 全绿（platform-perm 21/21 契约不变——它只测 `utils/permission.ts` 纯逻辑）；`pnpm build` 通过。
+5. 页首与页尾注释同步为现状（旧「没有用户目录」表述移除）；原型与规范见 ui-05 §7.14 M1 / `CONSOLE-UI-prototype.html`。

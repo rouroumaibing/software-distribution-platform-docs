@@ -664,7 +664,7 @@ const NOTE = {
                    '<b>「平台底座」角标</b>：单机版下平台底座（hub / console）与目标同集群——注意 <b>runner 是接入侧代理，其组件身份与部署形态无关</b>（docs/hub/DATA-MODEL.md §9.3）。',
                    '<b>凭据页只出现引用名</b>：明文在 hub 侧 Secret，平台 DB 不落明文；被引用计数为 0 的凭据可安全轮转 / 删除。',
                    '缺口（待后端）：统一注册表 <span class="mono">GET /targets</span>（含 <span class="mono">targetKind=host</span>）、<span class="mono">/credentials</span> CRUD、<span class="mono">POST /targets/:id/enroll-token</span>（现网关为全局共享 token + runner 自报目标名，见 API-REFERENCE「接入管理」⚠️）、<span class="mono">POST /environments/:id/test</span>。'],
-  'admin-perm':['平台角色来自 Keycloak 组映射，仅平台管理员可见。'],
+  'admin-perm':['§7.14 M1–M6 五分区（用户 / 用户组 / 角色与绑定 / 权限审批 / 审计日志）。用户/组目录经 hub 代理 Keycloak Admin（N-34，前端不持 Admin 凭据）；主体 = token sub；/org: 组织组只读且不作 RBAC 主体；绑定有效期不允许默认永久挂账；权限审批（permission_requests）与运行审批（pipeline_approvals）严格分区。仅平台管理员可见（user:manage）。'],
 };
 /* 运行中心承载两个视图（运行/发布），备注按当前视图出（评审信息与附 A 同源，一处不落） */
 function noteKey(){
@@ -1154,12 +1154,18 @@ const NOTIFICATIONS = [
   {icon:'✕', cls:'b-fail', title:'run-6b90 运行失败', desc:'comp-worker / 版本归档 · helm upgrade 超时', at:'1h 前', act:['runs','runs','failed']},
   {icon:'⚠', cls:'b-warn', title:'集群离线', desc:'kind-e2e-02 · Runner 心跳丢失 6h', at:'6h 前', act:['admin-target']},
 ];
-/* 平台用户（「用户与权限」页）：Keycloak 组 → platform_role 映射的成员视图 */
-const PLATFORM_USERS = [
-  {name:'张三', mail:'zhangsan@sdp.local', kcGroup:'sdp-admins', role:'platform-admin', last:'09-14 19:02'},
-  {name:'李四', mail:'lisi@sdp.local',      kcGroup:'sdp-admins', role:'platform-admin', last:'09-14 18:40'},
-  {name:'王五', mail:'wangwu@sdp.local',    kcGroup:'sdp-devs',   role:'platform-user',  last:'09-14 17:22'},
-  {name:'赵六', mail:'zhaoliu@sdp.local',   kcGroup:'sdp-devs',   role:'platform-user',  last:'09-13 10:05'},
+/* 「用户与权限」页（§7.14 M1）：hub 代理 Keycloak Admin 的用户/组目录（N-34）。
+   sub 为示意缩写；/org: 前缀组由 hub orgsvc 随组织创建自动管理，UI 只读。 */
+const KC_USERS = [
+  {sub:'9f1c2b7e-…-a1', name:'张三', mail:'zhangsan@sdp.local', enabled:true,  groups:['/sdp-admins'], last:'09-14 19:02'},
+  {sub:'3d8a91f0-…-b2', name:'李四', mail:'lisi@sdp.local',      enabled:true,  groups:['/sdp-admins'], last:'09-14 18:40'},
+  {sub:'7c5e22d4-…-c3', name:'王五', mail:'wangwu@sdp.local',    enabled:true,  groups:['/sdp-devs'],   last:'09-14 17:22'},
+  {sub:'1a0f66c8-…-d4', name:'赵六', mail:'zhaoliu@sdp.local',   enabled:false, groups:['/sdp-devs'],   last:'09-13 10:05'},
+];
+const KC_GROUPS = [
+  {path:'/sdp-admins',    members:3,  desc:'平台管理员（RBAC 组）', org:false},
+  {path:'/sdp-devs',      members:18, desc:'开发用户组',            org:false},
+  {path:'/org:acme-corp', members:7,  desc:'组织 acme-corp · orgsvc 自动管理，UI 只读', org:true},
 ];
 /* 平台审计日志（手动诊断 / 审批 / 凭据轮转等敏感操作逐条留痕；手动执行宣称"逐条审计"的落点） */
 const AUDIT_LOGS = [
@@ -1459,42 +1465,111 @@ function pageEditor(){
 }
 
 function pageAdminPerm(){
-  /* 组映射（ROLE_MAP，可编辑）+ 平台用户视图 + 审计日志（2026-10-08 补齐：原页只有只读两行） */
-  const mapRows = ROLE_MAP.map(m=>`<tr>
-      <td><span class="chip mono">${esc(m.grp)}</span></td>
-      <td><b>${esc(m.role)}</b></td><td class="mono">${m.members}</td>
-      <td style="text-align:right"><button class="link" data-act="perm-map-edit" data-grp="${esc(m.grp)}">编辑</button></td></tr>`).join('');
-  const userRows = PLATFORM_USERS.map(u=>`<tr>
-      <td><b>${esc(u.name)}</b></td><td class="hint mono">${esc(u.mail)}</td>
-      <td><span class="chip mono">${esc(u.kcGroup)}</span></td>
-      <td><b>${esc(u.role)}</b></td><td class="mono hint">${esc(u.last)}</td></tr>`).join('');
-  const AUDIT_CAT = {all:'全部', approval:'审批', run:'运行', credential:'凭据', target:'目标', role:'权限'};
-  const auditCatOf = a => /approval/.test(a.act)?'approval':/target|runner/.test(a.act)?'target':/cancel|trigger|rerun|canary|run/.test(a.act)?'run':/credential/.test(a.act)?'credential':/role|perm|map/.test(a.act)?'role':'other';
-  const auditRows = AUDIT_LOGS.filter(a=>S.auditFilter==='all'||auditCatOf(a)===S.auditFilter).map(a=>`<tr>
+  /* §7.14 M1–M6 五分区：用户 / 用户组 / 角色与绑定 / 权限审批 / 审计日志（S.pamTab 承载；左栏恒 5 不变）。
+     主体模型：Keycloak 只做身份、hub 唯一权限权威（主体 = token sub）；用户/组目录经 hub 代理 KC Admin（N-34）。 */
+  const tab = S.pamTab || 'users';
+  const tabs = [['users','用户',KC_USERS.length],['groups','用户组',KC_GROUPS.length],['roles','角色与绑定',PLATFORM_BINDINGS.length],['approvals','权限审批',PERM_REQUESTS.filter(r=>r.status==='pending').length],['audit','审计日志',AUDIT_LOGS.length]];
+  const seg = `<span class="seg">${tabs.map(([k,l,n])=>`<button class="${tab===k?'on':''}" data-act="pam-tab" data-tab="${k}">${l} <span class="mono">${n}</span></button>`).join('')}</span>`;
+  let body='';
+  if(tab==='users'){
+    const rows = KC_USERS.map((u,i)=>`<tr>
+      <td><b>${esc(u.name)}</b>${u.enabled?'':' <span class="badge b-fail">已禁用</span>'}</td>
+      <td class="mono hint">${esc(u.sub)}</td>
+      <td class="hint mono">${esc(u.mail)}</td>
+      <td>${u.groups.map(g=>`<span class="chip mono">${esc(g)}</span>`).join(' ')}</td>
+      <td class="mono hint">${esc(u.last)}</td>
+      <td style="text-align:right">
+        <button class="link" data-act="pam-user-reset" data-i="${i}">重置密码</button>
+        <button class="link" data-act="pam-user-toggle" data-i="${i}">${u.enabled?'禁用':'启用'}</button>
+      </td></tr>`).join('');
+    body = `<div class="toolbar2"><span class="hint">用户目录 · hub 代理 Keycloak Admin（N-34）；密码只在 Keycloak，console 不存不显</span><div class="spacer"></div>
+        <button class="btn btn-primary btn-sm" data-act="pam-user-new">＋ 创建用户</button></div>
+      <div class="card flush"><table class="table">
+        <thead><tr><th>用户</th><th>sub</th><th>邮箱</th><th>所属组</th><th>最近活跃</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+      <div class="infobar" style="margin-top:14px"><div class="infobar-h">首登强制改密</div>
+        <div class="infobar-b">创建用户时写入 <span class="mono">requiredActions=UPDATE_PASSWORD</span>，首次登录由 Keycloak 要求重置临时密码；「重置密码」同样只触发改密流程，明文不经过 console。</div></div>`;
+  } else if(tab==='groups'){
+    const rows = KC_GROUPS.map((g,i)=>`<tr>
+      <td><span class="chip mono">${esc(g.path)}</span>${g.org?' <span class="chip" title="由 hub orgsvc 随组织创建自动管理">组织组</span>':''}</td>
+      <td class="mono">${g.members}</td>
+      <td class="hint">${esc(g.desc)}</td>
+      <td style="text-align:right">${g.org?'<span class="hint">只读（/org: 保留前缀）</span>':`<button class="link" data-act="pam-group-members" data-i="${i}">成员管理</button>`}</td></tr>`).join('');
+    body = `<div class="toolbar2"><span class="hint">组目录 · 组路径带前导斜杠（groups mapper full.path=true）；RBAC 绑定按组路径引用</span><div class="spacer"></div>
+        <button class="btn btn-primary btn-sm" data-act="pam-group-new">＋ 新建组</button></div>
+      <div class="card flush"><table class="table">
+        <thead><tr><th>组路径</th><th>成员</th><th>说明</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+      <div class="infobar" style="margin-top:14px"><div class="infobar-h">/org: 是保留前缀</div>
+        <div class="infobar-b">组织组（<span class="mono">/org:&lt;slug&gt;</span>）由 hub <span class="mono">orgsvc</span> 随组织创建自动生成：UI 禁建 / 禁改 / 禁删，且不得作为 RBAC 绑定主体（组织不作 RBAC 主体，ACCOUNT-PERMISSION-MODEL §5.3）。</div></div>`;
+  } else if(tab==='roles'){
+    const roleRows = PLATFORM_ROLES.map((r,i)=>`<tr>
+      <td><b class="mono">${esc(r.key)}</b>${r.builtin?' <span class="chip">内置</span>':''}</td>
+      <td class="hint mono" style="white-space:normal">${esc(r.perms)}</td>
+      <td style="text-align:right">${r.builtin?'<span class="hint">不可改删</span>':`<button class="link" style="color:var(--fail-fg)" data-act="pam-role-del" data-i="${i}">删除</button>`}</td></tr>`).join('');
+    const bindRows = PLATFORM_BINDINGS.map((b,i)=>`<tr>
+      <td><b>${esc(b.subject)}</b></td>
+      <td>${b.subjectType==='group'?'组':'用户'}</td>
+      <td><span class="chip mono">${esc(b.role)}</span></td>
+      <td class="mono">${esc(b.expires)}</td>
+      <td>${esc(b.grantedBy)}</td><td class="mono hint">${esc(b.grantedAt)}</td>
+      <td style="text-align:right"><button class="link" style="color:var(--fail-fg)" data-act="pam-bind-remove" data-i="${i}">移除</button></td></tr>`).join('');
+    body = `<div class="h2" style="margin-top:4px">平台角色</div>
+      <div class="toolbar2"><span class="hint">动作词表与 hub 逐字对齐（resource:action）；内置角色不可改删、被引用删除返回 409+reasons</span><div class="spacer"></div>
+        <button class="btn btn-primary btn-sm" data-act="pam-role-new">＋ 新建自定义角色</button></div>
+      <div class="card flush"><table class="table"><thead><tr><th>角色</th><th>动作</th><th></th></tr></thead><tbody>${roleRows}</tbody></table></div>
+      <div class="h2" style="margin-top:18px">平台绑定（platform_role_bindings）</div>
+      <div class="toolbar2"><span class="hint">主体 = 用户 sub / 组路径（目录下拉，手输 sub 兜底）；有效期不允许默认永久挂账</span><div class="spacer"></div>
+        <button class="btn btn-primary btn-sm" data-act="pam-bind-new">＋ 新增绑定</button></div>
+      <div class="card flush"><table class="table">
+        <thead><tr><th>主体</th><th>类型</th><th>角色</th><th>有效期</th><th>授权人</th><th>时间</th><th></th></tr></thead>
+        <tbody>${bindRows}</tbody></table></div>`;
+  } else if(tab==='approvals'){
+    const pend = PERM_REQUESTS.filter(r=>r.status==='pending');
+    const done = PERM_REQUESTS.filter(r=>r.status!=='pending');
+    const row = r=>`<tr>
+      <td><b>${esc(r.requester)}</b></td>
+      <td><span class="chip mono">${esc(r.role)}</span></td>
+      <td class="mono">${esc(r.target)}</td>
+      <td class="hint" style="white-space:normal">${esc(r.reason)}</td>
+      <td class="mono">${esc(r.expires)}</td>
+      <td class="mono hint">${esc(r.at)}</td>
+      ${r.status==='pending'
+        ?`<td style="text-align:right"><button class="link" data-act="pam-approve" data-i="${r.id}">批准</button> <button class="link" style="color:var(--fail-fg)" data-act="pam-reject" data-i="${r.id}">驳回</button></td>`
+        :`<td><span class="badge ${r.status==='approved'?'b-succ':'b-fail'}">${r.status==='approved'?'已批准':'已驳回'}</span> <span class="hint">${esc(r.decidedBy)} · ${esc(r.decidedAt)}</span></td>`}</tr>`;
+    body = `<div class="h2" style="margin-top:4px">待审批 <span class="hint">（permission_requests · 批准后 hub 自动写绑定并带有效期）</span></div>
+      <div class="card flush"><table class="table">
+        <thead><tr><th>申请人</th><th>申请角色</th><th>目标</th><th>理由</th><th>期望有效期</th><th>申请时间</th><th></th></tr></thead>
+        <tbody>${pend.map(row).join('')||'<tr><td colspan="7" class="hint" style="text-align:center;padding:18px">暂无待审申请</td></tr>'}</tbody></table></div>
+      <div class="h2" style="margin-top:18px">已处理</div>
+      <div class="card flush"><table class="table">
+        <thead><tr><th>申请人</th><th>申请角色</th><th>目标</th><th>理由</th><th>有效期</th><th>申请时间</th><th>结论</th></tr></thead>
+        <tbody>${done.map(row).join('')}</tbody></table></div>
+      <div class="infobar" style="margin-top:14px"><div class="infobar-h">审批是流程，决策是规则</div>
+        <div class="infobar-b">本分区处理「权限申请」（<span class="mono">permission_requests</span>）；运行卡点审批（<span class="mono">pipeline_approvals</span>）在运行详情页处理，两者严格分区。批准 / 驳回写审计；申请人本人不可自审。</div></div>`;
+  } else {
+    const AUDIT_CAT = {all:'全部', approval:'审批', run:'运行', credential:'凭据', target:'目标', role:'权限'};
+    const auditCatOf = a => /approval|perm_request|platform_role|kc_/.test(a.act)?'role':/approval/.test(a.act)?'approval':/target|runner/.test(a.act)?'target':/cancel|trigger|rerun|canary|run/.test(a.act)?'run':/credential/.test(a.act)?'credential':'other';
+    const auditRows = AUDIT_LOGS.filter(a=>S.auditFilter==='all'||auditCatOf(a)===S.auditFilter).map(a=>`<tr>
       <td class="mono hint" style="white-space:nowrap">${esc(a.at)}</td><td>${esc(a.who)}</td>
       <td><span class="chip mono">${esc(a.act)}</span></td>
       <td class="mono">${esc(a.target)}</td><td class="hint" style="white-space:normal">${esc(a.detail)}</td></tr>`).join('');
-  return `<div class="wrap">
-    <div class="title">用户与平台权限</div>
-    <div class="sub">Keycloak 只做身份，hub 唯一权限权威（主体 = token sub）；角色写顶层 roles claim。仅平台管理员可见。</div>
-    <div class="h2" style="margin-top:18px">Keycloak 组 → platform_role 映射</div>
-    <div class="card flush"><table class="table">
-      <thead><tr><th>Keycloak 组</th><th>平台角色</th><th>成员</th><th></th></tr></thead>
-      <tbody>${mapRows}</tbody></table></div>
-    <div class="h2" style="margin-top:18px">平台用户 <span class="hint">（只读视图：成员来自 Keycloak 组，console 不维护口令）</span></div>
-    <div class="card flush"><table class="table">
-      <thead><tr><th>用户</th><th>邮箱</th><th>Keycloak 组</th><th>平台角色</th><th>最近活跃</th></tr></thead>
-      <tbody>${userRows}</tbody></table></div>
-    <div class="toolbar2" style="margin-top:18px">
+    body = `<div class="toolbar2">
       <span class="h2" style="margin:0">平台审计日志</span>
-      <span class="seg">${Object.entries(AUDIT_CAT).map(([k,l])=>`<button class="${S.auditFilter===k?'on':''}" data-act="audit-filter" data-f="${k}">${l}</button>`).join('')}</span>
+      <span class="seg">${Object.entries(AUDIT_CAT).map(([k,l])=>`<button class="${(S.auditFilter||'all')===k?'on':''}" data-act="audit-filter" data-f="${k}">${l}</button>`).join('')}</span>
       <div class="spacer"></div>
       <a class="link" data-act="audit-export" style="font-size:12.5px;font-weight:500">导出 CSV →</a></div>
     <div class="card flush"><table class="table">
       <thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>详情</th></tr></thead>
       <tbody>${auditRows}</tbody></table></div>
     <div class="infobar" style="margin-top:14px"><div class="infobar-h">审计范围</div>
-      <div class="infobar-b">审批（批准 / 驳回）、运行取消、手动执行（<span class="mono">POST /environments/:id/exec</span>，一次一条、逐条审计、需 <span class="mono">target:exec</span>）、凭据轮转 / 创建、目标注册、组映射变更——以上操作在 hub 侧逐条留痕，本页为统一查询视图。</div></div>
+      <div class="infobar-b">审批（批准 / 驳回）、运行取消、手动执行（<span class="mono">POST /environments/:id/exec</span>，一次一条、逐条审计、需 <span class="mono">target:exec</span>）、凭据轮转 / 创建、目标注册、用户 / 组管理、角色 CRUD、绑定增删、权限审批决策——以上操作在 hub 侧统一中间件落 <span class="mono">audit_log</span>，本页为统一查询视图。</div></div>`;
+  }
+  return `<div class="wrap">
+    <div class="title">用户与平台权限</div>
+    <div class="sub">Keycloak 只做身份，hub 唯一权限权威（主体 = token sub）。用户/组目录经 hub 代理 Keycloak Admin（前端不持 Admin 凭据）；仅平台管理员可见（user:manage）。</div>
+    <div style="margin-top:14px">${seg}</div>
+    <div style="margin-top:14px">${body}</div>
   </div>`;
 }
 /* 「平台管理 → 接入管理」= 接入目标的统一注册表（K8s 集群 + 主机 + 凭据）。
@@ -2021,6 +2096,7 @@ document.getElementById('content').addEventListener('click', (e)=>{
   else if(a==='del-comp') toast('删除组件需强确认（示意）');
   else if(a==='art-retry'){ S.artState='success'; render(); }
   else if(a==='perm-add') permAdd();
+  else if(a==='perm-request') permRequest();
   else if(a==='perm-remove') permRemove(+act.dataset.i);
   else if(a==='log-search'){ UI.logQ=(document.getElementById('logQ')||{}).value||''; render(); }
   else if(a==='log-refresh') logRefresh();
@@ -2044,8 +2120,39 @@ document.getElementById('content').addEventListener('click', (e)=>{
   else if(a==='runner-inst') openRunnerInst(act.dataset.tid);
   else if(a==='cred-rotate') openCredRotate(act.dataset.ref);
   else if(a==='ver-matrix') openVersionMatrix();
-  /* —— 平台管理补充（组映射编辑 / 审计导出）—— */
-  else if(a==='perm-map-edit') openPermMapEdit(act.dataset.grp);
+  /* —— 用户与权限页（§7.14 M1–M6：用户 / 组 / 角色与绑定 / 权限审批 / 审计）—— */
+  else if(a==='pam-tab'){ S.pamTab=act.dataset.tab; render(); }
+  else if(a==='pam-user-new') openPamUserNew();
+  else if(a==='pam-user-toggle'){ const u=KC_USERS[+act.dataset.i]; if(u){ u.enabled=!u.enabled;
+      audit('张三','kc_user.'+(u.enabled?'enable':'disable'),u.name,(u.enabled?'启用':'禁用')+'账号');
+      toast((u.enabled?'已启用 ':'已禁用 ')+u.name); render(); } }
+  else if(a==='pam-user-reset'){ const u=KC_USERS[+act.dataset.i]; if(u){
+      audit('张三','kc_user.reset_pwd',u.name,'触发改密流程（requiredActions=UPDATE_PASSWORD）');
+      toast('已触发 '+u.name+' 的改密流程（明文不经过 console）'); } }
+  else if(a==='pam-group-new') openPamGroupNew();
+  else if(a==='pam-group-members') openPamGroupMembers(+act.dataset.i);
+  else if(a==='pam-member-del'){ const g=KC_GROUPS[+act.dataset.g], u=KC_USERS[+act.dataset.u];
+    if(g&&u){ u.groups=u.groups.filter(x=>x!==g.path);
+      audit('张三','kc_group.member',g.path,'移出成员 '+u.name);
+      toast('已将 '+u.name+' 移出 '+g.path); openPamGroupMembers(+act.dataset.g); render(); } }
+  else if(a==='pam-role-new') openPamRoleNew();
+  else if(a==='pam-role-del'){ const r=PLATFORM_ROLES[+act.dataset.i]; if(r){
+      openModal(`<h3>删除角色「${esc(r.key)}」？</h3>
+        <div class="mb">被绑定引用时 hub 返回 <span class="mono">409 + {reasons}</span>，reasons 渲染进弹窗（对齐服务树删除契约）。内置角色（isSystem）不可出现在此处。</div>
+        <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-danger" data-ok>确认删除</button></div>`,
+      ()=>{ PLATFORM_ROLES.splice(+act.dataset.i,1);
+        audit('张三','platform_role.delete',r.key,'删除自定义角色');
+        toast('已删除角色 '+r.key); render(); }); } }
+  else if(a==='pam-bind-new') openPamBindNew();
+  else if(a==='pam-bind-remove'){ const b=PLATFORM_BINDINGS[+act.dataset.i]; if(b){
+      openModal(`<h3>移除绑定「${esc(b.subject)}」？</h3>
+        <div class="mb">取消其 <span class="mono">${esc(b.role)}</span> 平台角色。需 <span class="mono">user:manage</span>。</div>
+        <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-danger" data-ok>确认移除</button></div>`,
+      ()=>{ PLATFORM_BINDINGS.splice(+act.dataset.i,1);
+        audit('张三','platform_role.unbind',b.subject,'移除 '+b.role);
+        toast('已移除绑定'); render(); }); } }
+  else if(a==='pam-approve') openPamApprove(act.dataset.i,false);
+  else if(a==='pam-reject') openPamApprove(act.dataset.i,true);
   else if(a==='cred-create') openCredCreate();
   else if(a==='audit-export') toast('审计日志导出 CSV（示意，POST /audit/export）');
 });
@@ -2644,10 +2751,21 @@ const APPROVAL_POLICY = {
   envOverride: {'production': {group:'platform-admin', any:false, note:'platform-admin 双人批准'}},
 };
 
-/* ---------- 平台组映射编辑（Keycloak 组 → platform_role） ---------- */
-const ROLE_MAP = [
-  {grp:'sdp-admins', role:'platform-admin', members:3},
-  {grp:'sdp-devs',   role:'platform-user',  members:18},
+/* ---------- 平台级授权（§7.14 M2/M4/M5）：platform_roles / platform_role_bindings / permission_requests ---------- */
+const PLATFORM_ROLES = [
+  {key:'sdp-admin',         builtin:true,  perms:'page:* 三页可见 + org:manage + user:manage + ops:manage'},
+  {key:'platform-user',     builtin:false, perms:'page:overview:view + page:servicetree:view'},
+  {key:'platform-readonly', builtin:false, perms:'page:overview:view（只读）'},
+];
+const PLATFORM_BINDINGS = [
+  {id:'pb-1', subject:'张三',        subjectType:'user',  role:'sdp-admin',     expires:'永久',       grantedBy:'系统', grantedAt:'09-01'},
+  {id:'pb-2', subject:'/sdp-admins', subjectType:'group', role:'sdp-admin',     expires:'永久',       grantedBy:'张三', grantedAt:'09-02'},
+  {id:'pb-3', subject:'/sdp-devs',   subjectType:'group', role:'platform-user', expires:'2026-12-31', grantedBy:'张三', grantedAt:'09-10'},
+];
+const PERM_REQUESTS = [
+  {id:'pr-1', requester:'李四', role:'component-approver', target:'comp-web', reason:'接手 release-managers 审批职责（长假代理）', at:'09-14 10:20', status:'pending',  expires:'3 个月'},
+  {id:'pr-2', requester:'赵六', role:'platform-user',      target:'平台级',   reason:'新入职 ETL 开发，需运行中心访问',             at:'09-13 16:40', status:'pending',  expires:'1 年'},
+  {id:'pr-3', requester:'王五', role:'component-editor',   target:'comp-api', reason:'参与 v2.1 联调',                              at:'09-12 09:10', status:'approved', decidedBy:'张三', decidedAt:'09-12 14:00', expires:'6 个月'},
 ];
 
 /* ---- 数据：服务树治理属性（6.1） ---- */
@@ -2741,14 +2859,14 @@ const ARCHIVE_INFO = `<div class="infobar">
 
 const PERMISSION_BINDINGS = {
   'comp-web':[
-    {subject:'张三', subjectType:'user', role:'component-admin', boundBy:'系统', boundAt:'创建时', owner:true},
-    {subject:'svc-a-dev', subjectType:'group', role:'component-editor', boundBy:'张三', boundAt:'09-02'},
-    {subject:'release-managers', subjectType:'group', role:'component-approver', boundBy:'张三', boundAt:'09-05'},
-    {subject:'李四', subjectType:'user', role:'component-viewer', boundBy:'张三', boundAt:'09-08'},
+    {subject:'张三', subjectType:'user', role:'component-admin', boundBy:'系统', boundAt:'创建时', owner:true, expires:'永久'},
+    {subject:'svc-a-dev', subjectType:'group', role:'component-editor', boundBy:'张三', boundAt:'09-02', expires:'2026-12-31'},
+    {subject:'release-managers', subjectType:'group', role:'component-approver', boundBy:'张三', boundAt:'09-05', expires:'永久'},
+    {subject:'李四', subjectType:'user', role:'component-viewer', boundBy:'张三', boundAt:'09-08', expires:'2026-11-30'},
   ],
   'comp-api':[
-    {subject:'王五', subjectType:'user', role:'component-admin', boundBy:'系统', boundAt:'创建时', owner:true},
-    {subject:'svc-a-dev', subjectType:'group', role:'component-editor', boundBy:'王五', boundAt:'09-03'},
+    {subject:'王五', subjectType:'user', role:'component-admin', boundBy:'系统', boundAt:'创建时', owner:true, expires:'永久'},
+    {subject:'svc-a-dev', subjectType:'group', role:'component-editor', boundBy:'王五', boundAt:'09-03', expires:'永久'},
   ],
 };
 
@@ -2829,34 +2947,66 @@ function pagePermissions(){
     <div class="card" style="flex:1;padding:13px">
       <div class="row" style="gap:7px;margin-bottom:4px"><span class="chip">${r.key}</span><b style="font-size:13.5px">${r.label}</b></div>
       <div class="hint">${r.perms}</div>
-    </div>`).join('')}</div>`;
+    </div>`).join('')}</div>
+    <div class="hint" style="margin-bottom:14px">以上为预置角色（isSystem，不可改删）；组织自定义角色一并出自 <span class="mono">GET /component-roles</span>，动作词表与 hub 逐字对齐。</div>`;
   const inner=binds.length?`<table class="table">
-    <thead><tr><th>主体</th><th>类型</th><th>角色</th><th>绑定人</th><th>绑定时间</th><th>操作</th></tr></thead>
+    <thead><tr><th>主体</th><th>类型</th><th>角色</th><th>有效期</th><th>绑定人</th><th>绑定时间</th><th>操作</th></tr></thead>
     <tbody>${binds.map((b,i)=>`<tr>
       <td><b>${esc(b.subject)}</b>${b.owner?' <span class="chip">owner</span>':''}</td>
       <td>${b.subjectType==='group'?'组':'用户'}</td>
       <td><select class="input" style="width:auto" data-perm-role="${i}" ${b.owner?'disabled':''}>${COMP_ROLES.map(r=>`<option value="${r.key}" ${b.role===r.key?'selected':''}>${r.label}</option>`).join('')}</select></td>
+      <td class="mono">${esc(b.expires||'—')}</td>
       <td>${b.boundBy}</td><td class="mono">${b.boundAt}</td>
       <td>${b.owner?'<span class="hint">不可移除</span>':`<button class="link" style="color:var(--fail-fg)" data-act="perm-remove" data-i="${i}">移除</button>`}</td>
     </tr>`).join('')}</tbody></table>`
     :`<div class="empty"><span class="big">🔒</span>暂无成员绑定<div style="margin-top:12px"><button class="btn btn-primary" data-act="perm-add">＋ 添加成员 / 组</button></div></div>`;
   return `${legend}
-    <div class="toolbar2"><span class="hint">组件级 RBAC（component_role_bindings）</span><div class="spacer"></div><button class="btn btn-primary btn-sm" data-act="perm-add">＋ 添加成员 / 组</button></div>
+    <div class="toolbar2"><span class="hint">组件级 RBAC（component_role_bindings）· 主体来自用户/组目录，手输 sub 兜底（组须带前导斜杠）</span><div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm" data-act="perm-request" title="提交 permission_requests，由平台管理员审批">申请权限</button>
+      <button class="btn btn-primary btn-sm" data-act="perm-add">＋ 添加成员 / 组</button></div>
     <div class="card flush">${inner}</div>`;
 }
 function permAdd(){
   const comp=compLabel(curUuid());
+  const userOpts=KC_USERS.map(u=>`<option value="user:${KC_USERS.indexOf(u)}">${esc(u.name)}（${esc(u.mail)}）</option>`).join('');
+  const groupOpts=KC_GROUPS.filter(g=>!g.org).map(g=>`<option value="group:${KC_GROUPS.indexOf(g)}">${esc(g.path)}（${g.members} 人）</option>`).join('');
   openModal(`<h3>添加成员 / 组</h3>
     <div class="mb">当前组件：<b class="mono">${comp}</b>。绑定写入 <span class="mono">component_role_bindings</span>。</div>
-    <div class="field"><label>主体类型</label><select id="pa-type" class="input"><option value="user">用户</option><option value="group">组</option></select></div>
-    <div class="field"><label>主体名</label><input id="pa-name" class="input" placeholder="例如：李四 / svc-a-dev" /></div>
+    <div class="field"><label>主体（目录选择）</label><select id="pa-subject" class="input"><optgroup label="用户">${userOpts}</optgroup><optgroup label="组">${groupOpts}</optgroup></select></div>
+    <div class="field"><label>或手输 sub / 组路径（兜底：联邦 / 服务账号）</label><input id="pa-manual" class="input mono" placeholder="留空 = 使用上方目录选择；组须带前导斜杠" /></div>
     <div class="field"><label>角色</label><select id="pa-role" class="input">${COMP_ROLES.map(r=>`<option value="${r.key}">${r.label}（${r.key}）</option>`).join('')}</select></div>
+    <div class="field"><label>有效期</label><div class="row" style="gap:10px"><input id="pa-exp" class="input" type="date" /><label style="display:flex;gap:4px;align-items:center;font-size:13px"><input id="pa-forever" type="checkbox" />永久</label></div></div>
+    <div class="hint">不允许默认永久挂账：勾选「永久」才允许空有效期，否则必填。</div>
     <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>绑定</button></div>`,
-    ()=>{ const name=document.getElementById('pa-name').value.trim(); if(!name){ toast('请填写主体名', true); return; }
-      const type=document.getElementById('pa-type').value, role=document.getElementById('pa-role').value;
-      const now=new Date(), pad=n=>String(n).padStart(2,'0'); const at=`${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
-      (PERMISSION_BINDINGS[comp]=PERMISSION_BINDINGS[comp]||[]).push({subject:name, subjectType:type, role, boundBy:'张三', boundAt:at, owner:false});
-      toast('已绑定 '+name+' → '+role); });
+  ()=>{ const manual=document.getElementById('pa-manual').value.trim();
+    const forever=document.getElementById('pa-forever').checked, exp=document.getElementById('pa-exp').value;
+    if(!forever && !exp){ toast('请填写有效期或勾选「永久」', true); return false; }
+    let name, type;
+    if(manual){
+      if(/\s/.test(manual)){ toast('主体不能包含空白字符', true); return false; }
+      type = manual.startsWith('/')?'group':'user';
+      if(type==='group' && !manual.startsWith('/')){ toast('组路径须带前导斜杠（如 /svc-a-dev）——少了它绑定不会生效', true); return false; }
+      name=manual;
+    } else { const v=document.getElementById('pa-subject').value.split(':'); type=v[0]; name=(type==='user'?KC_USERS[+v[1]].name:KC_GROUPS[+v[1]].path); }
+    const role=document.getElementById('pa-role').value;
+    const now=new Date(), pad=n=>String(n).padStart(2,'0'); const at=`${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+    (PERMISSION_BINDINGS[comp]=PERMISSION_BINDINGS[comp]||[]).push({subject:name, subjectType:type, role, expires:forever?'永久':exp, boundBy:'张三', boundAt:at, owner:false});
+    audit('张三','component_role.bind',comp,name+' → '+role+' · '+(forever?'永久':exp));
+    toast('已绑定 '+name+' → '+role); });
+}
+function permRequest(){
+  const comp=compLabel(curUuid());
+  openModal(`<h3>申请权限 · <span class="mono">${esc(comp)}</span></h3>
+    <div class="mb">提交 <span class="mono">permission_requests</span>；由平台管理员在「用户与权限 · 权限审批」处理（批准后自动写绑定并带有效期）。</div>
+    <div class="field"><label>申请角色</label><select id="prq-role" class="input">${COMP_ROLES.map(r=>`<option value="${r.key}">${r.label}（${r.key}）</option>`).join('')}</select></div>
+    <div class="field"><label>期望有效期</label><input id="prq-exp" class="input" placeholder="例如：3 个月 / 2026-12-31" /></div>
+    <div class="field"><label>申请理由（必填，供审计）</label><textarea id="prq-reason" class="input" rows="2" placeholder="例如：长假期间代理生产审批"></textarea></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>提交申请</button></div>`,
+  ()=>{ const reason=document.getElementById('prq-reason').value.trim(); if(!reason){ toast('申请理由必填', true); return false; }
+    const role=document.getElementById('prq-role').value, exp=document.getElementById('prq-exp').value.trim()||'3 个月';
+    PERM_REQUESTS.unshift({id:'pr-'+(PERM_REQUESTS.length+1), requester:'张三', role, target:comp, reason, at:'刚刚', status:'pending', expires:exp});
+    audit('张三','perm_request.create',comp,'申请 '+role+' · '+exp);
+    toast('申请已提交，等待平台管理员审批'); });
 }
 function permRemove(i){
   const comp=compLabel(curUuid()); const b=(PERMISSION_BINDINGS[comp]||[])[i]; if(!b) return;
@@ -3104,18 +3254,110 @@ function openVersionMatrix(){
     <div class="modal-foot"><button class="btn btn-primary" data-close>关闭</button></div>`, null);
 }
 
-function openPermMapEdit(grp){
-  const m = ROLE_MAP.find(x=>x.grp===grp); if(!m) return;
-  openModal(`<h3>编辑映射 · <span class="mono">${esc(m.grp)}</span></h3>
-    <div class="mb">Keycloak 组 <span class="mono">${esc(m.grp)}</span>（${m.members} 名成员）→ 平台角色。角色只做平台级能力（Org / Service / Component 管理），组件内权限走 <span class="mono">component_role_bindings</span>。</div>
-    <div class="field"><label>平台角色</label><select id="pm-role" class="input">
-      <option value="platform-admin" ${m.role==='platform-admin'?'selected':''}>platform-admin（平台管理员）</option>
-      <option value="platform-user" ${m.role==='platform-user'?'selected':''}>platform-user（普通用户）</option>
-      <option value="platform-readonly">platform-readonly（只读）</option></select></div>
-    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>保存映射</button></div>`,
-    ()=>{ m.role=document.getElementById('pm-role').value;
-      audit('张三','platform_role.map',m.grp,'组映射 → '+m.role);
-      toast('已更新映射：'+m.grp+' → '+m.role); render(); });
+/* ---------- 用户与权限页（§7.14 M1/M2/M4/M5）弹窗 ---------- */
+function openPamUserNew(){
+  openModal(`<h3>创建用户</h3>
+    <div class="mb">经 hub 代理 Keycloak Admin 创建（N-34）；临时密码经首登强制改密收敛，console 不存不显。</div>
+    <div class="field"><label>用户名</label><input id="pu-name" class="input" placeholder="例如：sunqi" /></div>
+    <div class="field"><label>邮箱</label><input id="pu-mail" class="input" placeholder="sunqi@sdp.local" /></div>
+    <div class="field"><label>临时密码</label><input id="pu-pwd" class="input" type="password" placeholder="首登强制修改" /></div>
+    <div class="field"><label>所属组（可多选；/org: 组织组不出现在此处）</label><select id="pu-groups" class="input" multiple size="3">${KC_GROUPS.filter(g=>!g.org).map(g=>`<option value="${esc(g.path)}">${esc(g.path)}</option>`).join('')}</select></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>创建</button></div>`,
+  ()=>{ const name=document.getElementById('pu-name').value.trim(); if(!name){ toast('请填写用户名', true); return false; }
+    const sel=[...document.getElementById('pu-groups').selectedOptions].map(o=>o.value);
+    KC_USERS.unshift({sub:'新生成 uuid（示意）', name, mail:document.getElementById('pu-mail').value.trim(), enabled:true, groups:sel, last:'—'});
+    audit('张三','kc_user.create',name,'创建用户'+(sel.length?' · 组 '+sel.join(','):''));
+    toast('已创建用户 '+name+'（首登强制改密）'); render(); });
+}
+function openPamGroupNew(){
+  openModal(`<h3>新建组</h3>
+    <div class="mb">组路径带前导斜杠（groups mapper <span class="mono">full.path=true</span>）。<span class="mono">/org:</span> 为保留前缀，不可在此创建。</div>
+    <div class="field"><label>组路径</label><input id="pg-path" class="input mono" placeholder="例如：/release-managers" /></div>
+    <div class="field"><label>说明</label><input id="pg-desc" class="input" placeholder="用途一句话" /></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>创建</button></div>`,
+  ()=>{ const p=document.getElementById('pg-path').value.trim();
+    if(!p||!p.startsWith('/')){ toast('组路径须带前导斜杠（如 /release-managers）', true); return false; }
+    if(p.startsWith('/org:')){ toast('/org: 是保留前缀，组织组由 orgsvc 自动管理', true); return false; }
+    KC_GROUPS.push({path:p, members:0, desc:document.getElementById('pg-desc').value.trim()||'—', org:false});
+    audit('张三','kc_group.create',p,'新建组');
+    toast('已创建组 '+p); render(); });
+}
+function openPamGroupMembers(i){
+  const g=KC_GROUPS[i]; if(!g||g.org) return;
+  const inside=KC_USERS.filter(u=>u.groups.includes(g.path));
+  const outside=KC_USERS.filter(u=>!u.groups.includes(g.path));
+  openModal(`<h3>成员管理 · <span class="mono">${esc(g.path)}</span></h3>
+    <div class="mb">${inside.length} 名成员。成员关系落在 Keycloak，hub 代理读写。</div>
+    <div class="card flush" style="box-shadow:none"><table class="table">
+      <thead><tr><th>用户</th><th>邮箱</th><th></th></tr></thead>
+      <tbody>${inside.map(u=>`<tr><td><b>${esc(u.name)}</b></td><td class="hint mono">${esc(u.mail)}</td>
+        <td style="text-align:right"><button class="link" style="color:var(--fail-fg)" data-act="pam-member-del" data-g="${i}" data-u="${KC_USERS.indexOf(u)}">移出</button></td></tr>`).join('')||'<tr><td colspan="3" class="hint" style="text-align:center;padding:14px">暂无成员</td></tr>'}</tbody></table></div>
+    <div class="field" style="margin-top:12px"><label>加入用户</label><select id="pgm-user" class="input">${outside.map(u=>`<option value="${KC_USERS.indexOf(u)}">${esc(u.name)}（${esc(u.mail)}）</option>`).join('')||'<option value="">（全员已在组内）</option>'}</select></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>关闭</button><button class="btn btn-primary" data-ok>加入</button></div>`,
+  ()=>{ const sel=document.getElementById('pgm-user'); if(!sel||!sel.value){ toast('请选择要加入的用户', true); return false; }
+    const u=KC_USERS[+sel.value]; u.groups.push(g.path);
+    audit('张三','kc_group.member',g.path,'加入成员 '+u.name);
+    toast('已将 '+u.name+' 加入 '+g.path); render(); });
+}
+function openPamRoleNew(){
+  const G=[['页面可见性',['page:overview:view','page:servicetree:view','page:settings:view']],
+           ['平台管理',['org:manage','user:manage','ops:manage']],
+           ['组件',['component:read','component:update','component:create','component:delete','component:manage']],
+           ['流水线',['pipeline:read','pipeline:trigger','pipeline:create','pipeline:update','pipeline:delete']],
+           ['审批 / 配置 / 制品',['approval:approve','config:read','config:update','artifact:read','artifact:download']]];
+  openModal(`<h3>新建自定义角色</h3>
+    <div class="mb">动作词表与 hub 逐字对齐（<span class="mono">resource:action</span>）——拼错一个字符，该动作上静默 403。</div>
+    <div class="field"><label>角色标识</label><input id="prol-key" class="input mono" placeholder="例如：release-owner" /></div>
+    <div class="field"><label>动作勾选</label>${G.map(([l,acts])=>`<div style="margin:6px 0"><div class="hint">${l}</div>${acts.map(a=>`<label class="mono" style="display:inline-flex;gap:4px;margin-right:10px;font-size:12px"><input type="checkbox" name="prol-act" value="${a}" />${a}</label>`).join('')}</div>`).join('')}</div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>创建角色</button></div>`,
+  ()=>{ const key=document.getElementById('prol-key').value.trim();
+    const acts=[...document.querySelectorAll('input[name="prol-act"]:checked')].map(x=>x.value);
+    if(!key){ toast('请填写角色标识', true); return false; }
+    if(!acts.length){ toast('至少勾选一个动作', true); return false; }
+    PLATFORM_ROLES.push({key, builtin:false, perms:acts.join(' + ')});
+    audit('张三','platform_role.create',key,'自定义角色 · 动作 '+acts.length+' 项');
+    toast('已创建角色 '+key); render(); });
+}
+function openPamBindNew(){
+  const userOpts=KC_USERS.map(u=>`<option value="user:${KC_USERS.indexOf(u)}">${esc(u.name)}（${esc(u.mail)}）</option>`).join('');
+  const groupOpts=KC_GROUPS.filter(g=>!g.org).map(g=>`<option value="group:${KC_GROUPS.indexOf(g)}">${esc(g.path)}（${g.members} 人）</option>`).join('');
+  openModal(`<h3>新增平台绑定</h3>
+    <div class="mb">主体来源 = 用户/组目录（§7.14 M1）；手输 sub 兜底在组件权限 Tab（联邦 / 服务账号场景）。<span class="mono">/org:</span> 组织组不作 RBAC 主体。</div>
+    <div class="field"><label>主体</label><select id="pb-subject" class="input"><optgroup label="用户">${userOpts}</optgroup><optgroup label="组">${groupOpts}</optgroup></select></div>
+    <div class="field"><label>平台角色</label><select id="pb-role" class="input">${PLATFORM_ROLES.map(r=>`<option value="${esc(r.key)}">${esc(r.key)}${r.builtin?'（内置）':''}</option>`).join('')}</select></div>
+    <div class="field"><label>有效期</label><div class="row" style="gap:10px"><input id="pb-exp" class="input" type="date" /><label style="display:flex;gap:4px;align-items:center;font-size:13px"><input id="pb-forever" type="checkbox" />永久</label></div></div>
+    <div class="hint">不允许默认永久挂账：勾选「永久」才允许空有效期，否则必填。</div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>绑定</button></div>`,
+  ()=>{ const [t,i]=document.getElementById('pb-subject').value.split(':');
+    const forever=document.getElementById('pb-forever').checked, exp=document.getElementById('pb-exp').value;
+    if(!forever && !exp){ toast('请填写有效期或勾选「永久」', true); return false; }
+    const subj = t==='user'?KC_USERS[+i].name : KC_GROUPS[+i].path;
+    const role=document.getElementById('pb-role').value;
+    PLATFORM_BINDINGS.push({id:'pb-'+(PLATFORM_BINDINGS.length+1), subject:subj, subjectType:t, role, expires:forever?'永久':exp, grantedBy:'张三', grantedAt:'今天'});
+    audit('张三','platform_role.bind',subj,role+' · '+(forever?'永久':exp));
+    toast('已绑定 '+subj+' → '+role); });
+}
+function openPamApprove(id, rej){
+  const r=PERM_REQUESTS.find(x=>x.id===id); if(!r) return;
+  if(rej){
+    openModal(`<h3>驳回申请 · ${esc(r.requester)}</h3>
+      <div class="mb">驳回留痕（approver / decidedAt），写入审计。</div>
+      <div class="field"><label>驳回理由（必填）</label><textarea id="pa-why" class="input" rows="2"></textarea></div>
+      <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-danger" data-ok>驳回</button></div>`,
+    ()=>{ const w=document.getElementById('pa-why').value.trim(); if(!w){ toast('请填写驳回理由', true); return false; }
+      r.status='rejected'; r.decidedBy='张三'; r.decidedAt='刚刚';
+      audit('张三','perm_request.reject',r.requester,'驳回 '+r.role+' @ '+r.target+'：'+w);
+      toast('已驳回 '+r.requester+' 的申请'); render(); });
+    return;
+  }
+  openModal(`<h3>批准申请 · ${esc(r.requester)}</h3>
+    <div class="mb"><span class="mono">${esc(r.role)}</span> @ <span class="mono">${esc(r.target)}</span>。批准后 hub 自动写绑定并带有效期（审计留痕）。</div>
+    <div class="field"><label>有效期（默认按申请）</label><input id="pa-exp" class="input" value="${esc(r.expires)}" /></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" data-ok>批准</button></div>`,
+  ()=>{ r.status='approved'; r.decidedBy='张三'; r.decidedAt='刚刚';
+    r.expires=document.getElementById('pa-exp').value.trim()||r.expires;
+    audit('张三','perm_request.approve',r.requester,'批准 '+r.role+' @ '+r.target+' · '+r.expires);
+    toast('已批准：绑定已写入（'+r.expires+'）'); render(); });
 }
 
 /* ---------- 个人中心 / 退出登录（原 toast 占位补齐为真实形态） ---------- */

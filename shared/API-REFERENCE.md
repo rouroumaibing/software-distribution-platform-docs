@@ -48,7 +48,7 @@
 - ⚠️ **网关鉴权偏弱**：`GATEWAY_TOKEN` 为**全局共享** bearer token，目标身份由 Runner 自报 `X-Target-Name` 决定，**无 per-target enroll token**（`DATA-MODEL.md` §9.1）。**增量**（ADR-0001）：持有共享 token 且拨号携带 `X-Target-Vendor`/`X-Target-Region` 的 Runner 可对未注册 target **首连自动建行**（GitLab-Runner 式安装即注册，`TargetService.Enroll`）；缺头仍 404。注册自动化已解决，per-target 身份仍未实现（§9.9 消费端留守 queued）。
 - **单机版**（平台与目标同集群）下那一行目标指向的集群**恰好也是平台自身所在集群**，仍是**一行**、不新增对象；**但 runner 的组件身份不因此改变**（二次裁定，`DATA-MODEL.md` §9.3）。Gen0 安装时 console / hub / runner **同批装齐**，故**平台自身集群那一行在接入管理里天然呈"已装 runner"**、动作是**升级**（`DATA-MODEL.md` §9.3 / §9.9）。
 - **runner 的安装 / 升级是 ① 能力层动作**（二次裁定）：**逻辑全部落在 hub**，console 只调用 API；runner 是接入侧代理组件、**不属"平台自身"**，故不触发 §5.4 的自升级禁令。目标版本取自**版本矩阵 CM**（`DATA-MODEL.md` §9.9 / §9.10）。
-- ⚠️ **本表只覆盖 `agent` 通道的目标（裁决）**：`kubeconfig` 直连的集群与 `ssh` 直连的非容器主机**不落 `targets`**，需扩表承载（`DATA-MODEL.md` §9.7）。因此"平台能纳管的目标 = `GET /targets` 的结果"这一推论**已不成立**。
+- `access_mode` **已落地（O-40，迁移 0022）**：`targets.access_mode` = `agent`（默认）/ `kubeconfig` / `ssh` + `credential_ref` 凭据引用，统一纳管面覆盖三类目标；创建/更新时校验一致性（kubeconfig/ssh 必带 `credentialRef`，agent 留空）。`agent` 通道行为不变（`RunnerCredential` 仅 agent 路径使用）；`credential_ref` 当前为引用字符串，`credentials` 表存在性校验与 runner 直连执行器待后续立项。
 
 **凭据 / 直连 / 接入编排端点（✅ 均已在 hub 落地，通道归属见 `DATA-MODEL.md` §9.5）**
 
@@ -102,8 +102,8 @@
 - `GET /pipelines/:id/versions/:version/diff?against=<基准版号>`（以 `against` 为基准看 `:version` 改了什么；**方向性**：`:version` 更旧时 added/removed 互换。两者都必填）
 - `POST /pipelines/:id/versions/:version/rollback`（把**结构**回填到该版，并**记为新的一版**）
 
-### 组件可部署版本（4.2 指定版本回滚目标来源，登记 · 待立项）
-- `GET /components/:id/versions`（暂名）：组件全部可部署版本（新→旧；版本号 / 构建时间 / 大小 / SHA256）——console 灰度控制台「回滚到指定版本」的目标来源。与上方 `GET /pipelines/:id/versions` **同构不同体**：前者制品/部署版本，后者结构快照。契约见 [ui-09 附 A · N-33](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-09-backend-deps-api-contract.md)
+### 组件可部署版本（4.2 指定版本回滚目标来源，已实现 · O-38）
+- `GET /components/:id/versions`：组件可部署版本列表（新→旧），为 console 灰度「回滚到指定版本」提供目标来源。数据源 = 该组件下 `cleanup_state<>pending_deletion` 的制品，按版本去重、每条取该版本最新一条制品；`?limit=` 默认 50、上限 100。响应 `data` 为 `[]DeployableVersion{ version, publishedAt, source("artifact"), artifactRef(制品 ID) }`。与 `GET /pipelines/:id/versions` **同构不同体**：前者制品/部署版本，后者结构快照。契约见 [ui-09 附 A · N-33](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/features/ui-09-backend-deps-api-contract.md)
 
 **语义（与实现一致，勿按其它工具的心智模型推断）**
 - 版本在**结构性保存**时自动留档：阶段 / 子任务的增删改都会触发快照；只改元信息（name/kind/description）不产生新版本。
@@ -137,6 +137,7 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 | `componentId` | string(uuid) | 所属组件 uuid（→ `components.id`；组件详情页查询作用域主键，见 console 重设计文档 uuid 改造） |
 | `name` | string | 流水线名称（组件内唯一，→ `pipelines.name`） |
 | `kind` | string | `build` \| `release` \| `custom`（驱动默认 DAG 模板，见 `DATA-MODEL.md`） |
+| `concurrencyPolicy` | string | 同 pipeline 并发/排队策略（O-41，迁移 0023）：`allow`（默认，多 run 并发）\| `queue`（活跃 run 达上限 `RUN_CONCURRENCY_LIMIT`（默认 4）后新 run 落 `PendingQueue` 排队，前序终态后被唤醒）\| `forbid`（存在活跃 run 时新触发 `409` 拒绝）。空值归一为 `allow`，非法值 400 |
 | `description` | string? | 描述；空则省略 |
 | `stages[]` | array | 阶段列表，**按 `sequence` 顺序执行** |
 | `stages[].name` | string | 阶段名（→ `pipeline_stages.name`） |
@@ -184,6 +185,8 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 
 ### 运行 / 审批 / 回滚
 - `POST /pipelines/:id/runs`（触发）· `GET /pipelines/:id/runs`
+  - 触发体可选 `timeoutSeconds`（O-39 运行级超时，迁移 0021 落 `pipeline_runs.timeout_seconds`）：run 开始后超过该秒数仍非终态，hub 清扫作业（`RUN_SWEEP_INTERVAL`，默认 0=关闭）将其置 `Failed`（Message=`PipelineRunTimeout`）。0/缺省 = 不限。
+  - 并发守卫（O-41）：pipeline `concurrencyPolicy=forbid` 且存在活跃 run 时触发 `409 + {reasons}`；`queue` 超上限时触发成功但 run 落 `PendingQueue` 阶段（新增运行阶段），前序 run 终态后由清扫作业唤醒回 `Pending` 并释放 held dispatch job。`PendingQueue` 不占并发容量；排队 run 可直接 `POST /runs/:id/cancel`（hub 侧本地终态 + 退役 held job，无需 runner 在线）。
 - `GET /runs` · `GET /runs/:id` · `GET /runs/:id/tasks` · `GET /runs/:id/progress` · `GET /runs/:id/stage-progress` · `GET /runs/:id/log` · `GET /runs/:id/tasks/:name/log`
   - `GET /runs` 支持过滤：`phase`（精确匹配）、`componentId`、`createdAfter`（RFC3339，**新增**，#15 运行时间窗；非法格式 → 400）。
 - `POST /runs/:id/redispatch` · `POST /runs/:id/tasks/:name/rollout`
@@ -225,10 +228,11 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 
 ### 权限（主体 / 角色 / 组件角色 / 绑定）
 - `GET /roles` · `GET /component-roles` · `GET /component-roles/:id`
-- ⚠️ **没有用户/主体目录端点，也没有 `GET /users`**（D3）：hub 不存用户表（规范 §2.2），主体一律以 Keycloak `sub` 字符串出现。控制台的授权表单为「**下拉已绑定主体 + 手输 `sub`**」（决策 §3.5 第 4 条 (b′)）；要看全量用户请到 Keycloak 控制台。`GET /roles` 保留但**不可用于新建绑定**（无 `role_id` 列）。
+- ⚠️ **hub 自身不存用户表**（D3）：绑定主体一律以 Keycloak `sub` / 组路径出现（§5.3）。主体目录来自下面的**目录代理**端点（N-34）；目录代理不可用时（KC 未配置 / 无 `user:manage`）控制台授权表单退化为「**下拉已绑定主体 + 手输 `sub`**」。`GET /roles` 保留但**不可用于新建绑定**（无 `role_id` 列）。
 - ✅ **组件级自定义角色**（本轮，B-11）：`POST /component-roles` · `PUT /component-roles/:id` · `DELETE /component-roles/:id`。**读**挂裸 `api`（console 角色选择器要用）；**写**与平台级角色同组，开启鉴权后要求平台级 `user:manage`（角色是权限来源，能改角色 = 能给自己加权限）。`orgId` 为空 = 内置（不可改不可删）、非空 = 组织自定义；唯一性 `(org_id, name)`（内置角色名全局唯一）；`orgId` 不可通过 PUT 迁移；`actions` 必须非空；仍被绑定引用时删 `409 + {reasons}`。详见 §2「组件级角色」。
 - `POST/GET/DELETE /components/:id/role-bindings`（见上）
 - ✅ **平台级**（注册，C-10 已落地）：`GET/POST /platform-roles` · `GET/PUT/DELETE /platform-roles/:id` · `GET/POST /platform-role-bindings` · `DELETE /platform-role-bindings/:id`（`GET` 支持 `?orgId=` / `?subjectType=` / `?subjectId=`，且**一并返回已过期的绑定**以便清理）。内置角色（`isSystem`）不可改不可删；角色仍被绑定引用时删除返回 `409 + {reasons}`；主体按 §5.3 校验（`user` = token `sub`；`group` = claim **逐字**、带前导斜杠；`/org:` 为保留前缀，不得作绑定主体）。
+- ✅ **用户/组目录代理**（N-34，D3 重估后的管理面）：`GET/POST /keycloak/users` · `PUT /keycloak/users/:id`（启停 / 邮箱）· `PUT /keycloak/users/:id/password`（重置；body 省略 = 生成 16 位临时口令，**响应返回一次**，临时凭证 + `requiredActions=[UPDATE_PASSWORD]` 首登强制改密）· `GET/POST /keycloak/groups` · `GET /keycloak/groups/:id` · `GET/PUT/DELETE /keycloak/groups/:id/members(/:userId)`。经 `internal/keycloak` Admin 客户端代理（SA 凭据集：`manage-users` / `query-groups` / `query-users` / `view-users`）；挂平台组（`user:manage`）；`/org:*` 组对代理只读（建组 `403`、成员变更 `403`，由 handler 强制）；KC 未配置时不挂载。**过期绑定清理无专用端点**（N-35 消解）：`BindingReaper` 定期回收 + 上述绑定 `DELETE` 逐条清理（删除不筛过期）。
 - ✅ **权限模型四表 / 审计 / 申请流**（第八批，`ACCOUNT-PERMISSION-MODEL.md` §3 / §5.1③ / §6 / §7.2）：
   - `GET/PUT/DELETE /resource-ownership`（`?resourceType=&resourceId=`）—— 资源归属**权威源**（§3）；`PUT` 体 `{resourceType, resourceId, ownerOrg, allowedOrgs[]}`。
   - `GET/PUT /role-api-mappings`（`?roleKind=platform|component&roleId=`）· `DELETE /role-api-mappings/:id` —— 「角色 → 接口」映射的**可审阅注册表**（§5.1③）；`PUT` 体 `{roleKind, roleId, actions[]}`（整体替换），启动时 `SyncFromRoles` 与角色定义对账。

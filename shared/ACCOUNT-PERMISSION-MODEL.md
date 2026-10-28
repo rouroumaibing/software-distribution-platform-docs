@@ -73,8 +73,8 @@ hub **只**从 token 取下列声明，其余一律不信（含请求体里自�
 ### 2.2 明确不做的事
 
 - **不自管密码**：密码只在 Keycloak。
-- **不存用户表**：hub 不维护「用户」实体，绑定主体直接用 token 的 `sub`。
-  - ✅ **合规（D3）**：hub 无 `users` 表，`UserContext` 无逐请求开户动作，主体一律取 token `sub`（见 §10 #4 / §12 D3）。
+- **不存用户表**：hub 不维护「用户」实体（无 `users` 表），绑定主体直接用 token 的 `sub`（§10 #4 / §12 D3）。
+  - **管理面例外**：hub 经 **Keycloak Admin REST 代理**（`internal/keycloak`，`sdp-backend` SA 最小凭据集 `manage-users` / `query-groups`）向 console 提供用户/组**目录**（账号生命周期：建用户、建组、成员管理，服务「用户与权限」页 M1，见 CONSOLE-UI-DESIGN ui-05 §7.9）。目录数据落在 Keycloak，hub 仍不建本地用户实体；**鉴权路径（§4）不触 Admin API**。
 - **不因 token 里有角色就放行**：token 里的角色是**输入**，不是结论 —— 判定输入只来自 hub 的绑定表（§5.1①、§5.2）。
   - ⚠ 本 realm 的角色**并不在 `realm_access`**，而在**顶层 `roles` claim**（`sdp-console` 上的 `oidc-usermodel-realm-role-mapper`，`claim.name: roles`）。按 `realm_access` 去 grep 会一无所获、进而误判为「角色根本没进 token」——**核对时请按 `roles`**。
   - 两段式分工（§4）一句话记住：**a 段吃 token（组织 → 资源归属）· b 段吃 hub 表（角色 → 接口）**。
@@ -152,7 +152,7 @@ OIDC 里有两个相关角色，本项目**分别落在两端**：
 | --- | --- |
 | `userinfo` | 身份信息**已全在 token 里**，再问一次只是多一次网络往返 |
 | `introspection`（RFC 7662） | 那是 **opaque token** 的方案；本项目是 **JWT**，公钥验签即可自证，不必回头问授权服务器 |
-| Admin API（**就业务请求而言**） | hub 无 Admin 客户端（连带影响 console「用户列表」来源，见 §12 D3） |
+| Admin API（**就业务请求而言**） | **鉴权路径零调用**。管理面有两处经 Admin REST（`internal/keycloak`，独立于 §2.4 的 Resource Server 凭据）：① 组织组预置（`orgsvc` 幂等 `EnsureGroup("/org:<slug>")`，best-effort）；② 用户/组目录代理（console「用户与权限」页 M1，§2.2 管理面例外） |
 
 ⇒ **每个业务请求对 Keycloak 零外呼**。副作用是好的：Keycloak 短时不可用**不影响**已签发 token 的校验（只有启动时的 discovery 与密钥轮换需要联通）。
 
@@ -308,14 +308,14 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 
 | # | 规范 |
 | --- | --- |
-| 1 | **不做认证**、**不解析 token**（不读 payload、不判断过期、不据 token 做任何授权判断） |
+| 1 | **不做认证**、**应用代码不据 token 声明做任何授权判定**（含隐藏/置灰菜单、路由守卫、功能开关）；`oidc-client-ts` 库级解析（renew / expiry / Bearer 注入）不可避免、不在红线范围；`user.expired` 仅用于登录态 UX，每次 API 调用由 hub 重校验，不构成安全边界 |
 | 2 | **登录跳转交给 Keycloak**（**由 console 触发** OIDC 跳转 —— console 即 OIDC Client，§2.4.1；hub 不参与跳转、不换 code）；拿到 token 后保存（localStorage 或由后端置 Cookie），保存方式见 §12 D5 |
 | 3 | 后端提供 **`GET /api/userinfo`** 返回当前用户的**角色 / 组织** |
 | 4 | 前端**只用它**隐藏/置灰按钮与菜单 —— **仅此而已** |
 
 **红线**：前端不得出现任何形如 `if (token.roles.includes('admin'))` 的授权判断。
 
-> 现状核对：console 用 `oidc-client-ts` 的 `UserManager` 解析并保存 token，读 `profile` 做登录态判断；**无 `/api/userinfo`**。⇒ 需改（§10）。
+> 现状：console 用 `oidc-client-ts` 的 `UserManager` 作 OIDC client（库级解析 token 不可避免，用于 renew / Bearer 注入 / 登录态判断）；身份展示读 `profile`，授权相关展示（角色/组织）**应**改从 `/api/userinfo` 取（§10 #13 / Task 10）。红线只禁止应用代码据 token 做授权判定。
 
 ---
 
@@ -352,13 +352,13 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 | 10 | 审计中间件 + `audit_log` | **已落地**：`middleware/audit.go` 只记写操作 + `audit.Reporter`；业务零手写 | ✅ **已落地** | §6 |
 | 11 | 权限申请审批 + 到期 | **已落地**：`permission_requests` 状态机 + 审批写绑定（带 `expires_at`）+ 到期**回收作业**（`BindingReaper`） | ✅ **已落地** | §7 |
 | 12 | `GET /api/userinfo` | **已落地**：`handler/userinfo.go`（subject / username / groups / orgs / roles） | ✅ **已落地** | handler |
-| 13 | 前端不解析 token | console 用 `UserManager` 解析并持久化 token、读 `profile` | ❌ | console |
+| 13 | 前端不据 token 做授权决策 | 安全语义已达成：app 无 `if token.roles.includes` 类授权判断（403 全交后端）；`oidc-client-ts` 库级解析不可避免（renew / Bearer）；残留 = 个人中心误读 `profile.realm_access` 角色 + `/api/userinfo` 未消费 → 裁定角色/组织改从 `/api/userinfo` 取（`profile` 仅留身份展示，Task 10） | ⚠️ → ✅ 安全语义达成；残留闭合中 | console |
 | 14 | 强制点全覆盖 | 组件作用域路由经 `wrap()` 挂**两层**（a 资源归属 + b RBAC）；平台级路由挂 `RequirePlatformPermission`；`:id` 为 pipeline/run 时先反查 owning component | ✅ **已收口** | middleware |
 | 15 | 平台级授予可达 | `platform_role_bindings` 端点已注册（`/platform-roles`、`/platform-role-bindings`）；**已种入组绑定** `/sdp-admin` → `sdp-admin`，且 **realm JSON 已建该组并预置 `admin` 入组**（第十一批）；console 平台权限管理页已落地（`PlatformAdminView`） | ✅ **已完成（C-10）** | handler + realm CM ✅ |
 | 16 | 对接走 **OIDC 标准流程**（discovery + JWKS 验签） | `coreos/go-oidc/v3` v3.20.0 已引入；`NewAuthenticator` = `oidc.NewProvider` + `provider.Verifier` | ✅ | — |
 | 17 | hub 为 **Resource Server**：不建 client、不换 code、不持 secret | `AuthConfig` 仅 `IssuerURL`/`ClientID`，无 secret 字段；无 token 端点调用 | ✅ | — |
 | 18 | 校验 `azp`；`aud` 明确跳过 | `auth.go` 的 `errWrongClient` + `SkipClientIDCheck: true`（附注释写明理由） | ✅ | — |
-| 19 | **不调用** Keycloak 运行时 API（userinfo / introspection / Admin） | 鉴权路径零调用（userinfo / introspection 均无）。**已收窄（核对）**：组织组预置（`/org:<slug>`）经 **Admin REST** 调 Keycloak——`internal/keycloak/client.go` 的 `Client.EnsureGroup`（幂等），`cmd/hub/main.go:170` 装配为 `GroupProvisioner`，best-effort、失败不阻断启动；Resource Server 判定路径仍不触 Keycloak，规范本体 §2.4.4 不变 | ✅（限鉴权路径） | — |
+| 19 | **不调用** Keycloak 运行时 API（userinfo / introspection / Admin） | 鉴权路径零调用（userinfo / introspection 均无）。管理面经 Admin REST 的两处：① 组织组预置——`internal/keycloak/client.go` 的 `Client.EnsureGroup`（幂等），`cmd/hub/main.go:170` 装配为 `GroupProvisioner`，best-effort、失败不阻断启动；② 用户/组目录代理（§2.2 管理面例外，console「用户与权限」页 M1）。Resource Server 判定路径不触 Keycloak，规范本体 §2.4.4 不变 | ✅（限鉴权路径） | — |
 | 20 | 启动 **fail-fast**（issuer 不可达 = 不启动） | `cmd/hub/main.go`：`NewAuthenticator` 出错 → `applog.Fatalf` | ✅ | — |
 
 **第 14 行的性质**：与「账号」无关，但它会让整套鉴权在开启后**立刻不可用**，故必须在开开关前修（修法：中间件先由 pipeline/run 反查 `component_id`）。
@@ -380,7 +380,7 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 | 5 | RBAC ① → ③ 落表并成为判定输入：**✅ 映射表已落 + `BindingService` 生效动作集并入**；**⏳ 种 `admin` 的 `sub` 平台管理员绑定待 realm 有组后补种** | 判定结果与旧实现逐例对照；`auth.go` 的 `keycloakClaims` **不得**出现 roles 字段（**防回退静态断言**） |
 | 6 | 审计中间件 + `audit.Reporter`：**✅ 已落地** —— `middleware/audit.go` 只记写操作 | 写操作有审计行；业务代码零手写（静态检查） |
 | 7 | 审批流独立模块 + 到期回收作业：**✅ 已落地** —— `permission_requests` 状态机 + `GrantWriter` + `BindingReaper` | 端到端：申请 → 通过 → 绑定生效 → 到期失效（单测覆盖状态机 + 回收谓词；**未跑真实库**） |
-| 8 | `/api/userinfo`：**✅ 已落地**；**⏳ console 改造（去 token 解析）未做** | 前端不再引用 token payload（静态检查） |
+| 8 | `/api/userinfo`：**✅ 已落地**（hub handler）；**⏳→ 裁定已下**：console 从 `/api/userinfo` 取角色/组织（替换个人中心 `profile.realm_access` 展示），`profile` 仅留身份展示（Task 10） | 前端角色/组织来源 = hub 权威；无 `token.roles` 类展示/判断（静态检查） |
 | 9 | **最后**才打开两端鉴权开关 | 全链路 E2E（✅ 已于 真集群执行，证据见 `plans/STATUS.md` §1.4） |
 
 ---
@@ -393,7 +393,7 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 | --- | --- | --- | --- |
 | **D1** | 「组织」用什么载体？ | **② 组命名约定 `/org:<slug>`**（复用已就绪的 `groups` 通路；**组随 realm JSON 可靠导入** ⇒ 保住「配置即代码」；零 realm 开关） | ① Keycloak **Organizations**：**翻盘条件 = 出现「多 IdP / 跨组织 SSO 联邦」需求**；因硬约定（组织键=alias、组织不作主体）**切换无需数据迁移**。① 已知成本：开开关 ⇒ **identity-first 登录流变化**；组织集能否随 realm JSON 导入**未证实**；**scope 形态须选定**（`organization`=ANY / `organization:<alias>`=SPECIFIC / `organization:*`=ALL）。**v2 曾推荐 ①（理由「语义隔离」），本轮下调为 ②** —— ② 用保留前缀等价隔离（硬规则：`/org:` 前缀不得作 `group` 绑定主体）。**不可逆性由「高」降为「中」** |
 | **D2** | 角色/权限的权威在哪？ | **① 全在 hub RBAC 表**（token 角色仅供对账/展示）—— **已由不动式② + §2.1 / §2.2 裁定，无需拍板** | ②（hub 表 + token 角色参与）/ ③（token 角色为准）均与**不动式②「hub 是唯一权限权威」冲突** ⇒ 不做。⚠ 前置 **C-10**（平台级端点/种子）**仍在** —— 否则落地后无人是平台管理员 |
-| **D3** | 「不存用户表」的连锁改动 | **主体键 = token `sub`**（§5.3；`group` 用 claim 逐字）；第 4 处取 **(b′) 只列已绑定主体 + 允许手输 `sub`**。**✅ 5 处全部落地** | ➎ **生效**：`users` 表不存在（认证无库操作）+ `UserContext` 纯解析 + `CurrentUserID` 并入 `CurrentSubject`（原 7 个读取点）；① `components.owner_user` → `owner_sub`（text，回填自 `users.keycloak_id`）；② `user_id` / `role_id` 已删列（V1 解析分支同批移除）；③ approver / operator / createdBy 改取 `sub`；④ console 改「绑定表派生 + 手输」。迁移 `0015`（**不可逆**）—— 代码已落，部署侧须手工 psql |
+| **D3** | 「不存用户表」的连锁改动 | **主体键 = token `sub`**（§5.3；`group` 用 claim 逐字）；第 4 处取 **(b′) 只列已绑定主体 + 允许手输 `sub`**。**✅ 5 处全部落地** | ➎ **生效**：`users` 表不存在（认证无库操作）+ `UserContext` 纯解析 + `CurrentUserID` 并入 `CurrentSubject`（原 7 个读取点）；① `components.owner_user` → `owner_sub`（text，回填自 `users.keycloak_id`）；② `user_id` / `role_id` 已删列（V1 解析分支同批移除）；③ approver / operator / createdBy 改取 `sub`；④ console 改「绑定表派生 + 手输」。迁移 `0015`（**不可逆**）—— 代码已落，部署侧须手工 psql。**D3 重估已闭（§3.5 触发）**：「全量用户目录」产品要求成立 ⇒ hub 新增**管理面 Admin 代理**（用户/组目录，§2.2 管理面例外），授权表单升级为「目录下拉 + 手输 `sub` 兜底」；无本地 `users` 表、主体键 = `sub`、鉴权路径零 Admin 调用三条主体裁定**不变**（决策记录见 §14） |
 | **D4** | Casbin 是否本期引入 | **延后**（`shared/DATA-MODEL.md` §7.6「不在本期」+ §5.2 边界已划）—— **已定** | 引入 = **条件触发**：触发条件与硬约束已登记 **B-19**（[hub/STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md)），非待决 |
 | **D5** | token 存法 | **维持 localStorage**（`console/src/stores/auth.ts` 现状；**本文件对此本就沉默** ⇒ 属实现细节）—— **可逆，自决** | BFF / 后端 Cookie：安全基线升级时再议；纯前端单点改动，**可逆** |
 | **D6** | `aud` 校验方式 | **① 维持：不校 `aud`、校 `azp`**（§2.4 已实现）—— **已定** | ② 加 **audience mapper** + 去 `SkipClientIDCheck` —— **条件触发**（需按 audience 区分多个资源服务器时），非待决 |
@@ -429,3 +429,17 @@ Pending ──► Approved ──► （写入绑定，带 expires_at）
 | [hub/STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md) | C-10（平台级 RBAC 端点缺失） |
 | [console/CONSOLE-UI-DESIGN.md §7.9](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md) | 前端权限与审批 UX |
 | [runner/STORY-runner-implementation.md §4.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md) | 下游：runner 侧 k8s RBAC 授权边界 |
+
+---
+
+## 14. 变更历史
+
+> 按 clean-change-comments 规则 4 收口：决策内容与决策时间收口于此；正文只保留最新现状，不呈现历史版本。
+
+| 日期 | 决策 | 内容 |
+| --- | --- | --- |
+| 2026-10-27 | **D3 重估闭卷（§3.5 触发条件成立）** | 用户拍板「用户/组生命周期管理进 console」（B 路线：console 统一管理）。落地：hub 经 **Keycloak Admin REST 代理**提供用户/组目录（`internal/keycloak` 扩展，SA 最小凭据集 `manage-users` / `query-groups`），console「用户与权限」页新增用户/组管理区（M1）；授权表单由「只列已绑定主体 + 手输 `sub`」升级为「**目录下拉 + 手输兜底**」。**不变项**：无本地 `users` 表；主体键 = token `sub`；鉴权路径零 Admin 调用；`/org:<slug>` 组织组由 `orgsvc` 自动管理、UI 只读。配套：UX 权威落 ui-05 §7.9（M1–M6），原型落 `CONSOLE-UI-prototype.html`「用户与权限」页与组件权限 Tab |
+| 2026-10-27 | **目录代理实现落地（N-34 收口）· N-35 消解** | hub `internal/keycloak` 新增 `DirectoryAdmin`（用户与组共 10 方法），`/keycloak/*` 代理端点组挂平台组（`user:manage`，`cmd/hub/main.go`）。SA 凭据集定为 `manage-users` / `query-groups` / `query-users` / `view-users`（realm 种子已补后两者：`query-groups` 需单授说明该 KC 版本复合角色不含 query 类，目录列用户能力显式补齐）。临时口令 16 位（去易混字符）、**响应返回一次**、`requiredActions=[UPDATE_PASSWORD]` 首登强制改密；`/org:*` 对代理只读由 handler 侧 403 强制（建组与成员变更双闸）。**N-35 消解**：`BindingReaper` 定期回收 + 既有逐条 `DELETE /role-bindings/:id`、`DELETE /platform-role-bindings/:id`（删除不筛过期）已覆盖「管理面可见可清」，无新增端点。console 授权表单接入目录下拉（`api/permission.ts` `directoryApi`），目录不可用退化手输；M1 用户/组管理页仍待实现（原型已画，见 ui-05 §7.14 M1） |
+| 2026-10-27 | **§10 #13 双向钢人收口 · /api/userinfo 消费裁定** | §10 #13 由 ❌ 重判为「安全语义已达成（app 未据 token 做授权决策，403 全交后端）；残留 = 个人中心误读 `profile.realm_access` 角色 + `/api/userinfo` 未消费」。双向钢人结论：库级 token 解析（oidc-client-ts 作 OIDC client 物理必需，renew / Bearer / 登录态）不在红线范围；红线精确为「应用代码不据 token 声明做授权判定」；`user.expired` 仅登录态 UX，hub 每次调用重校验。裁定：身份展示（name/username/email/sub）可来自 `profile`（OIDC 标准、零额外往返、dev 降级简单）；**授权相关展示（roles/orgs）必须来自 `/api/userinfo`（hub 权威），禁止读 `profile.realm_access`**——同时闭合 §10 #13 残留与 userinfo 未消费。实现落点：console 新增 `userinfoApi`，auth store 启动时拉取并缓存 roles/orgs，个人中心改用 `userinfo.roles`，profile 仅留身份四字段（Task 10）。钢人全文见 `shared/ACCOUNT-PERMISSION-STEELMAN-2026-10-27.md` |
+| 2026-10-27 | **kind 集群端到端验证通过 · 三个环境缺口修复** | 本地 sdp-dev 集群（KC 26.7.4）实测全链路：`/api/v1/userinfo` 200（subject/username/groups/roles 正确）；`/keycloak/users`、`/keycloak/groups` 200；`POST /keycloak/users` 201（临时口令 + UPDATE_PASSWORD 语义正确）——**SA 凭据集 `manage-users`/`query-groups`/`query-users`/`view-users` 在真实 KC 26 上够用**（前轮遗留悬念闭卷）。修复的三个缺口：① **realm 种子 `defaultClientScopes` 缺 `basic`**——KC 25+ 把 access token 的 `sub` mapper 拆进 `basic` scope，种子沿用旧清单导致两个业务客户端 token 无 `sub`，hub 所有鉴权路由恒 401（表现：auth 中间件通过但 subject 为空；id_token 有 sub、access_token 无 sub 为判别特征）；种子已补 `basic` 并加防回退注释，既有集群需手工补挂（操作入 KEYCLOAK.md §8）。② **`06_permissions.sql` 头注释残句丢 `--` 前缀**致官方 import.sh 中断。③ **env `deploy-local.sh` CoreDNS rewrite 只注入 harbor 域名**——hub pod 解析不到 issuer 域名致 JWKS 校验失败；`patch_coredns_rewrite` 泛化为 `<域名> <网关svc DNS>` 双参，sdp-gateway 段补注入 `${SDP_GATEWAY_DOMAIN}` rewrite。另：RBAC 种子（`09_rbac_multiorg.sql`）此前未导入，本次经 psql 导入后 403→200 闭环 |
+| 2026-10-27 | **M1 用户与组管理页 console 落地（前轮遗留项闭卷）** | `PlatformAdminView.vue` permissions section 按 ui-05 §7.14 M1 实现用户/用户组两区：用户列表（启停、重置密码、待改密徽章）+ 建用户（一次性临时口令展示后不再可见）；组列表（`/org:*` 载体组标「系统管理」只读）+ 建组（客户端校验对齐 hub `validateRBACGroupName`）+ 成员管理。目录代理不可用时（KC 未配置）两区整块隐藏，授权表单退化手输不变。门禁：vue-tsc + 8 smoke（platform-perm 21/21 契约不变）+ build 全绿。实现记录见 ui-11 附 N-36 |

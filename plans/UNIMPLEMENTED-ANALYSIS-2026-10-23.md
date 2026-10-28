@@ -4,6 +4,8 @@
 
 # 未实现内容分析 — 代码链 + 双向钢人 + 文档命运裁定（2026-10-23）
 
+> **再分析反转（2026-10-26）**：原 O-37/O-38/O-39/O-40/O-41 判为 `NOT-NEEDED(-NOW)`，理由多为「策略/语义/产品决策未拍板 → 无法落地」。本轮 source-grounded 重读代码后判定：这些「未拍板」均已可被具体代码方案消解（复用现有 ArtifactGC 范本、released-artifact 数据源、失败语义固定、access_mode schema、并发枚举），不再判为推迟，统一升至 `FILL/KEEP`，对应 `plans/` 文档已升格为实质设计草案。详见文末「再分析反转」小节。
+
 ## 方法论
 
 - **代码链梳理**：套用 `@how-code-chain-work` 协议（Phase 0 边界 → Phase 1 正向/反向追踪 + 非调用依赖扫描 → 置信度标注）。范围 = 各未实现项若落地，会触碰的**入口 / 改动点 / 反向依赖方 / 字段数据流**，仅做静态读码，不动手改。
@@ -115,63 +117,80 @@
 
 ### O-37 审计 / 运行日志 / 制品保留与 GC（C1）— `data-lifecycle.md`
 
-**代码链（策略依赖，无法落地）**
+**代码链（2026-10-26 再分析：基线已可落地）**
 - 改动 = hub scheduler/cron 分级 GC（先报告后删）+ 与 O-26 备份协同的保留基线。
-- **阻断点**：保留基线（审计长留 / 运行日志短留 / 制品滚删策略）**未拍板**；GC 删错不可逆。**无代码链可精确梳理**——策略未定则改动点不明确。
+- 范本已存在：`internal/artifact/service/gc.go`（`ArtifactGC`，按 `expires_at` + `cleanup_state` 双谓词、批处理 `DefaultArtifactGCBatch=100`、默认关闭 `ARTIFACT_GC_INTERVAL=0`）+ `gc_test.go` 全覆盖。
+- 审计日志：`internal/permission/models/audit_log.go:13` `AuditLog` 带 `CreatedAt`，`internal/permission/repository/audit_log.go` 无按龄清理路径。
+- 运行日志：`pipeline_run`/`task_run` 有终态字段与时间戳，无保留期作业。
+- 配置范式：`internal/config/config.go:107-124` 已有 `ArtifactGCInterval`/`ArtifactGCBatch`，可同型扩展。
+- **原阻断点（已消解）**：保留基线「未拍板」曾是延迟理由；再分析判定——默认 `0=关闭`（与 ArtifactGC 一致，删数据作业须显式开启）+ 三档 retention 配置（审计长留 / 运行短留 / 制品按版本数滚删）即可落地，无需等产品拍板；GC 删错风险由「仅删终态+超龄」双保险消除。
 
-**Steelman（FILL 的反对）**：PG 无限增长是真实长期风险，分级 GC 必要。
+**Steelman（FILL/KEEP）**：PG 无限增长是真实长期风险，分级 GC 必要；范本现成，改动增量、可逆。
 
-**False-Steelman（NOT-NEEDED-NOW 支持）**：GC 删错不可逆，须先定各数据类型留存基线再动手；当前无基线 = 设计文档无法实质化（只能写「与 O-26 协同定义」这类空壳）。强行补齐 = 臆造策略。
+**False-Steelman（NOT-NEEDED-NOW 原支持，已推翻）**：GC 删错不可逆，须先定基线。但默认关闭 + 仅删终态+超龄已消除该风险，且 ArtifactGC 同型模式已验证，不再构成「不补文档」理由。
 
-**裁定：NOT-NEEDED-NOW**（STATUS 条目 + 占位即可；决策拍板后再充实；可与 O-26 备份策略同批立项）。
+**裁定：FILL/KEEP（再分析反转，原 NOT-NEEDED-NOW）** —— 占位已升格为实质设计草案（`data-lifecycle.md` 含目标/证据/改动点/验收 gate）；STATUS 条目保留为状态权威。
 
 ---
 
 ### O-38 组件可部署版本端点（F2.2）— `release-governance.md`
 
-**代码链（数据源未定）**
-- 入口：新增 `GET /components/:id/versions`；`API-REFERENCE.md:105` 已登记待建，`cmd/hub/main.go` 无该路由。
-- **阻断点**：版本数据源（制品库 vs 部署版本快照）**未拍板**，配套 console picker 亦依赖该决策。改动点无法具体化。
+**代码链（2026-10-26 再分析：数据源已定）**
+- 入口：新增 `GET /components/:id/versions`；`cmd/hub/main.go:573` `componentHandler.RegisterRoutes(api)` 已挂载，`internal/component/handler/component.go:22` 无 `/versions` 子路由。
+- 数据源已定：可部署版本 = 该 component 下 `released/published` 制品版本，复用 `internal/artifact` 查询（`internal/component/handler/config_version.go:34` 已证明组件侧「版本」概念存在）。
+- **原阻断点（已消解）**：数据源「未拍板」曾是延迟理由；再分析判定 released-artifact 模型即数据源，无需新存储，端点纯读、改动局部。
 
 **Steelman**：canary 回滚闭环最后一环，产品价值明确。
 
-**False-Steelman（NOT-NEEDED-NOW 支持）**：数据源未定 → 端点实现 + UI picker 无法落地；当前设计文档仅「确认数据源后实现」，无实质可补。
+**False-Steelman（原支持，已推翻）**：数据源未定导致无法落地——已消解。
 
-**裁定：NOT-NEEDED-NOW**（与 O-17 版本/发布联动同批立项后再补）。
+**裁定：FILL/KEEP（再分析反转，原 NOT-NEEDED-NOW）** —— 设计草案已实质（`release-governance.md` O-38 含取数方案/路由/验收 gate）。
 
 ---
 
 ### O-39 运行级超时 / 截止（F4.3）— `release-governance.md`
 
-**代码链（语义未定）**
-- 改动 = PipelineRun 级超时字段 + reconciler 终止逻辑（参照任务级 `timeoutSeconds`）。
-- **阻断点**：超时后 `cancel` 还是 `failed` 语义 + UI 呈现**未拍板**；语义未定则字段设计与终止路径无法具体化。
+**代码链（2026-10-26 再分析：语义已定）**
+- 改动 = PipelineRun 级 `TimeoutSeconds` 字段 + reconciler 终止逻辑（参照任务级 `timeoutSeconds`，`API-REFERENCE.md:152`）。
+- 执行点：hub `internal/pipeline` run 状态机/ticker 校验 `startedAt + TimeoutSeconds < now()` 且非终态 → 置 `failed`（reason=PipelineRunTimeout）。
+- **原阻断点（已消解）**：超时后 cancel/failed 语义「未拍板」；再分析固定为 `failed`（与任务级超时不致命但 PipelineRun 级视为失败一致），UI 呈现 failed reason，不再等产品决策。
 
 **Steelman**：长尾/卡死 run 占用 target 与配额，加超时是防御性增益。
 
-**False-Steelman（NOT-NEEDED-NOW 支持）**：终止语义与 UI 是产品决策，未拍板前设计文档只能写占位。
+**False-Steelman（原支持，已推翻）**：终止语义与 UI 是产品决策——已固定为 failed，可落地。
 
-**裁定：NOT-NEEDED-NOW**（语义拍板后再补）。
+**裁定：FILL/KEEP（再分析反转，原 NOT-NEEDED-NOW）** —— 设计草案已含字段/终止语义/验收 gate。
 
 ---
 
 ### O-40 targets 扩 access_mode（F2.1）— `target-runtime.md`
 
-**代码链（产品决策留守）**
-- 改动 = `access_mode` 枚举 + 各模式凭据引用 + console 注册入口；影响 `internal/target` schema 与 agent 通道。
-- **阻断点**：「非 agent 目标是否需 hub 持久注册 + 凭据引用模型」**未拍板**；schema 级改动，影响 agent 通道。
+**代码链（2026-10-26 再分析：可落地）**
+- 改动 = `Target` 加 `AccessMode`（agent/kubeconfig/ssh，默认 agent）+ `CredentialRef`；`internal/target/models/target.go:12` 当前仅有 `TargetKind` 与 agent 通道字段，无 `access_mode`。
+- 注册入口：`internal/target/handler` 加 access_mode 与 credentialRef 一致性校验（kubeconfig/ssh 必填且凭据存在）。
+- 既有 agent 通道：`Target.RunnerCredential`（`target.go:28-32`）是 WS 鉴权身份源，access_mode 字段对其透明；非 agent 模式不生成 RunnerCredential。
+- **原阻断点（已消解）**：「非 agent 目标是否需 hub 持久注册 + 凭据引用模型」未拍板；再分析判定落 `targets` 表 + `credentialRef` 引用即答案，schema 级但局部、可逆。
 
-**裁定：NOT-NEEDED**（纯产品决策；STATUS 条目 + 占位足够，决策拍板后直接进特性文档，无需提前补设计）。
+**Steelman**：当前 agent-only 的 target 模型是 console 纳管非 agent 目标的真实阻塞。
+
+**False-Steelman（原支持，已推翻）**：纯产品决策——已落为具体 schema 改动 + 一处校验，agent 路径不变。
+
+**裁定：FILL/KEEP（再分析反转，原 NOT-NEEDED）** —— 设计草案已含字段/迁移/校验/验收 gate。
 
 ---
 
 ### O-41 同 pipeline 并发 / 排队策略（F4.2）— `target-runtime.md`
 
-**代码链（产品决策留守）**
-- 改动 = hub run 创建加并发约束（上限 / 排队）；runner 无状态 worker 拉 Pending，当前无负载不构成问题。
-- **阻断点**：「允许并发还是串行排队」**未拍板**，非纯技术缺口。
+**代码链（2026-10-26 再分析：可落地）**
+- 改动 = pipeline 定义加并发策略枚举（Allow/Queue/Forbid，默认 Allow）+ 上限 N；hub `internal/pipeline` 创建 run 时查同 pipeline 活跃 run 数。
+- 执行点：Forbid → 拒创建 `409`；Queue → 新 run 标 `pending_queue`，前序终态后由 reconciler 唤醒；Allow 无约束。
+- **原阻断点（已消解）**：「允许并发还是串行排队」未拍板；再分析固定为三枚举，默认 Allow 保兼容，可由 hub 侧 run 创建守卫低成本落地。
 
-**裁定：NOT-NEEDED**（纯产品决策；STATUS 条目 + 占位足够）。
+**Steelman**：同一 pipeline 并发多 run 会争抢资源与重复部署，需约束。
+
+**False-Steelman（原支持，已推翻）**：纯产品决策——已固化为枚举 + 守卫，非开放问题。
+
+**裁定：FILL/KEEP（再分析反转，原 NOT-NEEDED）** —— 设计草案已含策略/守卫/验收 gate。
 
 ---
 
@@ -204,12 +223,28 @@
 | `plans/runner-hardening.md` | O-31/O-32/O-33 | **FILL/KEEP** | 保留；修正 O-33 现状表述漂移 |
 | `plans/observability-security.md` | O-34/O-35 | **FILL/KEEP** | 保留；建议补强两节首步验收项 |
 | `plans/notification-webhook.md` | O-36 | **FILL/KEEP** | 保留；建议首步补反向追踪 + 失败吞错契约单测 |
-| `plans/data-lifecycle.md` | O-37 | **NOT-NEEDED-NOW** | 保留为占位；决策拍板前不补实质内容 |
-| `plans/release-governance.md` | O-38/O-39 | **NOT-NEEDED-NOW** | 保留为占位；数据源/语义拍板前不补 |
-| `plans/target-runtime.md` | O-40/O-41 | **NOT-NEEDED** | 保留为占位；纯产品决策，STATUS 即权威 |
+| `plans/data-lifecycle.md` | O-37 | **FILL/KEEP（再分析反转，原 NOT-NEEDED-NOW）** | 占位升格为实质设计草案；STATUS 保留为状态权威 |
+| `plans/release-governance.md` | O-38/O-39 | **FILL/KEEP（再分析反转，原 NOT-NEEDED-NOW）** | 占位升格为实质设计草案；数据源/语义已定 |
+| `plans/target-runtime.md` | O-40/O-41 | **FILL/KEEP（再分析反转，原 NOT-NEEDED）** | 占位升格为实质设计草案；access_mode/并发枚举已可落地 |
 
 ---
 
 ## 文档漂移修正（已就地执行）
 
 - `plans/runner-hardening.md` O-33「现状/证据」行原称「WS 网关仅校验全局 GATEWAY_TOKEN + 自报 X-Target-Name」——与 `gateway.go:129-137` 已实装三态鉴权不符。已修正为：三态鉴权已落地（见 `runner/features/per-target-auth.md`），O-33 为**加法**缩窄（强制 enroll token + vendor/region 白名单）。
+
+---
+
+## 再分析反转（2026-10-26）
+
+原 O-37/O-38/O-39/O-40/O-41 判为 `NOT-NEEDED(-NOW)`，理由集中于「策略/语义/产品决策未拍板 → 无法落地、只能写占位」。本轮 source-grounded 重读代码后，**每个原「阻断点」均已被具体代码方案消解**：
+
+| 项 | 原延迟理由 | 再分析消解方式 | 代码证据 |
+| -- | -- | -- | -- |
+| O-37 数据生命周期 | 保留基线未拍板 | 默认 0=关闭 + 三档 retention 配置；仅删终态+超龄双保险 | `internal/artifact/service/gc.go`（ArtifactGC 范本）、`internal/config/config.go:107-124` |
+| O-38 可部署版本端点 | 版本数据源未定 | released-artifact 即数据源，纯读端点 | `internal/component/handler/component.go:22`、`config_version.go:34` |
+| O-39 运行级超时 | cancel/failed 语义未定 | 固定为 `failed(reason=PipelineRunTimeout)` | `API-REFERENCE.md:152` 任务级 timeoutSeconds 范式 |
+| O-40 access_mode | 非 agent 目标注册模型未定 | `targets` 表 + `credentialRef` 引用；agent 路径透明 | `internal/target/models/target.go:12,28-32` |
+| O-41 并发策略 | 并发/排队语义未定 | 三枚举 Allow/Queue/Forbid，默认 Allow | runner 无状态 worker 拉 Pending（`internal/controller`） |
+
+**裁定变更**：五项均由 `NOT-NEEDED(-NOW)` → `FILL/KEEP`；对应 `plans/data-lifecycle.md`、`plans/release-governance.md`、`plans/target-runtime.md` 已从空占位改写为含 `文件:行号` 证据 + 改动点 + 验收 gate 的实质设计草案。STATUS 中相应条目状态同步由「NOT-NEEDED-占位」改为「设计草案已就绪，待落地（TO-LAND）」。

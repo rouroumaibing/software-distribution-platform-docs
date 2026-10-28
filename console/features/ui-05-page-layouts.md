@@ -435,3 +435,67 @@
 - 「制品」页工具栏加「版本矩阵」（`GET /package-versions` 消费 UI，组件 × 环境部署版本）。
 
 ---
+
+### 7.14 权限管理 UX 全面设计（M1–M6，· 只追加，冲突处以本节为准）
+
+> 一轮把「前端权限管理当产品能力重新设计」的落地规格。决策记录：D3 重估闭卷（§3.5 触发条件「全量用户目录」成立，用户拍板 B 路线）见 [ACCOUNT-PERMISSION-MODEL §14](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCOUNT-PERMISSION-MODEL.md)——hub 经 Keycloak Admin REST 代理提供用户/组目录。本节**取代 §7.9 / §7.13⑦ 中与之冲突的段落**（「KC 组→角色映射」表、只读平台用户视图、「组名由用户手填」）；§7.9 的授权分层、页面 × CRUD 颗粒度矩阵、运行审批卡、权限不足错误态**继续有效**。
+
+**M0 模型锚点（不重新开题）**：权限模型以 [ACCOUNT-PERMISSION-MODEL](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCOUNT-PERMISSION-MODEL.md) 为权威——主体 = token `sub`（user）/ 组路径（group，前导斜杠，§5.3）；两层 RBAC（`platform_roles`/`platform_role_bindings` 全局 + org 作用域、`component_roles`/`component_role_bindings` 组件作用域）；动作词表 `resource:action`（hub `internal/permission/models/role.go`）；预置内置角色（`isSystem`，不可改删）+ 组织自定义角色；绑定带 `expires_at`；权限申请流（`permission_requests`）**独立于**运行审批（`pipeline_approvals`）。UI 不发明新权限分类，动作清单与 hub 词表**逐字对齐**。
+
+**M1 用户与组管理（新增分区；D3 重估后的管理面）**
+
+- 数据源 = hub **Keycloak Admin 代理**端点组【N-34 已落地】：`GET/POST /keycloak/users` · `PUT /keycloak/users/:id`（启停/邮箱）· `PUT /keycloak/users/:id/password` · `GET/POST /keycloak/groups` · `GET /keycloak/groups/:id(/members)` · `PUT/DELETE /keycloak/groups/:id/members/:userId`；全部挂平台级 `user:manage`。
+- **前端不直调 Keycloak**：console 是 public client（无 Admin 凭据），一切经 hub 代理。
+- 用户列表：搜索 + 启用态 + email + 所属组；行动作 = 启用/禁用、重置密码、编辑资料。
+- 密码语义：密码只存 Keycloak，console 不落库；创建与重置由 hub 生成 16 位临时口令（去易混字符），**响应返回一次**供管理员线下转交，`requiredActions=[UPDATE_PASSWORD]` 首登强制改密——「不存不显」指不持久、不二次查看。
+- 创建用户：弹窗（用户名 / email / 临时密码 / 所属组多选）→ hub 代理建 KC 用户 + `requiredActions=UPDATE_PASSWORD`（首登强制改密）。
+- 组管理：组列表（名称 / 成员数 / 描述）+ 建组弹窗 + 成员管理（加人 / 移人）。
+- **`/org:` 保留前缀组只读**：组织组由 hub `orgsvc` 随组织创建自动生成（`/org:<slug>`），UI 禁建 / 禁改 / 禁删 / 禁手工挂 RBAC 绑定，仅展示并提示来源——守住「组织不作 RBAC 主体」（ACCOUNT-PERMISSION-MODEL §5.3）。
+
+**M2 平台级授权（对齐 `platform_role_bindings`）**
+
+- **主体选择器三级**：用户目录下拉（M1 数据源）→ 组下拉 → 手输 `sub` / 组路径兜底（联邦 / 服务账号场景）。手输沿用 `utils/permission.ts` 的 `validateSubjectInput`（组必须带前导斜杠，否则绑定静默不生效）+ `subjectInputHint` 非阻塞提示；§7.9 的「只列已绑定主体」降级为兜底候选。
+- 绑定表单：主体 + 角色（`GET /platform-roles`）+ **有效期**（`expires_at`，datetime-local → RFC3339；显式勾选「永久」才允许空，**不允许默认永久挂账**）。
+- org 作用域：绑定表单暴露 `orgId` 选择（空 = 全局绑定）；本期 UI 先全局，组织下拉随多租户二期放开（表结构已支持）。
+
+**M3 组件级授权（升级权限 Tab）**
+
+- 主体选择器同 M2；角色 = `GET /component-roles`（预置 4 角色 + 组织自定义）。
+- 绑定表补两列：**有效期**（`—` = 永久；临期 / 已过期徽章）与**授权人**（`grantedBy`）。
+- owner 行只读（创建时自动绑定，不可移除 / 改角色——对齐 hub P3b 兜底）。
+- **「申请权限」入口**（非管理员视角）：无 `component:manage` 时 Tab 顶部出申请条 → 弹窗（目标角色 + 理由必填 + 期望有效期）→ `POST /permission-requests`（端点已存在）。
+
+**M4 角色与动作管理（对齐动作词表）**
+
+- 动作清单按 hub 词表分组展示：组件 / 流水线 / 审批·配置·制品（组件级）；页面可见性（`page:*`）/ `org:manage` / `user:manage` / `ops:manage`（平台级）。前端镜像 `COMPONENT_ROLE_ACTION_GROUPS` 需**补平台侧动作组**。
+- 自定义角色创建：名称 + 描述 + 动作勾选（分组多选）→ `POST /platform-roles` / `POST /component-roles`（写端点需 `user:manage`）。两个入口：「用户与权限」页角色区（平台角色 + 组件角色统一管理）、组件权限 Tab（快捷建组件角色）。
+- 内置角色（`isSystem`）只读展示；删除被拒（`409 + {reasons}`）时把 reasons 渲染进弹窗（对齐服务树删除契约模式，附 C）。
+- `role_api_mappings` 由 hub `SyncFromRoles` 启动同步，UI 不直接编辑、仅随角色详情展示。
+
+**M5 权限审批中心（`permission_requests`，原型此前未画）**
+
+- 入口：「用户与权限」页审批分区（需 `user:manage`）。端点已存在：`GET /permission-requests` / `POST /:id/approve` / `POST /:id/reject`。
+- 待审列表：申请人（`sub` + 展示名）/ 申请角色 / 目标资源（平台级可空）/ 理由（必填字段）/ 申请时间 / 状态徽章（Pending）。
+- 行动作：**批准**（弹窗确认生效时间 + 有效期，默认按申请填）→ hub 自动写绑定（带 `expires_at`）；**驳回**（理由，留痕）。
+- 历史列表：Approved / Rejected（`approver` / `decidedAt`）。
+- 与运行审批严格分区：本节是**权限申请审批**，不出现在运行详情页；`pipeline_approvals` 审批卡维持 §7.9。
+
+**M6 「用户与权限」页信息架构（取代 §7.13⑦ 的四块结构）**
+
+页内分段（Tab 化，左栏恒 5 不变——全部收在本页内）：
+
+| # | 分区 | 内容 | 权限要求 |
+| --- | --- | --- | --- |
+| 1 | 用户 | M1 列表 + 创建 / 启停 / 重置密码 | `user:manage` |
+| 2 | 用户组 | M1 组列表 + 成员管理；`/org:` 只读 | `user:manage` |
+| 3 | 角色与绑定 | 平台角色 CRUD（M4）+ 平台绑定管理（M2） | `user:manage` |
+| 4 | 权限审批 | M5 待审 + 历史 | `user:manage` |
+| 5 | 审计日志 | 现有审计表保留；补「到期绑定清理」视图（过期行不删（§12.1 RBAC 七条 #1），管理面可见、可手动清理【后端依赖 N-35】） | `user:manage` |
+
+- **组件权限 Tab 同步升级**：主体选择器（M2/M3）+ 有效期列 + 自定义角色 + 申请入口；四角色 legend 卡扩为「预置 + 自定义」完整清单。
+- **五态**：用户/组列表沿用共享五态规范；403（非平台管理员）→ §8.2 错误态；Keycloak 代理不可达（502/503）→ 错误态 + 重试，**不伪装成「无用户」**。
+- **审计**：用户/组的创建 / 启停 / 改密触发、角色 CRUD、绑定增删、审批决策全部落 `audit_log`（hub 中间件统一上报，前端零手写）。
+
+**开源参考（延续 §7.9）**：用户/组目录代理 ← Keycloak Admin Console 的最小化嵌入式形态；审批中心 ← GitHub Org role requests / GitLab member access requests；有效期绑定 ← AWS IAM temporary credentials / tempify 模式。
+
+---
