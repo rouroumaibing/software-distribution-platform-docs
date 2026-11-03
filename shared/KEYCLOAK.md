@@ -236,6 +236,8 @@ realm 由 [`templates/keycloak-realm-configmap.yaml`](https://github.com/rouroum
 
 ## 6. 与 console、hub 的交互逻辑
 
+> **认证架构已迁移到 BFF 模型**（hub 是会话权威，浏览器不持 KC token）：完整架构、端点契约、强制改密闭环、三坑约束见 [shared/AUTH-ARCHITECTURE.md](AUTH-ARCHITECTURE.md)。本节的 KC↔console 时序图与「当前状态」表描述的是旧「浏览器持 token + oidc-client-ts」模型，作为历史参考保留；旧模型已被 AUTH-ARCHITECTURE.md 取代，新实现以该文为准。本节「realm 角色不参与授权」「授权 = hub DB 绑定行」两条结论与鉴权强制点 id 反查（backlog B-18）**仍然有效**。
+
 **设计原则（见 [README §5.2](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/README.md)）**：**Keycloak 只管身份 + 组**；业务授权与审批全部落 hub（app 内 RBAC + 审批表）。Keycloak 不是授权中心。
 
 由此推出两条**容易误解**的实际结论（预置 `admin` 账号尤其要留意）：
@@ -384,8 +386,16 @@ kill %1 2>/dev/null
 
 执行后重新登录获取新 token 即恢复（无需重启 hub）。
 
+## 8b. 运维：account client 补 `aud=account` audience mapper（KC 26.7.4 内置缺陷）
+
+- **症状**：登录 Keycloak account 控制台（`/keycloak/realms/sdp/account`）后页面顶部红条 `Danger alert: 发生错误 Server responded with an invalid status`，控制台内所有数据加载失败。
+- **根因**：account REST API 校验 token 的 `aud` 必须含 `account`；`roles` scope 的 audience-resolve mapper 会**排除 token 自身的 client**，因此 account client 自己签发的 token `aud=null`（对照组：sdp-console token 经同一 mapper 获得 `aud=["account"]`，调同一 API 返回 200）。KC 26.7.4 自动创建的 account client 未内置 audience mapper——master 原生 realm 同样复现，属版本内置缺陷而非 realm 种子问题。
+- **修复**（幂等）：经 master admin API 给 account client 追加 protocol mapper `{name: "account audience", protocolMapper: "oidc-audience-mapper", config: {included.client.audience: "account", access.token.claim: "true"}}`。mapper 落 DB，KC 重启不丢；`--import-realm`（IGNORE_EXISTING）不动已存在 client 的 mapper。
+- **自动化**：`env/local-kind-dev/deploy-local.sh` stage_components 在 keycloak ready 后自动执行该补丁（查重→缺才建），fresh deploy 与存量集群重跑部署段均覆盖。
+
 ## 9. 相关文档
 
+- [shared/AUTH-ARCHITECTURE](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/AUTH-ARCHITECTURE.md) —— **认证架构单一真源**：BFF 模型、Flow A（password grant）/ Flow B（OIDC code）两入口、强制改密闭环、session/cookie/middleware 设计、三坑约束。本节交互时序已被该文取代。
 - [hub ACCOUNT-PERMISSION-MODEL](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCOUNT-PERMISSION-MODEL.md) —— **下游规范**：账号与权限（三条不动式、鉴权两段式、RBAC 引擎、审计、权限申请审批）。**本文只讲「认证子系统如何部署」；「权限如何判定」以该文为准。**
 - [hub API-REFERENCE](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/API-REFERENCE.md) —— API 端点与鉴权约定。
 - [hub DATA-MODEL](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) —— `users` / 授权模型（§7 授权模型）。
@@ -396,5 +406,6 @@ kill %1 2>/dev/null
 
 | 日期 | 变更内容 | 原因 |
 |---|---|---|
+| 2026-11-03 | 新增 §8b：account client 补 `aud=account` audience mapper（KC 26.7.4 内置缺陷——roles scope audience-resolve 排除自身 client，account 控制台自身 token aud=null → 控制台全 API 401，症状 "Server responded with an invalid status"）；deploy-local.sh stage_components 落幂等自动补丁（实测：删 mapper → 重跑重建 → GET /account/ 200） | 用户浏览器实测报错；master 原生 realm 复现排除种子问题，定位为版本内置缺陷 |
 | 2026-10-22 | 设计裁定：keycloak 后端改真 HTTPS——`keycloak.extraEnv` 增 `KEYCLOAK_HTTPS_CERTIFICATE_FILE`/`KEYCLOAK_HTTPS_CERTIFICATE_KEY_FILE`（keycloakx 检测到该对 env 自动追加 `--https-*` 启动参数）、`extraVolumes/extraVolumeMounts` 挂 `hub-keycloak-tls` 到 `/etc/keycloak-tls`；`keycloak-httproute.yaml` 后端端口 80 → 8443 并新增 `BackendTLSPolicy`（target `hub-keycloak-http:8443`，CA=`hub-keycloak-tls`）；§4 验证命令与端口转发同步指向 8443 | 用户裁定 hub 与 keycloak 后端一并改真 TLS 并各配 BackendTLSPolicy；keycloak 证书由 cert-create.sh 新增 `hub-keycloak-http` 组件生成 |
 | 2026-10-27 | kind 集群端到端验证发现并修复：realm 种子 `defaultClientScopes` 沿用 KC 24 前旧清单、缺 `basic` scope（KC 25+ access token 的 `sub` mapper 在该 scope），导致业务客户端 token 无 `sub`、hub 鉴权路由恒 401；种子两处补 `"basic"` 并加防回退注释，新增 §8 既有集群手工补挂操作（幂等脚本） | hub 对外 401 的根因定位（id_token 有 sub、access_token 无 sub 为判别特征）；`--import-realm` 不覆盖存量 realm，既有集群须手工补挂 |

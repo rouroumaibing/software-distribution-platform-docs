@@ -13,7 +13,7 @@
 
 > 裁定语义：目录位置表达的是**文档的治理范围主张**（这份内容属于整个平台），不是变更流程的镜像。防腐不靠位置，靠本 README 的维护纪律 + STATUS 指针协议 + 各域 index 交叉引用。
 
-## 当前住户（16）
+## 当前住户（17）
 
 | 文件 | 横跨范围 |
 | --- | --- |
@@ -33,6 +33,7 @@
 | [E2E-THREE-PIPELINES-2026-09-26.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/E2E-THREE-PIPELINES-2026-09-26.md) | 三流水线整体 E2E 权威记录（跨组件）；自根 plans/ 迁入 shared/ |
 | [ADR-0002-runner-install-bootstrap.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-0002-runner-install-bootstrap.md) | Runner 安装引导 ADR（join-bundle API：网关 URL + CA 信任根 + enroll token 一次性下发，安装数据收编为 hub 能力） |
 | [NETWORKING-GATEWAY.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/NETWORKING-GATEWAY.md) | 平台入口网关（Envoy Gateway / Gateway API）：控制面/数据面、Gateway 级资源边界（env 仓脚手架 / CCE 插件持有）、三仓路由清单、Policy 现状、部署顺序与运维（跨三端 + env 仓） |
+| [ACCESS-CONTROL.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCESS-CONTROL.md) | 访问控制：用户/用户组/组织 + L1（realm role 菜单可见）/ L2（org_admin 属性组织页可见）双层角色 + K8s RBAC 授权层（CRB 下发、kubeconfig 签发与吊销），治理三端 + 目标集群 |
 
 ## 维护纪律
 

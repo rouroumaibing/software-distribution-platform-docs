@@ -499,3 +499,33 @@
 **开源参考（延续 §7.9）**：用户/组目录代理 ← Keycloak Admin Console 的最小化嵌入式形态；审批中心 ← GitHub Org role requests / GitLab member access requests；有效期绑定 ← AWS IAM temporary credentials / tempify 模式。
 
 ---
+
+### 7.15 认证：bootstrap admin 首登强制改密闭环（· 只追加）
+
+> 承接 §7.14 M1（管理员建用户的临时口令首登改密）——把同一闭环延伸到 realm 种子引导的 bootstrap admin 账号。决策记录见 [CONSOLE-UI-DESIGN 变更历史](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/console/CONSOLE-UI-DESIGN.md)。
+
+**设定**：realm JSON 引导创建的 admin 账号，其初始口令（仓库内公开值）只用于引导；首次登录必须走完强制改密闭环才能进入后台，**全环境统一**（本地 kind dev / 云上验收 / 生产），不存在「跳过改密直接使用」的路径：
+
+```
+登录页 /user/login（admin + 初始口令，state.mode=login）
+  → POST /api/auth/login ⇒ 400 reason=UPDATE_PASSWORD（password grant 命中 not-fully-set-up）
+  → 前端 state.mode=updatePassword（新密码 + 确认，URL 不变）
+  → POST /api/auth/password {oldPassword, newPassword}
+  → 200 session cookie（旧密码验证放行 not-fully-set-up + temporary=false + 清 RA + 清 session）
+  → 前端 state.mode=login，用新密码走 /api/auth/login ⇒ 200 ⇒ 入系统
+```
+
+**机制**：完整架构与端点契约见 [shared/AUTH-ARCHITECTURE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/AUTH-ARCHITECTURE.md)（BFF 模型，hub 是会话权威，浏览器不持 KC token）。本文仅述 console 侧 UX 约束：
+
+- **触发**：Keycloak `requiredActions=[UPDATE_PASSWORD]`——realm JSON import 确定生效的机制；credential 的 `temporary` 字段在 import 中不可靠，不作依赖。realm 种子落 hub chart `keycloak-realm-configmap.yaml`；存量环境经 KC Admin API 补授。
+- **登录页自有**：`/user/login` 单路由，`state.mode` 在 `login` / `updatePassword` 间切换，URL 不变。**不**走 Keycloak 托管登录/改密页——强制改密状态经 Flow A 的 password grant 显式暴露（`Account is not fully set up`），前端结构化可见，无需启发式检测。
+- **密码语义与 M1 一致**：密码只存 Keycloak，console 不落库、不回显。
+- **初始口令生命周期**：bootstrap admin 完成改密后，仓库内初始口令对该环境即失效；口令遗失经 master admin 重置。
+- 实现状态以 [STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 为准。
+
+#### 7.15.1 登录入口：自有 /user/login 页（取消 login-hint 中间说明页）
+
+- 未认证访问任何受保护路由 → 重定向到 `/user/login`（自有登录页，console 拥有 UI）；认证入口与 Keycloak 之间不再有中间说明页。
+- `/user/login` 是 Flow A 的前端载体（见 [shared/AUTH-ARCHITECTURE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/AUTH-ARCHITECTURE.md) §2）：`state.mode` 在 `login` / `updatePassword` 间切换，URL 不变。Flow B（OIDC code / SSO）的入口经 `GET /api/auth/login-url` 跳 Keycloak 托管页，回调检测 `oauth.code` 后 `POST /api/auth/session/code`。
+- **取消** `/login-hint` 说明页（预置账号凭证表格 + 「继续登录」按钮）：`LoginHintView`、router 未认证回退、`VITE_LOGIN_HINT_*` 运行时注入一并移除。凭证展示与 §7.15 的安全设定相悖——仓库公开口令不应渲染到 UI；初始凭证的告知语义由强制改密闭环承担。
+- redirect 语义保留：登录成功后回跳原目标路由（经 router query 承载，登录前目标路由）。
