@@ -140,7 +140,7 @@ OIDC 里有两个相关角色，本项目**分别落在两端**：
 | 2 | 用 `kid` 从 JWKS 选键**验签** | 必需 | go-oidc 内建 |
 | 3 | `iss` **与配置 issuer 逐字相等** | 必需 | go-oidc 内建（故 issuer 必须写对外可达的完整地址，见 §2.4.2） |
 | 4 | `exp` / `nbf` / `iat` 时间窗 | 必需 | go-oidc 内建（realm `accessTokenLifespan` = 300s） |
-| 5 | **`azp` == `KEYCLOAK_CLIENT_ID`** | 可选（`azp` 非必校项），但**多客户端 realm 下必校** | **自实现**（`errWrongClient` → `401`），防跨客户端重放 |
+| 5 | **`azp` == `KEYCLOAK_RESOURCE_CLIENT_ID`（默认 `sdp-backend`）** | 可选（`azp` 非必校项），但**多客户端 realm 下必校** | **自实现**（`errWrongClient` → `401`），防跨客户端重放 |
 | 6 | `aud` —— **刻意不校验** | 标准建议校验 | `SkipClientIDCheck: true`：Keycloak 默认 access token 的 `aud` 是 `"account"` 而非 client ID，要改得在 client scope 上加 audience mapper。故**改校 `azp`**，换「realm 零额外配置」 |
 | 7 | 声明 → 请求主体 | — | `keycloakClaims`（§2.1 那张表）+ `UserContext` |
 

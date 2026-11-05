@@ -106,14 +106,16 @@ keycloak:
 
 **hub 自身的 OIDC 校验参数（顶层 `auth:` 段，与子 chart 无关）**
 
-上表是**子 chart** 的参数（作用域 `keycloak.*`）。hub **自己**的鉴权开关是**另一个顶层键** `auth:`——它渲染进 hub Deployment 的环境变量（`KEYCLOAK_ISSUER` / `KEYCLOAK_CLIENT_ID`），与子 chart 互不相干：
+上表是**子 chart** 的参数（作用域 `keycloak.*`）。hub **自己**的鉴权开关是**另一个顶层键** `auth:`——它渲染进 hub Deployment 的环境变量（`KEYCLOAK_ISSUER` / `KEYCLOAK_CLIENT_ID` / `KEYCLOAK_RESOURCE_CLIENT_ID` / `LOGIN_MODE`），与子 chart 互不相干：
 
 ```yaml
 # hub: build/hub/charts/.../values.yaml
 auth:
   keycloakIssuerUrl: ""          # 空 => 关闭鉴权（dev 默认）
-  keycloakClientId: "sdp-console"
-  adminClientSecret: ""          # sdp-backend 的 secret（org 载体组预置用）；空 = 只告警不建组
+  keycloakClientId: "sdp-console"  # 登录 client（public + PKCE）；hub 与 console 共用同一取值
+  resourceClientId: "sdp-backend"  # 资源 client（confidential）；hub 校验会话令牌 azp/aud == 它
+  loginModeSeed: "default"        # 协议层登录模式初值（default|keycloak），运行后可经 API 切换
+  adminClientSecret: ""          # sdp-backend 的 secret（org 载体组预置 + IDP CRUD 用）；空 = 只告警不建组
   trustedCASecret: ""            # dev-only：自签 CA 时设为 sdp-ca（key ca.crt）→ 挂 /etc/sdp-ca + SSL_CERT_FILE
   resolveHostIp: ""              # dev-only：hub 解析不到 issuer 域名时，把 issuer host 指到该 IP（envoy svc）
 ```
@@ -121,13 +123,15 @@ auth:
 | 参数 | 渲染为 | 一句话说明 |
 | --- | --- | --- |
 | `auth.keycloakIssuerUrl` | `KEYCLOAK_ISSUER` | realm 的公开地址；**空 = 关闭鉴权**。模板会去掉末尾斜杠，避免 `iss` 对不上 |
-| `auth.keycloakClientId` | `KEYCLOAK_CLIENT_ID` | 校验令牌 `azp`；须与 console 的 `keycloakClientId` 相同 |
-| `auth.adminClientSecret` | `KEYCLOAK_ADMIN_CLIENT_SECRET` | hub 用 `sdp-backend` 服务账号调 Admin API（org 载体组预置）；取值 = realm JSON 里 `sdp-backend` 的 secret 字面量；空 = 只告警不建组 |
+| `auth.keycloakClientId` | `KEYCLOAK_CLIENT_ID` | **登录 client `sdp-console`**（public + PKCE）；hub 与 console 共用同一取值（详见 §5 双 client 模型） |
+| `auth.resourceClientId` | `KEYCLOAK_RESOURCE_CLIENT_ID` | **资源 client `sdp-backend`**（confidential）；hub 校验会话令牌的 `azp`/`aud` 必须等于它（双 client 二次签发的资源令牌面） |
+| `auth.loginModeSeed` | `LOGIN_MODE` | 协议层登录模式初值（`default`\|`keycloak`）；运行后经 `PUT /api/v1/login` 切换并持久化到 hub DB |
+| `auth.adminClientSecret` | `KEYCLOAK_ADMIN_CLIENT_SECRET` | hub 用 `sdp-backend` 服务账号调 Admin API（org 载体组预置 + IDP CRUD）；取值 = realm JSON 里 `sdp-backend` 的 secret 字面量；空 = 只告警不建组 |
 | `auth.trustedCASecret` | 挂载 secret 名 | dev-only：把该 secret 的 `ca.crt` 挂到 `/etc/sdp-ca` 并设 `SSL_CERT_FILE`（Go 系统信任池读该变量）；本地部署由 deploy-local.sh 建 `sdp-ca` 并 `--set` 传入 |
 | `auth.resolveHostIp` | hostAliases IP | dev-only：hub 解析不到 issuer 域名时，把 issuer host 指到该 IP（本地 = envoy svc ClusterIP）；生产用真 DNS，留空 |
 
-> **键名刻意与 console chart 的 `auth.*` 对齐**（同名 `keycloakIssuerUrl` / `keycloakClientId`），使同一份 values 可同时喂两端、避免两端 issuer 漂移。
-> ⚠️ `auth`（hub 自身）与 `keycloak`（子 chart）是**两个不同的顶层键**，勿混。
+> **`auth` 与 `keycloak` 是两个不同的顶层键**，勿混。
+> **键名仍与 console chart 的 `auth.*` 对齐**（同名 `keycloakIssuerUrl` / `keycloakClientId`），使同一份 values 可同时喂两端、避免 issuer 漂移；`keycloakClientId` 两端取值相同 = 登录 client `sdp-console`；hub 额外用 `resourceClientId`（→ `KEYCLOAK_RESOURCE_CLIENT_ID` = 资源 client `sdp-backend`）校验会话令牌 `azp`/`aud`（仅 hub 侧，见上表与 §5）。
 
 **五个坑（都踩过）**：
 
@@ -136,7 +140,7 @@ auth:
 3. **命名空间**：hub chart 自己的模板（含 realm CM）注入 `metadata.namespace: {{ .Values.namespace }}`（默认 `sdp-workflow`）；子 chart 的资源用 `.Release.Namespace`，随 `helm -n sdp-workflow` 一并落该命名空间。
 4. **`http.relativePath` 不能用默认的 `/auth`** —— console 是 SPA，它的 OIDC 回调路由就是 **`/auth/callback`**（`console/src/router/index.ts:14`）。若 keycloak 占住 `/auth` 前缀，nginx-ingress 会按**最长前缀**把 `https://<host>/auth/callback` 路由到 **keycloak**，登录回调直接失败。故本项目改走专属前缀 **`/keycloak`**（console 侧零占用）。
    **结构性隔离 > 依赖路由优先级**：不要用"再给 `/auth/callback` 加一条更长的 console 规则"来绕——那是跨 chart 的隐式优先级，任一侧改了路径就静默失效。
-5. **`proxy.mode` 必须是 `xforwarded`，不是 chart 默认的 `forwarded`** —— Keycloak 官方语义：`forwarded` 解析 **RFC 7239 的 `Forwarded`** 头，`xforwarded` 解析 **`X-Forwarded-*`**。而本仓的入口网关 **Envoy Gateway**（本地脚手架 `local-kind-dev/deploy/gateway-sdp.yaml`，与原 nginx-ingress 行为一致）**只发 `X-Forwarded-*`，不发 RFC 7239 `Forwarded`**。用 `forwarded` 的后果：keycloak 取不到原始 scheme/host → 令牌 `iss` 被推导成集群内地址（`http://hub-keycloak-http.<ns>.svc/...`）→ hub 按配置的 issuer 校验**必然失败**。另：完全不设 `proxy-headers` 时，经代理的请求会因 origin 校验直接 **403**，所以此项必设。
+5. **`proxy.mode` 必须是 `xforwarded`，不是 chart 默认的 `forwarded`** —— Keycloak 官方语义：`forwarded` 解析 **RFC 7239 的 `Forwarded`** 头，`xforwarded` 解析 **`X-Forwarded-*`**。而本仓的入口网关 **Envoy Gateway**（本地脚手架 `local-kind-dev/deploy/gateway-sdp.yaml`，与原 nginx-ingress 行为一致）**只发 `X-Forwarded-*`**，不发 RFC 7239 `Forwarded`。用 `forwarded` 的后果：keycloak 取不到原始 scheme/host → 令牌 `iss` 被推导成集群内地址（`http://hub-keycloak-http.<ns>.svc/...`）→ hub 按配置的 issuer 校验**必然失败**。另：完全不设 `proxy-headers` 时，经代理的请求会因 origin 校验直接 **403**，所以此项必设。
 
 **资源命名规则**：子 chart 资源名 = `<release>-keycloak…`。默认部署 release 名为 **`hub`**（见 §4），故实际是：
 
@@ -214,17 +218,24 @@ realm 由 [`templates/keycloak-realm-configmap.yaml`](https://github.com/rouroum
 | `sslRequired` | `none` | 允许非 HTTPS 访问（本地 / 内网联调用；**生产应改 `external`**） |
 | `defaultLocale` / `supportedLocales` | `zh-CN` | 登录页默认中文 |
 | `accessTokenLifespan` 等 | 300s / 会话 1800s… | 令牌与会话生命周期（与常见默认一致） |
-| 客户端 `sdp-console` | **public** + PKCE(S256) | console（SPA）登录用；回调 `https://www.sdpworkflow.com/*` 与 `https://www.sdpworkflow.com:8443/*` 两个变体；不存 client secret；`baseUrl` = `/keycloak/realms/sdp/account`（随相对路径） |
-| 客户端 `sdp-backend` | **confidential** + service account | 预留的服务间调用客户端（client credentials） |
+| 客户端 `sdp-console` | **登录 client（浏览器 / SPA 用）**：public + PKCE(S256) + directAccessGrants（Flow A 密码直登） | 仅**发起**登录 / 换码；**不**承担 hub 验签。回调 `https://www.sdpworkflow.com/*` 与 `https://www.sdpworkflow.com:8443/*` 两个变体；不存 client secret；`baseUrl` = `/keycloak/realms/sdp/account`（随相对路径）。Flow A 用它做 password grant，Flow B 用它做 authorization code 登录 |
+| 客户端 `sdp-backend` | **资源 client（hub 验签其签发的令牌）**：confidential + service account | 双 client 模型下，hub 以它做 **token-exchange（RFC 8693）二次签发**资源令牌（会话令牌 `azp`/`aud` = `sdp-backend`），浏览器 / console 不直接用它。token-exchange 权限（允许 `sdp-console` → `sdp-backend`）由 deploy-local.sh 运行时幂等补丁开放，见 §8c |
 | 角色 `default-roles-sdp` | 复合角色 | 新用户默认授予（composites 仅 realm 角色 `offline_access` + 内置 `account` 客户端的 `manage-account` / `view-profile`；**不含** `uma_authorization`） |
 | 角色 `view` / `edit` / `admin` | 普通 realm 角色 | 与 hub 组件级 RBAC 的**粒度命名对齐**（授权判定仍落 hub，见 §6） |
-| 用户 `admin` | **预置的人类登录账号** | realm `sdp` 下的普通用户：用户名 `admin` / 密码 **`sdp@12345`**（`temporary: true`，首登强制改密，见 §6.5），带 `default-roles-sdp` + `admin` 两个 realm 角色、并挂入组 `/sdp-admin`；console 登录用它 |
-| 用户 `service-account-sdp-backend` | 服务账号 | realm JSON **静态预置**的服务账号（`serviceAccountClientId: sdp-backend`，**不是**客户端自动生成），手写 `clientRoles`：`realm-management` 的 `query-groups` / `manage-users`（org 载体组预置用，见下） |
+| 用户 `admin` | **预置的人类登录账号（bootstrap）** | realm `sdp` 下的普通用户：用户名 `admin` / 密码 **`sdp@12345`**（`temporary: true`，**bootstrap 首登强制改密**，见 §6.5 / §7），带 `default-roles-sdp` + `platform-admin` 两个 realm 角色、并挂入组 `/sdp-admin`；console 登录用它。**注意**：此 bootstrap 账号的 `temporary: true` 与「新建用户 `temporary: false`」是**两条独立路径**（见 §7.1），不要混淆 |
+| 用户 `service-account-sdp-backend` | 服务账号 | realm JSON **静态预置**的服务账号（`serviceAccountClientId: sdp-backend`，**不是**客户端自动生成），手写 `clientRoles`：`realm-management` 的 `query-groups` / `manage-users` / `query-users` / `view-users`（org 载体组预置 + IDP CRUD 用，见 §8c） |
 | protocolMapper `roles` / `groups` | OIDC 映射 | 把 realm 角色、组成员关系写进令牌（hub 当前只消费 `groups`，见 §6） |
 | 组 `/org:<slug>`（**由 hub 运行时自动预置**） | 组织载体（**D1 默认 ②**） | 「组织」维度的落点：**静态 realm JSON 只预置 `/sdp-admin` 一个组**（admin 用户已挂入），`/org:<slug>` 类组不预置、由 hub `orgsvc` 在 `Create` 后幂等 `EnsureGroup("/org:<slug>")`、启动 `ReconcileGroups` 回填存量（`internal/keycloak` Admin 客户端，依赖 `KEYCLOAK_ADMIN_CLIENT_SECRET`；缺失则 dev 不建组只告警）。Keycloak Organizations 的**组织集导入未证实**，故仍走 ② 路径（见 `shared/ACCOUNT-PERMISSION-MODEL.md` §2.1 / §2.3）。**`/org:` 为保留前缀** —— 该类组**不得**作为 `subject_type=group` 的绑定主体（组织不作 RBAC 主体）。**无需**开 realm 的 Organizations 开关（可避免 identity-first 登录流变化）。**真集群 E2E 已验证**：hub 注入 issuer+secret 后 `POST /orgs` 201 → KC 组列表出现 `org:e2e-org2`；还原 env 后 dev 姿态恢复 |
 
+**双 client 模型（2026-11-04 设计裁定，详见 [AUTH-ARCHITECTURE.md](AUTH-ARCHITECTURE.md) §4）**：
+
+- 浏览器 / console 用 **`sdp-console`**（public + PKCE）登录或换码，拿到的是 `sdp-console` 令牌；
+- hub 在拿到 `sdp-console` 令牌后，**以资源 client `sdp-backend` 做 token-exchange 二次签发**，会话持有 `azp`/`aud` = `sdp-backend` 的资源令牌；
+- hub 中间件只校验 `azp`/`aud` == `sdp-backend`（即 `KEYCLOAK_RESOURCE_CLIENT_ID`）；
+- 该模型下 `sdp-console` 与 `sdp-backend` 是**两个独立 client**，用途不同，**刻意不相等**，不是配置漂移。旧的「hub 被动验签、复用 console client ID、不需要单独建 client」结论已作废。
+
 **E2E 揪出的三个 KC26 集成坑（均已修/规避）**：
-1. **realm JSON 的 `realmRoles` 装不下 realm-management 客户端角色**：`query-groups` / `manage-users` 是 realm-management **client roles**，写在 user 的 `realmRoles` 里会被 `--import-realm` **静默丢弃**（导入不报错），provisioner 调 Admin API 时 403。realm JSON 对 user 写的是 **`clientRoles`: {"realm-management": ["query-groups","manage-users"]}**（`build/hub/charts/.../keycloak-realm-configmap.yaml`，仅新 realm 首次导入生效）；存量 realm 用 kcadm 对 `role-mappings/clients/<realm-management-uuid>` POST 角色数组补授（`add-roles` 在此场景报 `Role not found`，须走 REST）。
+1. **realm JSON 的 `realmRoles` 装不下 realm-management 客户端角色**：`query-groups` / `manage-users` 是 realm-management **client roles**，写在 user 的 `realmRoles` 里会被 `--import-realm` **静默丢弃**（导入不报错），provisioner 调 Admin API 时 403。realm JSON 对 user 写的是 **`clientRoles`: {"realm-management": ["query-groups","manage-users","query-users","view-users"]}**（`build/hub/charts/.../keycloak-realm-configmap.yaml`，仅新 realm 首次导入生效）；存量 realm 用 kcadm 对 `role-mappings/clients/<realm-management-uuid>` POST 角色数组补授（`add-roles` 在此场景报 `Role not found`，须走 REST）。
 2. **issuer 端点形态**：KC 26 实际通告的 issuer 是 `http://hub-keycloak-http/keycloak/realms/sdp`（svc **短名**、默认端口被剥）——hub 的 `KEYCLOAK_ISSUER` 必须与之一字不差，否则 go-oidc 报 issuer mismatch（fatal crash-loop）。
 3. **password grant 报 `Account is not fully set up`**：声明式 user profile 下用户缺 `firstName`/`lastName` 会隐式触发 UPDATE_PROFILE，即使 `requiredActions=[]` 也拒绝发 token——E2E 用户必须带全姓名字段。
 
@@ -260,35 +271,40 @@ realm 由 [`templates/keycloak-realm-configmap.yaml`](https://github.com/rouroum
 >
 > ⚠️ **仍然成立的一点**：repo 里**没有 seed 任何绑定** ⇒ 在给主体建绑定之前，这些路由依旧会 403。**但这已经是「没配权限」，不是「配了也不生效」。**
 
-**时序**：
+**时序（双 client 模型，BFF + token-exchange）**：
 
 ```
  浏览器(console SPA)            Keycloak(hub-keycloak)              hub(Go)
       │                              │                               │
-      │ 1. 未登录 → signinRedirect   │                               │
-      ├─────────────────────────────▶│  登录页(zh-CN)                │
-      │    Authorization Code + PKCE │                               │
-      │◀─────────────────────────────┤  code                        │
-      │ 2. 换 token(含 groups 等)     │                               │
-      ├─────────────────────────────▶│                               │
-      │◀─── access_token ────────────┤                               │
-      │                                                              │
-      │ 3. GET /api/v1/...  Authorization: Bearer <access_token>      │
+      │ 1. Flow B: 跳 KC 授权端点(PKCE)                              │
+      ├─────────────────────────────▶│  登录页 / required-action      │
+      │    code                                                      │
+      │◀─────────────────────────────┤                               │
+      │ 2. POST /api/v1/auth/session/code (带 code)                   │
       ├─────────────────────────────────────────────────────────────▶│
-      │                                      4. 用 JWKS 验签/过期/issuer/azp
-      │                                      5. UserContext: 主体=token sub（无库操作）
-      │                                      6. RequirePermission: 组件级 RBAC
+      │                               │  3. ExchangeCode → 拿 sdp-console token
+      │                               │  4. LoginClientImpersonate: token-exchange
+      │                               │     sdp-console → sdp-backend (RFC 8693)
+      │                               │  5. CreateSession(allowExist=true) 持 sdp-backend token
+      │◀── session cookie ────────────┤                               │
+      │                                                              │
+      │ 6. GET /api/v1/... 带 session cookie                          │
+      ├─────────────────────────────────────────────────────────────▶│
+      │                                      7. 会话换 sdp-backend token → 验 azp/aud==sdp-backend
+      │                                      8. RequirePermission: 组件级 RBAC
       │◀─────────────────────── 响应 / 401 ───────────────────────────┤
 ```
+
+> Flow A（default 模式，密码直登）同构：`/api/v1/auth/login`（password grant 经 `sdp-console` 拿 token）→ 同样 token-exchange 到 `sdp-backend` → 建会话；首登改密走 `/api/v1/auth/password`（旧密码放行 not-fully-set-up → `temporary=false` → `RequiredAction=[""]` → 清 session）。详见 AUTH-ARCHITECTURE.md §2.1 / §2.2 / §3。
 
 **权威代码位置**：
 
 | 环节 | 位置 | 一句话 |
 | --- | --- | --- |
-| hub 令牌校验中间件 | [`internal/middleware/auth.go`](https://github.com/rouroumaibing/software-distribution-platform-hub/blob/main/internal/middleware/auth.go) | 走 **OIDC 标准流程**（discovery → JWKS → 验签）+ 校验 `azp == KEYCLOAK_CLIENT_ID`；读取 `sub`/`preferred_username`/`email`/`groups`。**协议细节（hub = Resource Server、校验清单、fail-fast、不调 introspection/userinfo）见 [shared/ACCOUNT-PERMISSION-MODEL.md §2.4](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCOUNT-PERMISSION-MODEL.md)** |
-| hub 用户上下文 | [`internal/middleware/user_context.go`](https://github.com/rouroumaibing/software-distribution-platform-hub/blob/main/internal/middleware/user_context.go) | 把验签后的 claims 写进请求上下文：**主体 = token `sub`**、组 = `groups` claim；**刻意不碰数据库**（`:34-43`，D3 起 hub 无 users 表、无本地开户） |
+| hub 令牌校验中间件 | [`internal/middleware/auth.go`](https://github.com/rouroumaibing/software-distribution-platform-hub/blob/main/internal/middleware/auth.go) | 走 **OIDC 标准流程**（discovery → JWKS → 验签）+ 校验 `azp`/`aud` == `KEYCLOAK_RESOURCE_CLIENT_ID`（= `sdp-backend`，资源 client）；读取 `sub`/`preferred_username`/`email`/`groups` |
+| hub 用户上下文 | [`internal/middleware/user_context.go`](https://github.com/rouroumaibing/software-distribution-platform-hub/blob/main/internal/middleware/user_context.go) | 把验签后的 claims 写进请求上下文：**主体 = token `sub`**、组 = `groups` claim；**刻意不碰数据库** |
 | hub 接线 | [`cmd/hub/main.go`](https://github.com/rouroumaibing/software-distribution-platform-hub/blob/main/cmd/hub/main.go) | `AuthDisabled()` 为假才挂 `auth.Middleware()`；组件级路由包 `RequirePermission` |
-| hub 配置 | [`internal/config/config.go`](https://github.com/rouroumaibing/software-distribution-platform-hub/blob/main/internal/config/config.go) | `KEYCLOAK_ISSUER`（空=关闭鉴权）、`KEYCLOAK_CLIENT_ID`（默认 `sdp-console`） |
+| hub 配置 | [`internal/config/config.go`](https://github.com/rouroumaibing/software-distribution-platform-hub/blob/main/internal/config/config.go) | `KEYCLOAK_ISSUER`（空=关闭鉴权）、`KEYCLOAK_CLIENT_ID`（默认 `sdp-console`，登录 client）、`KEYCLOAK_RESOURCE_CLIENT_ID`（默认 `sdp-backend`，资源 client，hub 校验 `azp`/`aud`）、`LOGIN_MODE`（默认 `default`，协议层登录模式初值） |
 | 历史迁移 | [`migrations/0003_keycloak_auth.sql`](https://github.com/rouroumaibing/software-distribution-platform-hub/blob/main/migrations/0003_keycloak_auth.sql)（其中 `users` 表已不存在——建表被 `0015` 迁移 DROP） | hub **不存本地用户**（认证无库操作），身份主体只有 token `sub`（绑定按 `sub`/组解析） |
 | console 登录 | [`console/src/stores/auth.ts`](https://github.com/rouroumaibing/software-distribution-platform-console/blob/main/src/stores/auth.ts) | oidc-client-ts，Authorization Code + PKCE，`VITE_*` 运行时配置 |
 | console 图配置 | [`build/console/.../templates/config.yaml`](https://github.com/rouroumaibing/software-distribution-platform-console/blob/main/build/console/charts/software-distribution-platform-console/templates/config.yaml) | chart `auth.*` → `config.js` 的 `window.__APP_CONFIG__` |
@@ -302,9 +318,9 @@ realm 由 [`templates/keycloak-realm-configmap.yaml`](https://github.com/rouroum
 
 **要打开鉴权**（两处需同时改）：
 
-1. **console**：`auth.authDisabled: "false"`，并填 `keycloakIssuerUrl`、`keycloakClientId: sdp-console`、`keycloakRedirectUri`（本地 = `https://www.sdpworkflow.com:8443/auth/callback`）。
-2. **hub**：设 `auth.keycloakIssuerUrl`（填 console 用的**同一个** issuer）。模板**已透传**为 `KEYCLOAK_ISSUER` / `KEYCLOAK_CLIENT_ID`（补齐）；另透传 `KEYCLOAK_ADMIN_CLIENT_SECRET`（org 载体组预置，取值 = realm JSON 里 `sdp-backend` 的 secret 字面量）。
-3. **一致性**：console 的 `keycloakClientId` 必须与 hub 的 `KEYCLOAK_CLIENT_ID` 相同（hub 校验令牌 `azp`）。两处键名同名（见 §3），可按同一份 values 下发。
+1. **console**：`auth.authDisabled: "false"`，并填 `keycloakIssuerUrl`、`keycloakClientId: sdp-console`（**登录 client**）、`keycloakRedirectUri`（本地 = `https://www.sdpworkflow.com:8443/auth/callback`）。
+2. **hub**：设 `auth.keycloakIssuerUrl`（填 console 用的**同一个** issuer）；`auth.keycloakClientId` 须设为 **`sdp-console`**（登录 client，与 console 一致——同一份 values 两端共用）；`auth.resourceClientId` 设为 **`sdp-backend`**（资源 client，hub 校验会话令牌 `azp`/`aud` 用它，与登录 client 刻意不同，这是 BFF 二次签发的需要）。模板透传为 `KEYCLOAK_ISSUER` / `KEYCLOAK_CLIENT_ID` / `KEYCLOAK_RESOURCE_CLIENT_ID` / `LOGIN_MODE`；另透传 `KEYCLOAK_ADMIN_CLIENT_SECRET`（org 载体组预置 + IDP CRUD，取值 = realm JSON 里 `sdp-backend` 的 secret 字面量）。
+3. **双 client 一致性**：console 用 `sdp-console` 登录、hub 用 `sdp-backend` 验签，这是 BFF 二次签发的设计需要，**两者 clientId 取值不同是正确态**；唯一的硬约束是**两端 issuer 必须一字不差**（见 §3 键名对齐）。
 4. **前置（已完成）**：keycloak 的 `keycloak.ingress` 已关，路由走 Envoy Gateway 的 keycloak HTTPRoute（同域名 `www.sdpworkflow.com`、前缀 `/keycloak`、TLS 复用 `console-ingress-tls`）；`http.relativePath` 已同步为 `/keycloak`，`proxy.mode` 已修为 `xforwarded`（见 §3 坑 4/坑 5）。
 
 ### 6.5 真对接已落地（本地 kind 全链 E2E 通过）
@@ -316,13 +332,13 @@ realm 由 [`templates/keycloak-realm-configmap.yaml`](https://github.com/rouroum
 | Keycloak | `keycloak.hostname: "https://www.sdpworkflow.com:8443/keycloak"`（KC_HOSTNAME，完整 URL） | ⚠️ **路径必须带上 `/keycloak`**——实测 KC 不把 `http.relativePath` 追加到 KC_HOSTNAME 后面，不带路径时 issuer 通告成 `.../realms/sdp`，网关 `/keycloak` 前缀路由下不可达 |
 | 网关 | https listener 端口 **8443**（local-kind-dev/deploy/gateway-sdp.yaml） | 与浏览器访问端口/issuer 端口三方一致；listener 443 会令 X-Forwarded-Port=443、issuer 丢端口，而 host 443 映射须重建 kind 集群 |
 | hub | `auth.keycloakIssuerUrl`（同 issuer）+ 两个 dev-only 脚手架 | ① hostAliases 指 **envoy svc ClusterIP**（`auth.resolveHostIp`）——**不能指节点 IP**：pod 只能达 nodePort 30k 段，URL 的 `:8443` 对不上；② `auth.trustedCASecret: sdp-ca`（generic secret，key `ca.crt`，由 deploy-local.sh 建）挂自签 CA + `SSL_CERT_FILE`（Go 系统信任池读该变量；注意不是 `console-tls`——那是 console nginx 用的三 key secret） |
-| console | `auth.authDisabled=false` + issuer/clientId/redirectUri | ⚠️ helm `--set xxx=false` 解析成 **bool**，模板 `false \| default "true"` 会被 sprig 当零值顶掉——模板须先 `\| toString`（chart config.yaml 已修） |
+| console | `auth.authDisabled=false` + issuer/clientId(`sdp-console`)/redirectUri | ⚠️ helm `--set xxx=false` 解析成 **bool**，模板 `false \| default "true"` 会被 sprig 当零值顶掉——模板须先 `\| toString`（chart config.yaml 已修） |
 
 E2E 证据（全部经网关 https 或 hub API 实测）：discovery 通告 issuer 与配置一字不差；无 token 调 hub API 401（直连与走网关皆验）；带 token `GET /targets` 200、`POST /orgs` 201 且 KC 自动出现 `/org:e2e-auth` 组（provisioner 经公网 issuer 走 Admin API 全链）；console `config.js` 三键注入正确。
 
-**临时密码强制重置**：realm JSON 预置 admin 的 `credentials[].temporary: true`（存量集群以 `UPDATE_PASSWORD` requiredAction 等价落地——KC26 对临时凭据登录也是加该 action），首次登录被 KC 硬性拦截改密；API 可验证：password grant 返回 `400 invalid_grant "Account is not fully set up"`。
+**临时密码强制重置（仅 bootstrap admin）**：realm JSON 预置 admin 的 `credentials[].temporary: true`（存量集群以 `UPDATE_PASSWORD` requiredAction 等价落地——KC26 对临时凭据登录也是加该 action），首次登录被 KC 硬性拦截改密；API 可验证：password grant 返回 `400 invalid_grant "Account is not fully set up"`。
 
-> `sdp-console` 是 public client（SPA 无 secret）；hub **不需要**单独建 client —— 它只是被动验签，用的是同一个 console client ID（详见 hub 仓 `internal/middleware/WIRING.md`）。
+> ⚠️ **双 client 模型澄清（取代旧结论）**：旧的「`sdp-console` 是 public client、hub 不需要单独建 client、被动验签复用 console client ID」**已作废**。新模型下 `sdp-console` 是**登录 client**（浏览器发起登录/换码），`sdp-backend` 是**资源 client**（hub 经 token-exchange 二次签发、并校验其令牌）。hub 持有的是 `sdp-backend` 令牌，`KEYCLOAK_CLIENT_ID` 须等于 `sdp-backend`。详见 §5 双 client 模型与 AUTH-ARCHITECTURE.md §4。
 
 ---
 
@@ -331,7 +347,7 @@ E2E 证据（全部经网关 https 或 hub API 实测）：discovery 通告 issu
 | 对象 | 当前值 | 怎么改 |
 | --- | --- | --- |
 | **`admin`（管理控制台，realm `master`）** | `admin` / `sdp@12345`（**dev 默认**） | 首次启动由 `keycloak.extraEnv` 的 `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD` **引导**（仅「master realm 尚无 `admin`」时生效 —— 已用旧口令启动过则改这里无效，须先删该用户或用 `kc.sh bootstrap-admin user` 重置）。<br>① 生产：改成 `valueFrom.secretKeyRef` 引一个 Secret（chart README「Creating a Keycloak Admin User」即此写法）；<br>② 改已有密码：登录控制台 → realm **`master`** → Users → 选中用户 → Credentials → Set password。 |
-| **`admin`（realm `sdp`，console 登录用）** | `admin` / **`sdp@12345`**（**临时密码**，预置 `temporary: true` / 存量集群以 `UPDATE_PASSWORD` requiredAction 强制首次改密） | 预置在 realm JSON（`templates/keycloak-realm-configmap.yaml`）的 `users[]`。<br>① **改密（推荐）**：控制台 → realm `sdp` → Users → `admin` → Credentials → Set password（改完不必动 chart，重启也不回滚）；<br>② **改预置值**：改 realm JSON 的 `credentials[].value` 后，**删掉 realm `sdp` 再 `helm upgrade`** —— `--import-realm` 对已存在的 realm / 用户不覆盖；<br>③ **加用户**：同样在 `users[]` 增补，或直接在控制台建。 |
+| **`admin`（realm `sdp`，console 登录用，bootstrap）** | `admin` / **`sdp@12345`**（**临时密码**，预置 `temporary: true` / 存量集群以 `UPDATE_PASSWORD` requiredAction 强制首次改密） | 预置在 realm JSON（`templates/keycloak-realm-configmap.yaml`）的 `users[]`。<br>① **改密（推荐）**：控制台 → realm `sdp` → Users → `admin` → Credentials → Set password（改完不必动 chart，重启也不回滚）；<br>② **改预置值**：改 realm JSON 的 `credentials[].value` 后，**删掉 realm `sdp` 再 `helm upgrade`** —— `--import-realm` 对已存在的 realm / 用户不覆盖；<br>③ **加用户**：同样在 `users[]` 增补，或直接在控制台建。 |
 | **realm 普通用户（其他）** | 未预置 | hub 侧**无任何开户动作**（users 表已删，认证不落库、主体 = token `sub`），但用户须先在 Keycloak 里存在——手工建用户 / 改密：控制台 `https://www.sdpworkflow.com/keycloak/admin/`（或端口转发后 `http://localhost:8080/keycloak/admin/`）→ realm `sdp` → Users。 |
 | **服务账号 `service-account-sdp-backend`** | 凭 `sdp-backend` 客户端 secret | 控制台 → Clients → `sdp-backend` → Credentials 查看/重置。 |
 | **console 登录** | 无 client secret | public client + PKCE，**不需要** secret。 |
@@ -348,10 +364,17 @@ E2E 证据（全部经网关 https 或 hub API 实测）：discovery 通告 issu
 
 平台对默认口令不再「一刀切强制改强口令」，按依赖强度分层处置（详见 STATUS O-25）：
 
-- **Keycloak（强依赖）—— 保留初始口令 `sdp@12345`**：realm `sdp` 的 `admin` 预置账号已设 `credentials[].temporary: true`（见 §5），Keycloak 在**首次登录时硬性拦截要求改密**（`UPDATE_PASSWORD` requiredAction 等价落地），HTTP API 侧表现为 password grant 返回 `400 invalid_grant "Account is not fully set up"`（见 §6.5）。即「保留初始密码 + 首登强制改密」**已落地，无需改码**；master realm 的 `KEYCLOAK_ADMIN_PASSWORD` 仅用于首次引导（已存在 admin 则失效），保留为 dev 默认。
+- **Keycloak（强依赖）—— 保留初始口令 `sdp@12345`**：realm `sdp` 的 **bootstrap** `admin` 预置账号已设 `credentials[].temporary: true`（见 §5），Keycloak 在**首次登录时硬性拦截要求改密**（`UPDATE_PASSWORD` requiredAction 等价落地），HTTP API 侧表现为 password grant 返回 `400 invalid_grant "Account is not fully set up"`（见 §6.5）。即「保留初始密码 + 首登强制改密」**已落地，无需改码**；master realm 的 `KEYCLOAK_ADMIN_PASSWORD` 仅用于首次引导（已存在 admin 则失效），保留为 dev 默认。
 - **Harbor（周边依赖）—— 解耦**：见 env 仓 `harbor/values.yaml` —— 删除写死的 `adminPassword`，由 bitnami 随机生成 22 位存 Secret（lookup 持久化，upgrade 不重置），部署后从 Secret 取回（见 `harbor/harbor-command-guide.txt`）。
 - **console 前端职责**：登录说明页（`/login-hint`）须把预置账号明示为「**临时初始密码，仅供首次登录，登录后请立即重置**」，并提供 Keycloak 账户控制台（`{issuer}/account`）入口；生产可置空隐藏凭证块（见 §7 末段）。
 - **生产 hardening 留待 O-29（harbor 正规 CA + sdp 项目转 private）收口**：含 master 口令强随机 + 经 `valueFrom.secretKeyRef` 注入、凭据轮换流程。当前不做。
+
+### 7.2 2026-11-04 新建用户口令策略（`temporary=false`）
+
+- **新建用户（`CreateUser` API，含组织载体组预置）**：采用 **`temporary=false`** —— 管理员设的初始密码即**永久有效**，用户首次登录**不触发**强制改密，可直接登录。
+- **适用范围收紧**：强制改密闭环只保留两类——① bootstrap `admin`（realm seed，`temporary:true`，见 §5/§7.1）；② 显式 reset-password 操作（管理员主动重置某用户密码并标记 temporary）。
+- **与旧结论的关系**：旧「管理员建号 `temporary=true`（首登强制改密）」**已作废**——该语义是 2026-11-04 设计裁定改为 `temporary=false`（见 AUTH-ARCHITECTURE.md 变更历史 D10）。这是 hub `internal/keycloak/directory.go` `CreateUser` 的代码改动（realm JSON 的 bootstrap admin 不受影响）。
+- **实现落点**：`CreateUser` 写 `credential.Temporary=false` 且**不设 `requiredActions`**；存量调用方（org 载体组预置、管理员建号）同步免触发改密。
 
 ## 8. 运维：既有集群补挂 `basic` client scope
 
@@ -393,9 +416,20 @@ kill %1 2>/dev/null
 - **修复**（幂等）：经 master admin API 给 account client 追加 protocol mapper `{name: "account audience", protocolMapper: "oidc-audience-mapper", config: {included.client.audience: "account", access.token.claim: "true"}}`。mapper 落 DB，KC 重启不丢；`--import-realm`（IGNORE_EXISTING）不动已存在 client 的 mapper。
 - **自动化**：`env/local-kind-dev/deploy-local.sh` stage_components 在 keycloak ready 后自动执行该补丁（查重→缺才建），fresh deploy 与存量集群重跑部署段均覆盖。
 
+## 8c. 运维：双 client 模型下开放 `sdp-backend` 的 token-exchange 权限（2026-11-04 设计裁定）
+
+- **为什么需要**：双 client 模型（§5）下，hub 要以资源 client `sdp-backend` 对 `sdp-console` 拿到的令牌做 token-exchange（RFC 8693）二次签发。Keycloak 默认**只允许 client 交换自身令牌**，跨 client 交换须在目标 client（`sdp-backend`）上**开启 token-exchange 权限并授权源 client（`sdp-console`）**。
+- **权限形态**：token-exchange 是目标 client 的**细粒度授权（authz resource-server）设置**，无法可靠用静态 realm JSON 的 `permissions` 字段表达（需 authz policy/scope  machinery，导入易失败）。故**不在 realm JSON 里预置**，改由运行时幂等补丁开放——与 §8b 同源机制。
+- **补丁逻辑**（由 `deploy-local.sh` stage_components 在 keycloak ready 后执行，随双 client 实现一并落地）：
+  1. 经 master admin 拿 token；
+  2. 取 `sdp-backend` client 的 token-exchange scope permission（`clients/{sdp-backend-id}/authz/resource-server/permission/scope` 中 `scopes` 含 `token-exchange` 的那条）；
+  3. 缺则创建（resource=`client.resource.{sdp-backend-id}`、`scopes=["token-exchange"]`、`decisionStrategy=AFFIRMATIVE`），并挂一条 **client policy**（type=client，`clients=["sdp-console"]`）授权来源；
+  4. 幂等：查重→缺才建，fresh deploy 与存量集群重跑均覆盖。
+- **验证**：开放后，hub 用 `sdp-console` 令牌调 token-endpoint（`grant_type=urn:ietf:params:oauth:grant-type:token-exchange`、`audience=sdp-backend`）能换到 `azp/aud=sdp-backend` 的新令牌；未开放时返回 `access_denied`（token exchange not allowed）。
+
 ## 9. 相关文档
 
-- [shared/AUTH-ARCHITECTURE](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/AUTH-ARCHITECTURE.md) —— **认证架构单一真源**：BFF 模型、Flow A（password grant）/ Flow B（OIDC code）两入口、强制改密闭环、session/cookie/middleware 设计、三坑约束。本节交互时序已被该文取代。
+- [shared/AUTH-ARCHITECTURE](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/AUTH-ARCHITECTURE.md) —— **认证架构单一真源**：BFF 模型、Flow A（password grant）/ Flow B（OIDC code）两入口、双 client + token-exchange、强制改密闭环、session/cookie/middleware 设计、坑约束（§5 双 client 模型与本文互为参照）。
 - [hub ACCOUNT-PERMISSION-MODEL](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ACCOUNT-PERMISSION-MODEL.md) —— **下游规范**：账号与权限（三条不动式、鉴权两段式、RBAC 引擎、审计、权限申请审批）。**本文只讲「认证子系统如何部署」；「权限如何判定」以该文为准。**
 - [hub API-REFERENCE](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/API-REFERENCE.md) —— API 端点与鉴权约定。
 - [hub DATA-MODEL](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/DATA-MODEL.md) —— `users` / 授权模型（§7 授权模型）。
@@ -406,6 +440,7 @@ kill %1 2>/dev/null
 
 | 日期 | 变更内容 | 原因 |
 |---|---|---|
+| 2026-11-04 | 同步认证架构两层设计裁定：① 双 client 模型——`sdp-console`=登录 client（浏览器）、`sdp-backend`=资源 client（hub 经 token-exchange 二次签发并验签其令牌），旧的「hub 不需要单独 client / 复用 console client ID」结论作废；② hub `auth.keycloakClientId` 由 `sdp-console` 改为 `sdp-backend`（与 console 的 `sdp-console` 刻意不同）；③ 新增 §8c：token-exchange 权限走 deploy-local.sh 运行时幂等补丁（不在静态 realm JSON 预置）；④ 新增 §7.2：新建用户 `CreateUser` 改 `temporary=false`（与 bootstrap admin 的 `temporary:true` 区分）；⑤ §5 客户端表 / §6 时序 / §6.5 澄清同步双 client 模型 | 两层设计定版（AUTH-ARCHITECTURE.md 变更历史 D2 推翻 / D7-D10），KEYCLOAK.md 须与认证架构单一真源一致 |
 | 2026-11-03 | 新增 §8b：account client 补 `aud=account` audience mapper（KC 26.7.4 内置缺陷——roles scope audience-resolve 排除自身 client，account 控制台自身 token aud=null → 控制台全 API 401，症状 "Server responded with an invalid status"）；deploy-local.sh stage_components 落幂等自动补丁（实测：删 mapper → 重跑重建 → GET /account/ 200） | 用户浏览器实测报错；master 原生 realm 复现排除种子问题，定位为版本内置缺陷 |
 | 2026-10-22 | 设计裁定：keycloak 后端改真 HTTPS——`keycloak.extraEnv` 增 `KEYCLOAK_HTTPS_CERTIFICATE_FILE`/`KEYCLOAK_HTTPS_CERTIFICATE_KEY_FILE`（keycloakx 检测到该对 env 自动追加 `--https-*` 启动参数）、`extraVolumes/extraVolumeMounts` 挂 `hub-keycloak-tls` 到 `/etc/keycloak-tls`；`keycloak-httproute.yaml` 后端端口 80 → 8443 并新增 `BackendTLSPolicy`（target `hub-keycloak-http:8443`，CA=`hub-keycloak-tls`）；§4 验证命令与端口转发同步指向 8443 | 用户裁定 hub 与 keycloak 后端一并改真 TLS 并各配 BackendTLSPolicy；keycloak 证书由 cert-create.sh 新增 `hub-keycloak-http` 组件生成 |
 | 2026-10-27 | kind 集群端到端验证发现并修复：realm 种子 `defaultClientScopes` 沿用 KC 24 前旧清单、缺 `basic` scope（KC 25+ access token 的 `sub` mapper 在该 scope），导致业务客户端 token 无 `sub`、hub 鉴权路由恒 401；种子两处补 `"basic"` 并加防回退注释，新增 §8 既有集群手工补挂操作（幂等脚本） | hub 对外 401 的根因定位（id_token 有 sub、access_token 无 sub 为判别特征）；`--import-realm` 不覆盖存量 realm，既有集群须手工补挂 |
