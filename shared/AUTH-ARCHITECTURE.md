@@ -143,7 +143,7 @@ hub 拿到 KC 登录 client token（Flow A password grant / Flow B code 交换�
 | D4 | **PKCE，后端持 `code_verifier`** | Flow B 的 `getLoginUrl` 由后端生成 auth URL 并持 verifier，state=uuid 映射 verifier（标准 BFF）。public client 无 PKCE 有 code 拦截风险。 |
 | D5 | **KC token 不出后端** | grant / code 交换 / 二次签发拿到的 KC token 存 session 记录（供 userinfo 刷新 / logout 传播），浏览器只用 hub session cookie。XSS 无法窃取 KC token。 |
 | D6 | **session cookie = AES-GCM 加密 + httpOnly + SameSite=Lax** | 复用凭据加密同款 envelope（`10_credentials.sql` 模式，master key 走 env/secret）。httpOnly 防 JS 读；SameSite=Lax 防 CSRF（POST 跨站不带 cookie）。 |
-| D7 | **login 模式存 hub DB（`settings` 表）+ env 种子 `LOGIN_MODE`** | 运行时可切换（管理员 Radio），hub 公开端点 `/api/v1/auth/config` 未鉴权可读驱动登录页渲染；`SettingLoginMode` 服务做 DB 持久化 + 内存缓存，重启从 DB 恢复，不依赖 KC 可达。最初设想 ConfigMap，因需单测、免 kube client、避免第二真源而改为 DB。 |
+| D7 | **login 模式存 hub DB（`settings` 表）+ env 种子 `LOGIN_MODE`** | 运行时可切换（管理员 Radio），hub 公开端点 `/api/v1/auth/config` 未鉴权可读驱动登录页渲染；`SettingLoginMode` 服务做 DB 持久化 + 内存缓存，重启从 DB 恢复，不依赖 KC 可达；选型理由：需单测、免 kube client、避免第二真源。 |
 | D8 | **IDP 配置落 Keycloak realm，hub 透传 CRUD** | `/api/v1/realmsettings/identityprovider` 透传 `IdentityProviderRepresentation`；`checkProviderID` 白名单预留（KC 原生支持 oidc/saml/cas 等）。新 IDP 走同一 Flow B code flow 链路，非新链路。 |
 | D9 | **配已启用 IDP 禁切回 default** | IDP 联邦登录仅存在于 keycloak 模式；SSO 用户在 default 模式（password grant）无对应凭据，切回即失联。 |
 | D10 | **CreateUser `temporary=false`、无 requiredActions** | 管理员建号即设固定密码、直接可登录不触发改密。首登强制改密仅保留给 bootstrap admin（realm seed UPDATE_PASSWORD）与显式 reset-password 语义。 |

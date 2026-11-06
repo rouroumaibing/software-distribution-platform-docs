@@ -227,7 +227,7 @@ realm 由 [`templates/keycloak-realm-configmap.yaml`](https://github.com/rouroum
 | protocolMapper `roles` / `groups` | OIDC 映射 | 把 realm 角色、组成员关系写进令牌（hub 当前只消费 `groups`，见 §6） |
 | 组 `/org:<slug>`（**由 hub 运行时自动预置**） | 组织载体（**D1 默认 ②**） | 「组织」维度的落点：**静态 realm JSON 只预置 `/sdp-admin` 一个组**（admin 用户已挂入），`/org:<slug>` 类组不预置、由 hub `orgsvc` 在 `Create` 后幂等 `EnsureGroup("/org:<slug>")`、启动 `ReconcileGroups` 回填存量（`internal/keycloak` Admin 客户端，依赖 `KEYCLOAK_ADMIN_CLIENT_SECRET`；缺失则 dev 不建组只告警）。Keycloak Organizations 的**组织集导入未证实**，故仍走 ② 路径（见 `shared/ACCOUNT-PERMISSION-MODEL.md` §2.1 / §2.3）。**`/org:` 为保留前缀** —— 该类组**不得**作为 `subject_type=group` 的绑定主体（组织不作 RBAC 主体）。**无需**开 realm 的 Organizations 开关（可避免 identity-first 登录流变化）。**真集群 E2E 已验证**：hub 注入 issuer+secret 后 `POST /orgs` 201 → KC 组列表出现 `org:e2e-org2`；还原 env 后 dev 姿态恢复 |
 
-**双 client 模型（2026-11-04 设计裁定，详见 [AUTH-ARCHITECTURE.md](AUTH-ARCHITECTURE.md) §4）**：
+**双 client 模型（详见 [AUTH-ARCHITECTURE.md](AUTH-ARCHITECTURE.md) §4）**：
 
 - 浏览器 / console 用 **`sdp-console`**（public + PKCE）登录或换码，拿到的是 `sdp-console` 令牌；
 - hub 在拿到 `sdp-console` 令牌后，**以资源 client `sdp-backend` 做 token-exchange 二次签发**，会话持有 `azp`/`aud` = `sdp-backend` 的资源令牌；
@@ -360,7 +360,7 @@ E2E 证据（全部经网关 https 或 hub API 实测）：discovery 通告 issu
 
 ---
 
-### 7.1 2026-10-20 口令策略分层裁定（harbor / keycloak 解耦）
+### 7.1 口令策略分层裁定（harbor / keycloak 解耦）
 
 平台对默认口令不再「一刀切强制改强口令」，按依赖强度分层处置（详见 STATUS O-25）：
 
@@ -369,11 +369,11 @@ E2E 证据（全部经网关 https 或 hub API 实测）：discovery 通告 issu
 - **console 前端职责**：登录说明页（`/login-hint`）须把预置账号明示为「**临时初始密码，仅供首次登录，登录后请立即重置**」，并提供 Keycloak 账户控制台（`{issuer}/account`）入口；生产可置空隐藏凭证块（见 §7 末段）。
 - **生产 hardening 留待 O-29（harbor 正规 CA + sdp 项目转 private）收口**：含 master 口令强随机 + 经 `valueFrom.secretKeyRef` 注入、凭据轮换流程。当前不做。
 
-### 7.2 2026-11-04 新建用户口令策略（`temporary=false`）
+### 7.2 新建用户口令策略（`temporary=false`）
 
 - **新建用户（`CreateUser` API，含组织载体组预置）**：采用 **`temporary=false`** —— 管理员设的初始密码即**永久有效**，用户首次登录**不触发**强制改密，可直接登录。
 - **适用范围收紧**：强制改密闭环只保留两类——① bootstrap `admin`（realm seed，`temporary:true`，见 §5/§7.1）；② 显式 reset-password 操作（管理员主动重置某用户密码并标记 temporary）。
-- **与旧结论的关系**：旧「管理员建号 `temporary=true`（首登强制改密）」**已作废**——该语义是 2026-11-04 设计裁定改为 `temporary=false`（见 AUTH-ARCHITECTURE.md 变更历史 D10）。这是 hub `internal/keycloak/directory.go` `CreateUser` 的代码改动（realm JSON 的 bootstrap admin 不受影响）。
+- **与旧结论的关系**：旧「管理员建号 `temporary=true`（首登强制改密）」**已作废**——该语义改为 `temporary=false`（见 AUTH-ARCHITECTURE.md 变更历史 D10）。这是 hub `internal/keycloak/directory.go` `CreateUser` 的代码改动（realm JSON 的 bootstrap admin 不受影响）。
 - **实现落点**：`CreateUser` 写 `credential.Temporary=false` 且**不设 `requiredActions`**；存量调用方（org 载体组预置、管理员建号）同步免触发改密。
 
 ## 8. 运维：既有集群补挂 `basic` client scope
@@ -416,7 +416,7 @@ kill %1 2>/dev/null
 - **修复**（幂等）：经 master admin API 给 account client 追加 protocol mapper `{name: "account audience", protocolMapper: "oidc-audience-mapper", config: {included.client.audience: "account", access.token.claim: "true"}}`。mapper 落 DB，KC 重启不丢；`--import-realm`（IGNORE_EXISTING）不动已存在 client 的 mapper。
 - **自动化**：`env/local-kind-dev/deploy-local.sh` stage_components 在 keycloak ready 后自动执行该补丁（查重→缺才建），fresh deploy 与存量集群重跑部署段均覆盖。
 
-## 8c. 运维：双 client 模型下开放 `sdp-backend` 的 token-exchange 权限（2026-11-04 设计裁定）
+## 8c. 运维：双 client 模型下开放 `sdp-backend` 的 token-exchange 权限
 
 - **为什么需要**：双 client 模型（§5）下，hub 要以资源 client `sdp-backend` 对 `sdp-console` 拿到的令牌做 token-exchange（RFC 8693）二次签发。Keycloak 默认**只允许 client 交换自身令牌**，跨 client 交换须在目标 client（`sdp-backend`）上**开启 token-exchange 权限并授权源 client（`sdp-console`）**。
 - **权限形态**：token-exchange 是目标 client 的**细粒度授权（authz resource-server）设置**，无法可靠用静态 realm JSON 的 `permissions` 字段表达（需 authz policy/scope  machinery，导入易失败）。故**不在 realm JSON 里预置**，改由运行时幂等补丁开放——与 §8b 同源机制。

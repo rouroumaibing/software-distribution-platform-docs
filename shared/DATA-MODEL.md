@@ -514,7 +514,7 @@ environment_groups ──1:N──▶ environments  (environments.group_id，可
 | 词 | 含义 A | 含义 B | 消歧做法 |
 | --- | --- | --- | --- |
 | **自举** | ⛔ **已停用**：曾指"平台发布平台自己"（随方案一并撤销） | ✅ **读时播种默认数据**（seed-on-read） | 含义 A 一律写「平台发布平台自己（已撤销）」；含义 B 写「seed-on-read」。**不再单用「自举」二字** |
-| **集群** | ⛔ **已改称「目标（Target）」**：`clusters` / `Cluster` 作为领域对象名已废弃 | ③ **平台底座所在**的 K8s 集群；K8s 技术词（`ClusterRole` / `ClusterIP` 等）仍用「集群」 | 指"被纳管的对象"一律写「**目标（Target）**」 |
+| **集群** | ⛔ 被纳管对象一律写「目标（Target）」，**不写**「集群」 | ③ **平台底座所在**的 K8s 集群；K8s 技术词（`ClusterRole` / `ClusterIP` 等）仍用「集群」 | 指"被纳管的对象"一律写「**目标（Target）**」 |
 | **环境** | ✅ 领域对象：`environments`（挂组件下，绑 `target_id` + `namespace`） | ⛔ 平台的运行环境（dev / staging / prod）——**不是领域对象** | 后者一律写「平台的运行环境（运维概念）」 |
 | **组件** | ✅ 领域对象：`components`（叶子 = 服务组件，绑一个 git 仓库） | 平台自身的组件（**hub / console**，不进服务模型） | 后者一律写「**平台组件（hub / console）**」。**runner 例外**：接入侧代理组件，**不属平台自身** |
 | **目标** | ✅ 被纳管对象 / `targets` 一行：`targetKind` = `k8s` **或** `host`（不预设类型），承载 `access`；console 菜单名 =「**接入管理**」 | ⛔ 平台的运行环境 | 必带 `targetKind`；非 K8s 目标一律写「**非容器目标（`host`）**」 |

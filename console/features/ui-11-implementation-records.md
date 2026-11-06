@@ -350,7 +350,7 @@ pnpm test（7 个 smoke 脚本）                   ✅ 全过
 6. **harness 抓 bug 经过（留痕）**：初版 17/21 → 4 个 FAIL 中定位 3 个为 harness 自身缺陷（徽章选择器 `.badge` vs 实际 `.hint`、`hidden` 属性 vs `style.display`、T3 导航路径假设错误——T2 后页面停在运行中心），1 个为真 bug（即修复 ③）。
 7. **遗留**：用户路线图仍开放项（4.2 版本详情 / 晋级、4.3 上游触发与触发来源列、5.1 策略配置界面、5.3 / 5.4 / 5.5 / 6.x 及第四期）不在本轮范围；console 实现仓仍未动。
 
-## 附 N-36 · M1 用户与组管理页 console 落地（2026-10-27）
+## 附 N-36 · M1 用户与组管理页 console 落地
 
 `PlatformAdminView.vue`（permissions section）按 ui-05 §7.14 M1 实现「用户 / 用户组」两区，紧邻平台角色区之前：
 
