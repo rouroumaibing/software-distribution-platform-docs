@@ -13,13 +13,14 @@
   3) 服务树独立页(/catalog)：懒加载(展开才请求子层) + 服务端搜索 + 虚拟滚动(≥200 节点) + master-detail；
      新建/删除为"功能型"(非示意)：根级「＋ 新建 Org」+ 节点 hover「＋」真落库(org→service→component)；
      删除不走树内联图标，统一在右侧详情面板(输入名称二次确认 + 后端 verdict 真校验，通过才移除)；编辑文案按节点类型(Org/Service/组件)  ✔
-  4) 组件详情 Tab：概览/交付/配置/环境/制品/权限/日志（环境独立为顶级 Tab）；交付含子 Tab(流水线/运行/发布)；配置=左侧环境选择+右侧 YAML(导入/导出/编辑/保存)；环境=左侧环境树(叶子带「目标类型·通道」角标)+右侧对接面板(目标类型 targetKind × 接入通道 access)+连接测试；
+  4) 组件详情 Tab：11 个扁平 Tab = 概览/配置/流水线/运行/发布/制品/环境/权限/审计/日志/变量与密钥（对齐真实实现 ComponentDetailView.vue:31-43；无"交付"分组，流水线/运行/发布已提升为顶级，审计为新增）；配置=左侧环境选择+右侧 YAML(导入/导出/编辑/保存)；环境=左侧环境树(叶子带「目标类型·通道」角标)+右侧对接面板(目标类型 targetKind × 接入通道 access)+连接测试；
      删除入口：分组**仅当为空**时在树内「＋」右侧露出「－」删除分组（非空分组无删除入口）；环境删除在右侧详情面板**右上角「删除」**；两者均走强确认 + 后端 verdict；
      环境展示与服务树**同一套树行(.tnode/.tree)**：分组=父节点(chev 折叠 + hover「＋」新建环境)，环境=叶子子节点(状态 dot + 「目标类型·通道」角标)；配置页左侧环境选择复用同一棵树(SSOT)  ✔
   5) 流水线 CRUD：新建入口 + 列表(运行/编辑/删除，列表仅存在于组件详情·交付·流水线) + 编辑器工具条(保存/触发/删除) + 删除强确认(后端 verdict)  ✔
   6) 总览指挥中心：待办(可点) + KPI + 最近运行(全局) + 异常集群条  ✔
   7) 双主题：明/暗切换 + 灰阶开关；状态=图标+文字+色  ✔
   8) 四态演示：组件→交付→流水线 列表可切 空/加载/错误/成功  ✔
+  9) **快照状态声明**：本原型组件详情 Tab 已于 2026-11-11 对齐真实实现（11 个扁平 Tab，含新增审计，无"交付"分组）；认证已迁移到 BFF/会话模型（shared/AUTH-ARCHITECTURE.md），本原型**已含登录 / 回调 / 登出流程屏**（pageLogin：Flow A 自研表单 + Flow B 企业账号 SSO 模拟 + 强制改密分支；登出经 openLogout 清会话回登录页）。最新认证交互以真实实现（console 仓 LoginView/AuthCallback）+ 本文档（ui-08 §10.2 / §7.15 / AUTH-ARCHITECTURE.md）为准。
   本契约仅用于生成后核对，核对后即弃。
 -->
 <style>
@@ -327,6 +328,13 @@ a{color:var(--accent);text-decoration:none;cursor:pointer}
 .steps .s.on .n{background:var(--accent);color:#fff}
 .steps .ln{flex:1;height:1px;background:var(--hairline)}
 textarea.input{min-height:92px;resize:vertical;font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.55}
+.login-page{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--surface-2)}
+.login-card{width:340px;max-width:92vw;padding:28px 26px;border-radius:14px;box-shadow:0 6px 30px rgba(0,0,0,.10);background:var(--surface)}
+.login-card h2{text-align:center;margin:0 0 6px;font-size:19px}
+.login-card form{margin:14px 0 4px}
+.login-card .input{margin-bottom:12px}
+.login-card .btn{width:100%}
+.error{color:var(--fail-fg);margin-top:10px;font-size:13px;text-align:center}
 </style>
 </head>
 <body>
@@ -437,7 +445,7 @@ const badge = (p)=>{const m=PH[p]||PH.pending;return `<span class="badge ${m[0]}
 const S = {
   page:'dashboard', theme:'light', gray:false, collapsed:false,
   open:{o1:true,s1:true}, comp:'comp-web', catSel:'c1',
-  compTab:'delivery', sub:{delivery:'pipelines'}, envGroup:'', envName:'', envEdit:false, collapsedGroups:[],
+  compTab:'overview', sub:{}, envGroup:'', envName:'', envEdit:false, collapsedGroups:[],
   plState:'success', editorName:'日常流水线', editorKind:'build', editorDesc:'', editorStages:[], editorSel:null, catq:'', notes:false,
   /* 运行中心的三个视图（跨组件巡视统一入口，不再是左栏三个独立菜单） */
   runTab:'runs', runFilter:'all',
@@ -448,6 +456,8 @@ const S = {
   runsPage:1, runsPageSize:5,   /* 运行中心分页（后端 page/pageSize，本原型前端切片模拟） */
   auditFilter:'all',            /* 审计日志筛选（5.4） */
   runsTime:'all',               /* 时间范围筛选：all / 1h / 24h / 7d（真实由 GET /runs?since= 过滤） */
+  /* 认证门禁（BFF/会话模型，shared/AUTH-ARCHITECTURE.md §2）：原型启动即未登录，须先经登录 / SSO 入系统 */
+  authed:false, authMode:'login', authSso:null, authDemoForcePw:false, authErr:'',
 };
 
 /* ============ 流水线编排：编辑器状态（阶段可前后移动、子任务上下移动、并行↔串行切换） ============ */
@@ -604,7 +614,7 @@ function openRequestModal(){
     closeModal();
   });
   m.querySelector('#reqBack').addEventListener('click', ()=>{
-    S.compTab='delivery'; S.sub.delivery='pipelines'; closeModal(); go('component');
+    S.compTab='pipelines'; closeModal(); go('component');
   });
 }
 
@@ -991,39 +1001,45 @@ const ComponentAPI = {
 
 function pageComponent(){
   const uuid = curUuid();                       // 当前组件 uuid：详情页所有查询的作用域主键
-  const mainTabs = [['overview','概览'],['delivery','交付'],['configure','配置'],['env','环境'],['artifacts','制品'],['permissions','权限'],['logs','日志'],['vars','变量与密钥']];
-  const subs = {delivery:[['pipelines','流水线'],['runs','运行'],['releases','发布']]};
-  const tabBtn = ([k,l])=>`<div class="tab ${S.compTab===k?'active':''}" data-ctab="${k}">${l}${subs[k]?'<span class="caret">▾</span>':''}</div>`;
+  // 组件详情 Tab：对齐真实实现 ComponentDetailView.vue:31-43 —— 11 个扁平 Tab（交付三子 Tab 已提升为顶级，新增审计）
+  const mainTabs = [['overview','概览'],['config','配置'],['pipelines','流水线'],['runs','运行'],['releases','发布'],['artifacts','制品'],['environments','环境'],['permissions','权限'],['audit','审计'],['logs','日志'],['vars','变量与密钥']];
+  const tabBtn = ([k,l])=>`<div class="tab ${S.compTab===k?'active':''}" data-ctab="${k}">${l}</div>`;
   let body='';
   if(S.compTab==='overview'){
     const cards = ComponentAPI.overview(uuid);   // GET /api/component/:uuid
     body = `<div class="row" style="gap:14px;align-items:stretch">
       ${cards.map(c=>`<div class="card kpi" style="flex:1"><div class="label">${c.label}</div><div class="num" style="font-size:22px">${c.value}</div>${c.phase?badge(c.phase):''}</div>`).join('')}
     </div>`;
-  } else if(S.compTab==='delivery'){
-    body = S.sub.delivery==='pipelines' ? pipelinesListView() : (S.sub.delivery==='runs'
-      ? (()=>{ const rs = ComponentAPI.runs(uuid);   // GET /runs?componentId=:uuid
-          return `<div class="card flush"><table class="table"><thead><tr><th>流水线</th><th>流水线ID</th><th>状态</th><th>开始时间</th></tr></thead><tbody>
-          ${rs.slice(0,3).map(r=>`<tr><td><a class="link" data-act="open-pl-runs" data-pname="${r.name}" data-pid="${r.pid}">${r.name}</a></td><td class="mono">${r.pid}</td><td>${badge(r.phase)}</td><td class="mono">${r.at}</td></tr>`).join('')}
-        </tbody></table></div>`; })()
-      : (()=>{ const rs = ComponentAPI.releases(uuid);   // GET /releases?componentId=:uuid
-          return `<div class="card flush"><table class="table"><thead><tr><th>环境</th><th>灰度步骤</th><th>健康度</th><th>状态</th></tr></thead><tbody>
-          ${rs.length?rs.map(r=>`<tr><td>${r.env}</td><td>${r.step}</td><td>${r.health}</td><td>${badge(r.phase)}</td></tr>`).join(''):'<tr><td colspan="4" style="color:var(--text-sub);padding:14px">无发布记录</td></tr>'}
-        </tbody></table></div>`; })());
-  } else if(S.compTab==='configure'){
+  } else if(S.compTab==='config'){
     body = pageConfigure();
-  } else if(S.compTab==='env'){
-    body = pageEnv();
+  } else if(S.compTab==='pipelines'){
+    body = pipelinesListView();                 // GET /pipelines?componentId=:uuid
+  } else if(S.compTab==='runs'){
+    const rs = ComponentAPI.runs(uuid);         // GET /runs?componentId=:uuid
+    body = `<div class="card flush"><table class="table"><thead><tr><th>流水线</th><th>流水线ID</th><th>状态</th><th>开始时间</th></tr></thead><tbody>
+      ${rs.slice(0,3).map(r=>`<tr><td><a class="link" data-act="open-pl-runs" data-pname="${r.name}" data-pid="${r.pid}">${r.name}</a></td><td class="mono">${r.pid}</td><td>${badge(r.phase)}</td><td class="mono">${r.at}</td></tr>`).join('')}
+    </tbody></table></div>`;
+  } else if(S.compTab==='releases'){
+    const rs = ComponentAPI.releases(uuid);     // GET /releases?componentId=:uuid
+    body = `<div class="card flush"><table class="table"><thead><tr><th>环境</th><th>灰度步骤</th><th>健康度</th><th>状态</th></tr></thead><tbody>
+      ${rs.length?rs.map(r=>`<tr><td>${r.env}</td><td>${r.step}</td><td>${r.health}</td><td>${badge(r.phase)}</td></tr>`).join(''):'<tr><td colspan="4" style="color:var(--text-sub);padding:14px">无发布记录</td></tr>'}
+    </tbody></table></div>`;
   } else if(S.compTab==='artifacts'){
     body = pageArtifacts();
+  } else if(S.compTab==='environments'){
+    body = pageEnv();
   } else if(S.compTab==='permissions'){
     body = pagePermissions();
+  } else if(S.compTab==='audit'){
+    body = `<div class="card flush"><div class="row" style="justify-content:space-between;align-items:center;padding:12px 14px"><div class="title" style="font-size:15px">审计日志</div><span class="hint">共 ${AUDIT_LOGS.length} 条 · 记录本组件及平台操作</span></div><table class="table"><thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>详情</th></tr></thead><tbody>
+      ${AUDIT_LOGS.slice(0,12).map(a=>`<tr><td class="mono">${a.at}</td><td>${a.who}</td><td><span class="badge run">${esc(a.act)}</span></td><td>${esc(a.target)}</td><td class="hint">${esc(a.detail||'')}</td></tr>`).join('')}
+    </tbody></table></div>`;
   } else if(S.compTab==='logs'){
     body = pageLogs();
   } else if(S.compTab==='vars'){
     body = pageVarsSecrets();
   } else {
-    body = `<div class="card"><div class="empty"><span class="big">◍</span>「${mainTabs.find(t=>t[0]===S.compTab)[1]}」Tab 占位——结构同旧版，本原型聚焦重设计项。</div></div>`;
+    body = `<div class="card"><div class="empty"><span class="big">◍</span>「${(mainTabs.find(t=>t[0]===S.compTab)||[S.compTab])[1]}」Tab 占位——结构同旧版，本原型聚焦重设计项。</div></div>`;
   }
   return `<div class="wrap">
     <div class="row" style="align-items:flex-end">
@@ -1031,7 +1047,6 @@ function pageComponent(){
         <div class="sub"><span class="mono">git@…/${S.comp}.git</span> · Go · 默认分支 <span class="mono">main</span> · <span class="mono">${uuid}</span></div></div>
     </div>
     <div class="tabs">${mainTabs.map(tabBtn).join('')}</div>
-    ${S.compTab==='delivery'?`<div class="pills">${subs.delivery.map(([k,l])=>`<div class="pill ${S.sub.delivery===k?'on':''}" data-sub="delivery:${k}">${l}</div>`).join('')}</div>`:''}
     ${body}
   </div>`;
 }
@@ -1703,7 +1718,51 @@ function renderCrumb(){
 }
 
 /* ============ render ============ */
+/* ============ 登录 / 回调 / 登出（BFF/会话认证，shared/AUTH-ARCHITECTURE.md §2） ============ */
+/* 原型启动即未登录，render() 门禁先渲染 pageLogin；登录 / SSO 成功后 S.authed=true 才入系统。
+   Flow A（凭据）：自研用户名+密码表单 → 模拟 POST /api/auth/login（200 入系统；演示勾选"强制改密"触发
+   400 UPDATE_PASSWORD → 切改密表单）。Flow B（SSO）：模拟 GET /api/auth/login-url → Keycloak 托管页 →
+   回调 oauth.code → POST /api/auth/session/code 交换会话。 */
+function pageLogin(){
+  if(S.authSso){
+    const t = S.authSso==='redirect'
+      ? '正在跳转到单点登录…（GET /api/auth/login-url → Keycloak 托管登录页）'
+      : '正在登录…（oauth.code → POST /api/auth/session/code 交换会话）';
+    return `<div class="login-page"><div class="login-card"><h2>SDP 软件分发平台</h2><div class="hint">${t}</div></div></div>`;
+  }
+  if(S.authMode==='updatePassword'){
+    return `<div class="login-page"><div class="login-card">
+      <h2>SDP 软件分发平台</h2>
+      <p class="hint" style="font-size:12px">设置新密码（首次登录或密码已被重置）</p>
+      <form onsubmit="return false">
+        <input id="pw-new" class="input" type="password" placeholder="新密码" autocomplete="new-password" />
+        <input id="pw-conf" class="input" type="password" placeholder="确认新密码" autocomplete="new-password" />
+        <button class="btn btn-primary" data-auth-act="changepw">提交</button>
+      </form>
+      ${S.authErr?`<p class="error">${S.authErr}</p>`:''}
+      <p class="hint" style="font-size:11px;margin-top:10px">改密成功后请用新密码重新登录（POST /api/auth/password）</p>
+    </div></div>`;
+  }
+  return `<div class="login-page"><div class="login-card">
+    <h2>SDP 软件分发平台</h2>
+    <p class="hint" style="font-size:12px">BFF/会话认证：hub 作会话权威，浏览器只持 httpOnly session cookie。详见 shared/AUTH-ARCHITECTURE.md。</p>
+    <form onsubmit="return false">
+      <input id="login-user" class="input" placeholder="用户名" autocomplete="username" />
+      <input id="login-pass" class="input" type="password" placeholder="密码" autocomplete="current-password" />
+      <button class="btn btn-primary" data-auth-act="login">登录</button>
+    </form>
+    <button class="btn btn-ghost" data-auth-act="sso" style="margin-top:10px">使用企业账号登录（SSO · Flow B）</button>
+    <label class="hint" style="display:flex;gap:6px;align-items:center;margin-top:12px;cursor:pointer;font-size:12px">
+      <input type="checkbox" id="login-forcepw" ${S.authDemoForcePw?'checked':''} data-auth-act="toggle-forcepw" /> 模拟首次登录强制改密（UPDATE_PASSWORD）
+    </label>
+    ${S.authErr?`<p class="error">${S.authErr}</p>`:''}
+  </div></div>`;
+}
 function render(){
+  const lockedOut = !S.authed;
+  document.getElementById('rail').style.display = lockedOut ? 'none' : '';
+  document.getElementById('topbar').style.display = lockedOut ? 'none' : '';
+  if(lockedOut){ document.getElementById('content').innerHTML = pageLogin(); return; }
   renderRail(); renderCrumb();
   document.getElementById('content').innerHTML = (S.notes?noteBar(noteKey()):'') + (PAGES[S.page]||pageDashboard)();
   document.getElementById('rail').classList.toggle('collapsed', S.collapsed);
@@ -1740,7 +1799,7 @@ function openConfirm(msg, onYes){
 
 /* 编排页「返回」：若配置未保存则先确认，再回到组件详情·交付·流水线（组件不变） */
 function backFromEditor(){
-  const ret = ()=>{ S.editorDirty=false; S.compTab='delivery'; S.sub.delivery='pipelines'; go('component'); };
+  const ret = ()=>{ S.editorDirty=false; S.compTab='pipelines'; go('component'); };
   if(S.editorDirty) openConfirm('配置未保存，是否返回？', ret);
   else ret();
 }
@@ -1997,7 +2056,7 @@ document.getElementById('content').addEventListener('click', (e)=>{
     render(); return;
   }
   const ct=e.target.closest('[data-ctab]'); if(ct){ S.compTab=ct.dataset.ctab; render(); return; }
-  const sb=e.target.closest('[data-sub]'); if(sb){ const[g,k]=sb.dataset.sub.split(':'); S.sub[g]=k; render(); return; }
+  const sb=e.target.closest('[data-sub]'); if(sb && sb.dataset.sub.includes(':')){ const[g,k]=sb.dataset.sub.split(':'); S.sub[g]=k; render(); return; }
   const ps=e.target.closest('[data-pl-state]'); if(ps){ S.plState=ps.dataset.plState; render(); return; }
   const aps=e.target.closest('[data-art-state]'); if(aps){ S.artState=aps.dataset.artState; render(); return; }
   const lps=e.target.closest('[data-log-state]'); if(lps){ S.logState=lps.dataset.logState; render(); return; }
@@ -2737,6 +2796,35 @@ document.getElementById('userDrop').addEventListener('click', (e)=>{
 });
 document.addEventListener('click', ()=>{ const d=document.getElementById('userDrop'); if(d) d.hidden=true; });
 
+/* 登录 / SSO / 改密 的委托处理（data-auth-act） */
+document.addEventListener('click', (e)=>{
+  const el = e.target.closest('[data-auth-act]'); if(!el) return;
+  const act = el.dataset.authAct;
+  if(act==='toggle-forcepw'){ S.authDemoForcePw = el.checked; render(); return; }
+  if(act==='login'){
+    const u = (document.getElementById('login-user')||{}).value || '';
+    const p = (document.getElementById('login-pass')||{}).value || '';
+    S.authErr='';
+    if(!u.trim() || !p){ S.authErr='请输入用户名和密码'; render(); return; }
+    if(S.authDemoForcePw || u.trim().startsWith('new@')){ S.authMode='updatePassword'; render(); return; }
+    S.authed=true; S.authMode='login'; render(); return;   // 模拟 POST /api/auth/login → 200
+  }
+  if(act==='changepw'){
+    const nw=(document.getElementById('pw-new')||{}).value||'';
+    const cf=(document.getElementById('pw-conf')||{}).value||'';
+    if(nw!==cf){ S.authErr='两次输入的新密码不一致'; render(); return; }
+    if(!nw){ S.authErr='请输入新密码'; render(); return; }
+    S.authMode='login'; S.authErr=''; S.authDemoForcePw=false;   // 模拟 POST /api/auth/password → 成功
+    toast('密码已修改，请用新密码登录'); render(); return;
+  }
+  if(act==='sso'){
+    S.authSso='redirect'; render();
+    setTimeout(()=>{ S.authSso='callback'; render(); }, 700);
+    setTimeout(()=>{ S.authSso=null; S.authed=true; render(); }, 1500);
+    return;
+  }
+});
+
 /* ============ 数据块统一区（2026-10-12 加固：全部 const 数据前移至启动代码之前） ============
    动因：renderNotif() 在模块加载期被立即调用，而 NOTIF_READ 等 const 声明在其后，触发
    TDZ（Cannot access ... before initialization）→ 脚本中断 → 后续数据块全部未初始化，
@@ -3373,9 +3461,9 @@ function openProfile(){
 }
 function openLogout(){
   openModal(`<h3>退出登录？</h3>
-    <div class="mb">将结束当前会话并跳转 Keycloak 登录页（<span class="mono">issuer</span> 服务短名 · 默认端口剥除，一字不差）。</div>
+    <div class="mb">将清除会话（POST /api/auth/logout 销毁 hub 会话行 + 清除 httpOnly session cookie），随后回到登录页。</div>
     <div class="modal-foot"><button class="btn btn-ghost" data-close>取消</button><button class="btn btn-danger" data-ok>退出</button></div>`,
-    ()=>toast('已退出登录（原型示意，真实跳转 Keycloak）'));
+    ()=>{ S.authed=false; S.authMode='login'; S.authSso=null; S.authDemoForcePw=false; S.authErr=''; render(); });
 }
 
 /* ---------- 新建凭据（POST /credentials，AES-GCM 加密落库、仅回 valueSet） ---------- */
