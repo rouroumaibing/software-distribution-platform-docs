@@ -88,12 +88,12 @@ GET /api/v1/auth/login-url
 
 **闭环（两条 Flow 共用）**：cookie 落地后，浏览器每次请求经 axios `withCredentials` 带 `sdp_sess`；hub `middleware.Authenticator` 的 `sessionVerifier` `ReadCookie` → 解密 → `sessionRepo.Get` → 写入请求上下文（Subject/Username/Groups）。三条鉴权路径优先级：session cookie > PAT > KC JWT（§8）。
 
-## 3. 强制改密闭环（bootstrap admin 首登）
+## 3. 强制改密闭环（首登）
 
-承接 §7.14 M1 与 realm 种子引导的 bootstrap admin。**全环境统一**（本地 kind dev / 云上验收 / 生产），无「跳过改密直接使用」路径。
+承接 §7.14 M1 与 realm 种子引导的 bootstrap admin，以及管理员通过控制台新建的用户。**全环境统一**（本地 kind dev / 云上验收 / 生产），无「跳过改密直接使用」路径。
 
 ```
-登录页（admin + 初始口令，default 模式）
+登录页（初始口令，default 模式）
   → POST /api/v1/auth/login  ⇒ 400 reason=UPDATE_PASSWORD
   → 前端 state.mode=updatePassword（新密码 + 确认，URL 不变）
   → POST /api/v1/auth/password {oldPassword, newPassword}
@@ -101,6 +101,7 @@ GET /api/v1/auth/login-url
             （收到 "Account is not fully set up" = 旧密码正确，放行；见坑 2）
        ⇒ ResetPassword temporary=false（见坑 3）
        ⇒ 清 requiredActions（见坑 1）
+       ⇒ 补全 profile 姓名（见坑 7）
        ⇒ 清 KC sessions（POST /users/:id/logout，logout-all）
        ⇒ 200 {changed: true}（不建会话）
   → 前端 state.mode=login，用新密码走 Flow A 登录 ⇒ 200 session ⇒ 入系统
@@ -108,7 +109,9 @@ GET /api/v1/auth/login-url
 
 **触发机制**：Keycloak `requiredActions=[UPDATE_PASSWORD]`——realm JSON import 确定生效；credential 的 `temporary` 字段在 import 中不可靠（实测），不作依赖。realm 种子落 hub chart `keycloak-realm-configmap.yaml`；存量环境经 KC Admin API 补授。
 
-**适用范围**：仅 bootstrap admin（realm seed 挂 UPDATE_PASSWORD）与显式 reset-password 语义触发首登改密。**管理员建新用户不触发**——`CreateUser` 固定 `temporary=false` 且不写 requiredActions，建号即设固定密码、直接可登录（D10）。
+**适用范围**：bootstrap admin（realm seed 挂 UPDATE_PASSWORD）、管理员新建用户（`CreateUser` 挂 `requiredActions=[UPDATE_PASSWORD]`）、显式 reset-password 语义。三类账号首登均走本闭环。`temporary=false` 只决定凭据非临时，是否改密由 requiredActions 决定（D10）。
+
+**首登可登录前提**：Keycloak token endpoint 在 requiredActions 清空后仍校验用户 profile 的 `email`、`firstName`、`lastName` 均非空，缺任一项返回 `Account is not fully set up`。管理员建号时对这三个字段的空值兜底填充；改密链路对存量账号同样兜底补全，保证改完密码即可登录（坑 7）。
 
 **密码语义**：密码只存 Keycloak，hub 不落用户表、不回显。bootstrap admin 完成改密后，仓库内初始口令对该环境即失效；口令遗失经 master admin 重置。
 
@@ -146,7 +149,7 @@ hub 拿到 KC 登录 client token（Flow A password grant / Flow B code 交换�
 | D7 | **login 模式存 hub DB（`settings` 表）+ env 种子 `LOGIN_MODE`** | 运行时可切换（管理员 Radio），hub 公开端点 `/api/v1/auth/config` 未鉴权可读驱动登录页渲染；`SettingLoginMode` 服务做 DB 持久化 + 内存缓存，重启从 DB 恢复，不依赖 KC 可达；选型理由：需单测、免 kube client、避免第二真源。 |
 | D8 | **IDP 配置落 Keycloak realm，hub 透传 CRUD** | `/api/v1/realmsettings/identityprovider` 透传 `IdentityProviderRepresentation`；`checkProviderID` 白名单预留（KC 原生支持 oidc/saml/cas 等）。新 IDP 走同一 Flow B code flow 链路，非新链路。 |
 | D9 | **配已启用 IDP 禁切回 default** | IDP 联邦登录仅存在于 keycloak 模式；SSO 用户在 default 模式（password grant）无对应凭据，切回即失联。 |
-| D10 | **CreateUser `temporary=false`、无 requiredActions** | 管理员建号即设固定密码、直接可登录不触发改密。首登强制改密仅保留给 bootstrap admin（realm seed UPDATE_PASSWORD）与显式 reset-password 语义。 |
+| D10 | **CreateUser `temporary=false` + `requiredActions=[UPDATE_PASSWORD]`，姓名以 username 兜底** | 管理员建号即挂强制改密，首登必须完成改密才能入系统；`temporary=false` 仅说明凭据非临时，是否改密由 requiredActions 决定。Keycloak token endpoint 要求 `firstName`/`lastName` 均非空，建号表单无姓名输入时以 username 兜底填充，避免改完密码仍无法登录。 |
 
 ## 6. 坑（落地约束）
 
@@ -154,6 +157,7 @@ hub 拿到 KC 登录 client token（Flow A password grant / Flow B code 交换�
 - Go 的 `json:"requiredActions,omitempty"` 会把空切片**整个丢掉** → PUT 时字段省略 → KC merge 保留旧值，永远清不掉。`[""]` 因非空会被序列化而生效。
 - raw REST `{"requiredActions":[]}` 在 KC 26.7.4 实测能清（curl 原始 JSON 不经 omitempty），但 Go 客户端要走 `[""]` 或把字段改成可空（`*[]string` / 去掉 omitempty）。
 - 落地：`internal/keycloak/directory.go` 的 `kcUserRep.RequiredActions` 可空化，或 `UserPatch` 加显式 `RequiredActions *[]string`。
+- `kcUserRep.Enabled` 为可空指针（`*bool` + `omitempty`）：清 requiredActions、只改 email 等部分更新不携带该字段，避免 Go 零值 `false` 序列化为 `enabled:false` 而禁用账号；建号与显式启停才传值。
 
 **坑 2 —— 旧密码验证放行 "not fully set up"**
 - password grant 的 `Account is not fully set up` 是在**凭证校验通过之后**才返回（实测：错密码 → `Invalid user credentials`；对密码 + 挂 RA → `Account is not fully set up`）。收到它 = 旧密码正确的证明。
@@ -164,7 +168,7 @@ hub 拿到 KC 登录 client token（Flow A password grant / Flow B code 交换�
 **坑 3 —— `temporary` 语义分路径**
 - realm **import JSON** 里 `temporary:true` 不可靠（实测 import 后 `temporary:None`、`requiredActions:[]`）——bootstrap admin seed 改用显式 `requiredActions:[UPDATE_PASSWORD]`。
 - Admin **REST** reset-password/credentials `temporary:true` 有效：显式 reset-password 场景（要求下次登录改密）继续用它。
-- Flow A 自助改密与 CreateUser 固定 `temporary=false`（避免改完/建号后又挂 RA）。
+- Flow A 自助改密固定 `temporary=false`（避免改完又挂 RA）；建号凭据也固定 `temporary=false`，但 requiredActions 单独挂 `UPDATE_PASSWORD`（D10）。
 
 **坑 4 —— login 互斥，单入口**
 - `default`/`keycloak` 二选一（默认 default）；前端由 `configData.login` 单入口驱动，双登录按钮并存形态不采用。切互斥配置是管理员 Radio 单选，非运行时探测。
@@ -174,6 +178,14 @@ hub 拿到 KC 登录 client token（Flow A password grant / Flow B code 交换�
 
 **坑 6 —— IDP 挂 keycloak 模式，配后禁切回**
 - IDP 联邦只在 keycloak 模式生效；realm 存在已启用 IDP 时切换端点拒绝回 default（防 SSO 用户失联）。
+
+**坑 7 —— token endpoint 校验 profile 完整性**
+- KC 26.7.4 的 password grant 在 requiredActions 清空后仍校验 `email`、`firstName`、`lastName` 三者均非空：任一为空即返回 `Account is not fully set up`，`emailVerified=true` 不能替代；realm 未显式配置 requiredActions 时同样生效。
+- `NewUser` / `kcUserRep` 携带这三个字段；建号表单的邮箱可选、无姓名字段，`CreateUser` 对空值兜底（`username@placeholder.invalid` 与 username）；`AuthHandler.Password` 对存量账号的空字段同样兜底补全，保证改完密码即可登录。
+
+**坑 8 —— 组成员增删走 user 侧端点**
+- KC 26 不提供 `PUT/DELETE /groups/{gid}/members/{uid}`（404 `Directory Entity Not Found`）。增删组成员使用 `PUT/DELETE /users/{uid}/groups/{gid}`（204，重复添加幂等）；`GET /groups/{gid}/members` 仍用 group 侧端点。
+- `AddGroupMember` / `RemoveGroupMember` 按 user 侧端点实现；409 仍按幂等成功处理。
 
 ## 7. hub 端点清单
 
@@ -232,5 +244,7 @@ hub 拿到 KC 登录 client token（Flow A password grant / Flow B code 交换�
 
 | 日期 | 决策 |
 |---|---|
+| 2026-11-16 | **建号/改密 profile 姓名补全 + KC26 组成员端点适配**：控制变量定位 KC 26.7.4 token endpoint 在 requiredActions 清空后仍要求 `email`/`firstName`/`lastName` 三者均非空（`emailVerified` 非关键），缺字段返回 `Account is not fully set up`，UI 新建用户完成强制改密后仍进不了系统。裁定：`NewUser`/`kcUserRep` 增加三个字段，建号与改密均对空值兜底补全；同步校正 §3/D10 与实现的既有偏差（建号实际挂 `UPDATE_PASSWORD`）。另：`PUT/DELETE /groups/{gid}/members/{uid}` 在 KC26 返回 404，改用 `PUT/DELETE /users/{uid}/groups/{gid}`（204），`GET /groups/{gid}/members` 保持原端点。 |
+| 2026-11-16 | **坑 1 补充 `enabled` 零值覆盖约束**：实测 bootstrap admin 首登改密后账号被禁用（`Account disabled`）——`ClearRequiredActions` 经 `kcUserRep` 对 Keycloak `PUT /users/{id}` 做全量替换，而 `Enabled bool json:"enabled"` 无 `omitempty`，零值 `false` 被显式发送致 KC 把用户置 `enabled=false`。裁定：`kcUserRep.Enabled` 改为可空指针 `*bool` + `omitempty`，仅建号/显式启停传值；清 requiredActions 等部分更新不携带该字段，交由 KC 保留原值。root cause 定位与修复同步落 `internal/keycloak`。 |
 | 2026-11-04 | 两层设计定版：身份存储层恒为 Keycloak；协议层 `login=default\|keycloak` 互斥、默认 default，login 模式存 ConfigMap（`sdp-login-config`），未鉴权公开端点 `/api/v1/auth/config` 驱动登录页单入口，管理员 Radio 单选切换。推翻 D2「单 client 无 LoginClientImpersonate」拍板，改为双 client（登录 sdp-console / 资源 sdp-backend）+ LoginClientImpersonate 二次签发（token exchange，必做）。CreateUser 语义变更：`temporary=false` 无 requiredActions，建号直接可登录不触发改密（首登强制改密仅保留 bootstrap admin）。新增 IDP 扩展：`/realmsettings/identityprovider` 透传 KC `IdentityProviderRepresentation`，checkProviderID 白名单预留，新 IDP 走同一 code flow 链路；配已启用 IDP 禁切回 default（防 SSO 用户失联）。端点沿用 `/api/auth/*` 现有命名，不按参考项目命名（/users/login 等）重构。 |
 | 2026-11-04 | login 模式存储由 ConfigMap（sdp-login-config）改为 **hub DB（`settings` 表）+ env 种子 `LOGIN_MODE`**（`SettingLoginMode`：DB 持久化 + 内存缓存），免 kube client、可单测、避免第二真源。文档校正：realmsettings 端点实际挂在 `/api/v1`（platformGroup，user:manage 守卫），路径不含 `/realmsettings/` 前缀——`identityprovider*` 与 `login` 均为 `/api/v1` 下直连；补充 `GET /api/v1/identityprovider/types`。上述代码已全部落地（hub + console 双端 gate 通过）。 |

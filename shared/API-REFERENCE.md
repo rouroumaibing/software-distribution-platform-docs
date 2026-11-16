@@ -195,7 +195,7 @@ console 编排器「保存」时生成的标准请求体，统一映射：
 - `POST /pipelines/:id/runs/:runId/tasks/:taskName/decision`（审批）
 
 ### 通知中心（新增，#7）
-- `GET /notifications`（登录态；`internal/notification`）：聚合待审批运行为通知流（`pipeline_approvals.status='Pending'`，oldest first，上限 100、默认 50）。响应 `{ data: [ { id, type:"approval", title, body, link, createdAt } ], total }`；`link` 是 SPA 内路由（`/pipelines/:pid/runs/:runId`）。后续新增通知来源（如集群离线告警）只扩 `notification.Service.List`，前端契约不变。
+- `GET /notifications`（登录态；`internal/notification`）：聚合待审批运行为通知流（`pipeline_approvals.status='Pending'`，oldest first，上限 100、默认 50）。响应经 `common.OK` 统一封装为两层 envelope：`{ data: { data: [ { id, type:"approval", title, body, link, createdAt } ], total, unreadCount } }`——外层 `data` 是 `Envelope`，内层 `data` 才是通知数组，`unreadCount` 在内层由服务端时钟计算。console 侧 `notificationApi.list()` 取 `r.data.data`，与 `subscriptionApi` 的解包层级一致（少解一层会把对象当数组调用 `filter` → MainLayout 的 `unread` computed 崩溃 → 白屏）。`link` 是 SPA 内路由（`/pipelines/:pid/runs/:runId`）。后续新增通知来源（如集群离线告警）只扩 `notification.Service.List`，前端契约不变。
 
 **触发期策略校验（B-11，均在 `buildSpec` 之后、创建 Run 之前）**
 - **生产强审批**：目标是生产环境时要求该流水线含审批门；不满足 → `409 + {reasons}`（`ERR.08409005`）。**fail-closed** —— 目标环境类型解析不出来时**拒绝触发**，而不是放行（放行等于静默绕过审批）。console `TriggerRunDialog` 把该结构化拒绝**原样渲染**在对话框内，不只弹一句 toast。
