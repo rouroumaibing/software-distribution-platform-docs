@@ -30,11 +30,12 @@
 | [STORY-BACKLOG.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-BACKLOG.md) | 实现 Backlog（B-01~B-21 + C-01~C-13）；**状态以 STATUS 为准，本表只记叙事** |
 | [STORY-TEMPLATE.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/STORY-TEMPLATE.md) | Story 模板 |
 | [user-stories.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/user-stories.md) | 用户故事（裁定已折进正文标记） |
+| [features/coordination-design.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/hub/features/coordination-design.md) | hub 协调框架设计（共享库租约两级选主：集群锁+实例锁；worker 注册心跳与分片映射重算；限流队列分片消费；优雅停止；业务经 ShardSource 挂接待裁定） |
 | [assets/](https://github.com/rouroumaibing/software-distribution-platform-docs/tree/main/hub/assets) | 架构图源（png + 流水线.pptx，独立图源，未被 md 引用） |
 
 ## features/ 与 plans/（按需建立）
 
-git 不跟踪空目录，且按「无内容不建壳」原则：本域 features/ 与 plans/ 在**首份内容落档时创建**，不预建空壳。已有 Story 若未来按 feature 拆分（如审批子系统、agent_ops 各自成篇），落 `features/`；活跃实施计划落 `plans/`。
+git 不跟踪空目录，且按「无内容不建壳」原则：目录在**首份内容落档时创建**，不预建空壳。`features/` 已随 coordination-design.md 落档创建；`plans/` 待首份实施计划落档时创建。已有 Story 若按 feature 拆分（如审批子系统、agent_ops 各自成篇），落 `features/`；活跃实施计划落 `plans/`。
 
 ## 跨域引用
 
