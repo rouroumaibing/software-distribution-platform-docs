@@ -104,7 +104,8 @@ software-distribution-platform-docs/
     ├── notification-webhook.md      # 计划：通知渠道 Webhook 适配器（O-36）
     ├── data-lifecycle.md            # 计划：审计/运行日志/制品保留与 GC（O-37，保留基线拍板前为占位）
     ├── release-governance.md        # 计划：组件可部署版本端点 + 运行级超时（O-38/O-39，数据源/语义拍板前为占位）
-    └── target-runtime.md            # 计划：targets access_mode + 同 pipeline 并发策略（O-40/O-41，产品决策留守）
+    ├── target-runtime.md            # 计划：targets access_mode + 同 pipeline 并发策略（O-40/O-41，产品决策留守）
+    └── console-ui-verification-testcases.md # 计划：console UI 验证用例步骤（行为/五态/视觉/业务链路 38 例 + 批次 gate）
 ```
 
 > **E2E 验收脚本**（e2e-smoke.sh / e2e-cancel-rerun.sh / e2e-canary.sh）：真源在 env 仓 `prod-deplyment/`（云上节点直跑，认证/取数脚本内动态完成），本仓不留副本。
@@ -136,6 +137,7 @@ software-distribution-platform-docs/
 | [shared/BUILD-TOOLCHAIN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/BUILD-TOOLCHAIN.md) | 跨组件 | **三组件镜像构建工具链版本要求**（containerd 路线） | §1 版本要求（nerdctl >= 2.x / buildkit >= v0.34）/ §2 build.sh 行为要点 / §3 buildkitd mirrors / §4 落地位置 |
 | [shared/README.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/README.md) | 跨组件 | **跨组件文档目录**（判据：横跨 ≥2 组件整体迁入，不拆分、不设主从；住户 16（含 ADR-0001、ADR-0002、E2E-THREE-PIPELINES、BUILD-TOOLCHAIN、NETWORKING-GATEWAY）） | 住户清单 / 维护纪律 / 不入住说明 |
 | [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) | 跨组件 | **平台状态总览（唯一状态权威）**：已完成清单 / 未完成清单 / 刻意不做 | §1 已完成（hub/runner/console/跨组件验证）、§2 未完成（10 项，含性质与前置）、§3 刻意不做 |
+| [plans/console-ui-verification-testcases.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/console-ui-verification-testcases.md) | console | **UI 验证测试用例计划**：行为交互 / 五态异常 / 视觉基线 / 业务链路 38 例，逐条步骤+判据+证据落点 | §1 覆盖与 DoD / §3~§7 用例 / §8 批次 gate / §10 已知降级点 |
 | [plans/FIDELITY-KIND-VS-CLOUD-2026-10-09.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/FIDELITY-KIND-VS-CLOUD-2026-10-09.md) | 跨组件 | 保真度差异清单 kind vs 云上（活跃：云上验收 gate 未跑，#10 依赖） | §1 差异项 / §2 收敛结论 |
 | [plans/GAP-GATEWAY-POLICY-2026-10-26.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/GAP-GATEWAY-POLICY-2026-10-26.md) | 跨组件 | 网关流量策略余量 Gap 跟踪（WS 长连 idle timeout 显式化 + 云上 ELB 健康检查探针核实；STATUS O-42） | §1 缺口清单 / §2·§3 方案候选 / §4 验证 gate |
 | [plans/HARBOR-REGISTRY-INTEGRATION-2026-09-28.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/HARBOR-REGISTRY-INTEGRATION-2026-09-28.md) | 跨组件 | Harbor 默认对接盘点（registry 可配置、harbor 非强制；①③收口；② Build→Harbor 留守 open） | §结论 默认 registry 全切 / §剩余 open 项 / §变更历史 |
