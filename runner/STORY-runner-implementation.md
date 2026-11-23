@@ -19,7 +19,7 @@
 - `internal/dispatch/apply_handler.go` —— 解析 `ApplyPipelineRunPayload`，幂等创建 `PipelineRun` CR（先 ensure namespace）。
 - `internal/dispatch/approve_handler.go` —— 解析 `ApproveTaskPayload`，按 `sdp.io/pipeline-run`+`sdp.io/task` 标签定位 Approval TaskRun，写入 `ApprovedBy`/`RejectedBy`，达到 `RequiredCount` 置 Succeeded。
 - `internal/controller/pipelinerun_controller.go` —— DAG 调度（纯函数 `findRunnableTasks`/`dependenciesSatisfied` 等）+ 每次状态变更后异步经 `conn.Send(MessageStatusUpdate, …)` 上报 Hub。
-- `internal/controller/taskrun_controller.go` —— Build→Job（内联命令或脚本）、Release→chart/manifest 施加（带 `RolloutSpec` 时走 `reconcileDeploy` 创建/持有 `Rollout` 并映射 Phase 回 TaskRun）、Approval 初始化 `Status.Approval`。
+- `internal/controller/taskrun_controller.go` —— Build→Job（内联命令或脚本）、Release→chart/manifest 施加（带 `RolloutSpec` 时走 `reconcileRollout` 创建/持有 `Rollout` 并映射 Phase 回 TaskRun）、Approval 初始化 `Status.Approval`。
 - `internal/controller/rollout_controller.go` —— 管理 stable + canary 两个 Deployment 与 `-sdp` Service，按 canary 引擎决策做副本切分。
 - `pkg/canary/engine.go` —— 纯逻辑金丝雀引擎（与 K8s 解耦，便于单测）：按步缩放权重、等 canary Pod Ready 再进阶、Pause 步等待、ReplicaFailure 自动回滚。
 
@@ -35,7 +35,7 @@
 - [x] **AC-02 (DAG 调度)**: Given `PipelineRun` CR 已存在，When `PipelineRunReconciler`  reconcile，Then 仅对"依赖全部 Succeeded"的节点创建 `TaskRun`（名称 `{pipelineRunName}-{taskName}`），其余保持 Pending；终态后不再调度。
 - [x] **AC-03 (Build 任务执行)**: Given 一个 Build 类型 TaskRun 变为 runnable，When `TaskRunReconciler` 处理，Then 构建 Job（init 容器 git checkout + 主容器 `sh {ScriptPath} {ScriptArgs…}` 或内联 `command`/`args`）并 `ownerReference` 挂载；Job Succeeded→TaskRun Succeeded，Failed 按 `RetryPolicy` 退避重试，`RetryCount` 耗尽→Failed。成功/失败只看 Job 退出码，不解析输出内容。
 - [x] **AC-04 (审批门禁闭环)**: Given Approval 类型 TaskRun 初始化出 `Status.Approval`，When Hub 经 `approve_task` 帧回写决策，Then `ApproverHandler` 幂等累加 `ApprovedBy`，达到 `RequiredCount` 置 Succeeded（DAG 继续）；任一 `Rejected`→TaskRun Failed（PipelineRun 跟随 Failed）。
-- [x] **AC-05 (Release / 金丝雀)**: Given Release 类型 TaskRun 且带 `RolloutSpec`，When `reconcileDeploy` 创建 `Rollout` 并 watch，Then `RolloutReconciler` 按 `RolloutSpec.Steps` 推进：缩放 canary 副本至步权重、等 canary Pod Ready 再进阶、带 Duration 的 Pause 步到时且健康自动推进（无 Duration 恒 Paused 等外部 resume）；canary Deployment `ReplicaFailure`→自动回滚置 `Degraded`；`RolloutHealthy`→TaskRun Succeeded。不带 `RolloutSpec` 的 Release 走 Job 直接施加 chart/manifest。
+- [x] **AC-05 (Release / 金丝雀)**: Given Release 类型 TaskRun 且带 `RolloutSpec`，When `reconcileRollout` 创建 `Rollout` 并 watch，Then `RolloutReconciler` 按 `RolloutSpec.Steps` 推进：缩放 canary 副本至步权重、等 canary Pod Ready 再进阶、带 Duration 的 Pause 步到时且健康自动推进（无 Duration 恒 Paused 等外部 resume）；canary Deployment `ReplicaFailure`→自动回滚置 `Degraded`；`RolloutHealthy`→TaskRun Succeeded。不带 `RolloutSpec` 的 Release 走 Job 直接施加 chart/manifest。
 - [x] **AC-06 (状态回写)**: Given 任意 `PipelineRun` 状态变更，When `PipelineRunReconciler.updateStatus` 调用，Then 经长连接异步发 `MessageStatusUpdate`，其 `PipelineRunName` == CRName（Hub 据此命中 run 行）；不阻塞 reconcile 主循环。
 - [x] **AC-07 (无 Runner 降级)**: Given Hub 触发时目标集群无在线连接，When `gateway.Dispatch` 找不到 conn，Then 返回 `ErrNoRunner`，Hub 侧 `Trigger` 将 run 标记 Failed 并返回 503（已在 hub story AC 覆盖）。
 - [x] **AC-08 (非法输入)**: Given `ApplyPipelineRunPayload.Name` 为空 或 `ApproveTaskPayload` 缺 `pipelineRunName`/`taskName`，When handler 解析，Then 返回明确错误（`errMissingName` / `approve payload needs ...`），不创建脏对象。
