@@ -62,12 +62,16 @@ software-distribution-platform-docs/
 │   └── README.md                  # 跨组件文档目录（住户清单权威）
 └── plans/
     ├── STATUS.md                  # 唯一状态权威 + 全局总索引
-    └── FIDELITY-KIND-VS-CLOUD-2026-10-09.md # 保真度差异清单 kind vs 云上（状态见 STATUS.md）
+    ├── CLOUD-GATE-CHECKLIST.md    # 云上验收 gate 待确认清单（执行编排，状态仍以 STATUS 为准）
+    ├── FIDELITY-KIND-VS-CLOUD-2026-10-09.md # 保真度差异清单 kind vs 云上（状态见 STATUS.md）
+    └── ...                        # 其余 GAP / 审计 / 测试清单文档（完整清单见下方索引表）
 ```
 
 > **E2E 验收脚本**（e2e-smoke.sh / e2e-cancel-rerun.sh / e2e-canary.sh）：真源在 env 仓 `prod-deplyment/`（云上节点直跑，认证/取数脚本内动态完成），本仓不留副本。
 
 > **已删档的历史计划文档**（设计信息已迁入各域文档，git 历史可查）：`UNIMPLEMENTED-MODULES-PLAN.md`（批次记录 → 钢人裁定迁 APM §12.1 / DATA-MODEL §6.6·§9.11 / DELETE-CONTRACT §6.6-5）、`PENDING-TASKS-AUDIT-2026-09-23.md`（净结论 → STATUS）、`E2E-VERIFY-PLAN.md`（P6 → DATA-MODEL §9.11）、`ACCOUNT-PERMISSION-DECISIONS.md`（D1–D6 结论 → APM §12）。旧引用中的 §x.y 编号均指删档文档章节；编号映射见 ID-INDEX.md。
+
+> **已归档的历史论证文档**（未删除，移入 `old/`，仅余论证价值、结论已被取代）：`old/STEELMAN-ADR2-LEFTOVERS-2026-10-22.md`（#1 已落码，现行规格见 `runner/features/per-target-auth.md`）、`old/UNIMPLEMENTED-ANALYSIS-2026-10-23.md`（裁定已被 2026-10-26 反转取代，结论见 `plans/STATUS.md` 变更史）。
 
 ## 4. 文档索引
 
@@ -95,7 +99,7 @@ software-distribution-platform-docs/
 | [runner/STORY-runner-implementation.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/runner/STORY-runner-implementation.md) | runner  | runner 实现 Story     | §4.2.3 kubebuilder 安装、§4.3 任务处理/DAG 推进、§4.4 授权边界                 |
 | [shared/BUILD-TOOLCHAIN.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/BUILD-TOOLCHAIN.md) | 跨组件 | **三组件镜像构建工具链版本要求**（containerd 路线） | §1 版本要求（nerdctl >= 2.x / buildkit >= v0.34）/ §2 build.sh 行为要点 / §3 buildkitd mirrors / §4 落地位置 |
 | [shared/README.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/README.md) | 跨组件 | **跨组件文档目录**（判据：横跨 ≥2 组件整体迁入，不拆分、不设主从；住户清单以 shared/README.md 为准） | 住户清单 / 维护纪律 / 不入住说明 |
-| [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) | 跨组件 | **平台状态总览（唯一状态权威）**：已完成清单 / 未完成清单 / 刻意不做 | §1 已完成（hub/runner/console/跨组件验证）、§2 未完成（10 项，含性质与前置）、§3 刻意不做 |
+| [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) | 跨组件 | **平台状态总览（唯一状态权威）**：已完成清单 / 未完成清单 / 刻意不做 | §1 已完成（hub/runner/console/跨组件验证）、§2 未完成（25 项，含性质与前置；云上验收专项执行清单见 `plans/CLOUD-GATE-CHECKLIST.md`）、§3 刻意不做 |
 | [plans/console-ui-verification-testcases.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/console-ui-verification-testcases.md) | console | **UI 验证测试用例计划**：行为交互 / 五态异常 / 视觉基线 / 业务链路 38 例，逐条步骤+判据+证据落点 | §1 覆盖与 DoD / §3~§7 用例 / §8 批次 gate / §10 已知降级点 |
 | [plans/FIDELITY-KIND-VS-CLOUD-2026-10-09.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/FIDELITY-KIND-VS-CLOUD-2026-10-09.md) | 跨组件 | 保真度差异清单 kind vs 云上（状态见 STATUS.md） | §1 差异项 / §2 收敛结论 |
 | [plans/GAP-GATEWAY-POLICY-2026-10-26.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/GAP-GATEWAY-POLICY-2026-10-26.md) | 跨组件 | 网关流量策略余量 Gap 跟踪（WS 长连 idle timeout 显式化 + 云上 ELB 健康检查探针核实；STATUS O-42） | §1 缺口清单 / §2·§3 方案候选 / §4 验证 gate |

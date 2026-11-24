@@ -15,7 +15,7 @@
 
 ## 2. 结论（一句话）
 
-**渲染层全绿，运行层未验证**；其中 A（runner `ws://` 直连）是 P0 运行时故障项，必须在下次真集群部署前修掉，否则 runner 连不上 hub。
+**A–F 全部闭环**：A（runner `ws://` 直连）已代码修复，B–E 已由 2026-10-23 云上真集群验证闭环（网关→hub:8080 TLS / keycloak:8443 全链 200），F（仓 README 同型扫描）完成。行为规格与验收证据见 `shared/features/backend-tls.md` §6。（初稿结论「渲染层全绿，运行层未验证」已被上述验证取代。）
 
 ## 3. 缺口清单（带落点 + 置信度）
 
@@ -78,4 +78,4 @@
 | 2026-10-22 | 新增 §6：外部 runner 信任引导业界方案对比（kubeadm SPKI pinning / smallstep fingerprint / GitLab Runner 约定路径 / Web PKI 三派）与三阶段选型（短期 B 物料脚本 → 中期 C 云上公网证书 → 演进 A join-command）；推翻"CA 分发捆进 enroll"的早期设想（bootstrap 悖论：带内通道发不了自己的信任根） | 用户纠偏"CA 证书不会乱发"，要求以成熟案例为依据重新论证分发形态 |
 | 2026-10-22 | **设计裁定（钢人论证后）**：runner 安装引导收编为 hub API 能力（join-bundle：gatewayUrl / apiBaseUrl / caPem / caFingerprint / per-target enrollToken），复用 §9.9 enroll-token 铸发端 + OIDC/RBAC。**API 消费方 = 装机管线/操作者会话**（已信任通道），目标机消费的是内嵌进 cloud-init userdata 的 join 数据，不裸连 hub API。无人值守信任锚：云上网关公网证书（Web PKI，首选）或 CA+token 内嵌 userdata（IaC 为带外通道，fallback）。runner 更新走 WS 下发（已有 agent_version 回流通道），不进安装 API。下一步：起草 ADR（join-bundle API + 无人值守引导设计），评审后落码 | 用户裁定存在无人值守安装诉求，人工 join-command 不够；install-as-API 经 kubeadm/smallstep 范式验证 |
 | 2026-10-22 | **ADR-0002 落码**：hub `POST /targets/:id/join-bundle`（`internal/target/service/joinbundle.go` + handler，RBAC 同 target 层；`publicUrl`/TLS CA 缺失显式 501；chart 增 `HUB_PUBLIC_URL`/`HUB_TLS_CA_FILE`/values `publicUrl`）；**前端对接信息获取点 = console 目标页「安装命令」弹窗**（`src/utils/runnerInstall.ts` 渲染自举脚本 + `src/api/target.ts` `joinBundle()` + 复制，smoke `scripts/target-smoke.mjs` 6/6 入全量链）；runner 仓 `deploy/cloud-init-runner.yaml.tpl`（cloud-init 模板；消费形态摘要并入 docs `runner/features/target-bootstrap.md`）。gate：hub go build/vet/test 绿、console 8 smoke + build 绿、模板占位符替换后 YAML 解析通过 | 用户批准"1、2、3 都执行"（ADR → hub API → console 展示 → cloud-init 模板） |
-| 2026-10-22 | **遗留项钢人裁定（完整记录 → `plans/STEELMAN-ADR2-LEFTOVERS-2026-10-22.md`）**：O-1 enrollToken 消费端**升 P0 立即做**——查实为已交付链路功能断点（runner `main.go:65` `mustEnv("TARGET_AUTH_TOKEN")`、全仓无 `SDP_ENROLL_TOKEN` 消费；hub `gateway.go` WS 握手只认共享 token + 自报 `X-Target-Name`，一次性 token 铸发端有、消费端两侧皆无）。设计：hub 握手三态鉴权（共享 token dev 保留 / enroll token 消费换 per-target 凭据经 101 响应头返回 / per-target 凭据服务端反查，X-Target-Name 降级断言）+ runner 三态发送（凭据文件 → 首拨换凭据落盘 0600 → legacy 回落）。#2 Web PKI 与 #3 二进制托管维持记档、各挂触发条件（详见钢人文档 §8） | 双向钢人论证 + 用户裁定"join 链路近期真实投用"；用户反馈简记过于简略，完整分析落独立文档 |
+| 2026-10-22 | **遗留项钢人裁定（完整记录 → `old/STEELMAN-ADR2-LEFTOVERS-2026-10-22.md`（历史归档））**：O-1 enrollToken 消费端**升 P0 立即做**——查实为已交付链路功能断点（runner `main.go:65` `mustEnv("TARGET_AUTH_TOKEN")`、全仓无 `SDP_ENROLL_TOKEN` 消费；hub `gateway.go` WS 握手只认共享 token + 自报 `X-Target-Name`，一次性 token 铸发端有、消费端两侧皆无）。设计：hub 握手三态鉴权（共享 token dev 保留 / enroll token 消费换 per-target 凭据经 101 响应头返回 / per-target 凭据服务端反查，X-Target-Name 降级断言）+ runner 三态发送（凭据文件 → 首拨换凭据落盘 0600 → legacy 回落）。#2 Web PKI 与 #3 二进制托管维持记档、各挂触发条件（详见钢人文档 §8） | 双向钢人论证 + 用户裁定"join 链路近期真实投用"；用户反馈简记过于简略，完整分析落独立文档 |

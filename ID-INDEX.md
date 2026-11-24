@@ -17,6 +17,8 @@
 | `§N.x`（console） | CONSOLE-UI-DESIGN 章节号，拆文件后全局唯一且不变 | `console/CONSOLE-UI-DESIGN.md` §0.4 章节→文件映射；正文在 `console/features/ui-01` ~ `ui-12` |
 | `§9.x`（数据模型） | 接入拓扑/术语/裁定章节 | `shared/DATA-MODEL.md` §9.0 ~ §9.11 |
 | `§x.y`（已删档文档） | 指向已删档的历史计划文档章节 | 结论落点见 `plans/STATUS.md` 与各域权威文档；按根 `README.md`「已删档的历史计划文档」段处理 |
+| 云上 gate 待确认清单 | 云上验收专项的执行编排（非编号族，状态仍以 STATUS 为准） | `plans/CLOUD-GATE-CHECKLIST.md` |
+| `STEELMAN-*` / `UNIMPLEMENTED-ANALYSIS` | 已归档的历史论证（结论被取代，仅余论证价值） | `old/` 目录；现行口径见 `runner/features/per-target-auth.md` 与 `plans/STATUS.md` 变更史 |
 
 ## 2. 高频单号落点
 

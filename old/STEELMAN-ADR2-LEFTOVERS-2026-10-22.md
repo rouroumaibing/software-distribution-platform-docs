@@ -1,5 +1,7 @@
 # 钢人分析：ADR-0002 落码后三项遗留项（2026-10-22）
 
+> **历史归档文档**：#1 已落码且经真集群验证，本文正文对「join 链路不可用」的论证已失效；#2/#3 维持记档。现行行为规格见 [per-target-auth.md](../runner/features/per-target-auth.md)，状态见 [STATUS.md](../plans/STATUS.md) §2 O-33。
+>
 > 本文是 ADR-0002（runner 安装引导 / join-bundle API）落码后，对 §6 遗留项的双向钢人论证全记录。
 > 分析方法遵循用户既定协议：①最完整重述问题 → ②双向钢人 → ③分歧与关键变量 → ④只问一个最关键问题 → ⑤用户裁定后给出判断与下一步。
 > 上游文档：`shared/ADR-0002-runner-install-bootstrap.md`、`shared/ADR-0001-runner-first-connect-enrollment.md`、`plans/GAP-BACKEND-TLS-2026-10-22.md`（§6 业界方案对比）、`shared/install-upgrade-design.md` §9.9。

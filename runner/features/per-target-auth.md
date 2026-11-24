@@ -1,4 +1,4 @@
-> **来源**：[plans/STEELMAN-ADR2-LEFTOVERS-2026-10-22.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STEELMAN-ADR2-LEFTOVERS-2026-10-22.md)（ADR-0002 落码后遗留项双向钢人，#1 升 P0 并落码）；上游 [shared/ADR-0001-runner-first-connect-enrollment.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-0001-runner-first-connect-enrollment.md)（首连自注册）、[shared/ADR-0002-runner-install-bootstrap.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-0002-runner-install-bootstrap.md)（安装引导）。
+> **来源**：[old/STEELMAN-ADR2-LEFTOVERS-2026-10-22.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/old/STEELMAN-ADR2-LEFTOVERS-2026-10-22.md)（ADR-0002 落码后遗留项双向钢人，#1 升 P0 并落码）；上游 [shared/ADR-0001-runner-first-connect-enrollment.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-0001-runner-first-connect-enrollment.md)（首连自注册）、[shared/ADR-0002-runner-install-bootstrap.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/shared/ADR-0002-runner-install-bootstrap.md)（安装引导）。
 > **拆分说明**：STEELMAN 文档是**双向论证记录**（为什么做、风险边界、裁定），本文件是**行为规格**（per-target WS 鉴权三态如何工作、信任如何锚定）。#1 已实现；#2（Web PKI）/ #3（二进制托管）为记档项，见 STEELMAN §8。
 > **铁律**：本文件**只追加**——新增修订轮次追加到文件尾，禁止改写历史段落；状态判断一律以 [plans/STATUS.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STATUS.md) 为准，本文件只维护行为规格。
 
@@ -62,7 +62,7 @@ console / cloud-init 装机物料无需修改——join 命令 env 已含 `SDP_E
 
 ## 8. 决策记录（指针）
 
-双向钢人论证、判定理由、#1 三态鉴权设计方案、#2/#3 记档条件见 [STEELMAN-ADR2-LEFTOVERS-2026-10-22.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/plans/STEELMAN-ADR2-LEFTOVERS-2026-10-22.md)。ADR-0001 的 ⚠️（共享 token + 自报身份）在 per-target 态收口。
+双向钢人论证、判定理由、#1 三态鉴权设计方案、#2/#3 记档条件见 [STEELMAN-ADR2-LEFTOVERS-2026-10-22.md](https://github.com/rouroumaibing/software-distribution-platform-docs/blob/main/old/STEELMAN-ADR2-LEFTOVERS-2026-10-22.md)。ADR-0001 的 ⚠️（共享 token + 自报身份）在 per-target 态收口。
 
 ## 9. 实现记录
 
