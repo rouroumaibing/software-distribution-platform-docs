@@ -142,12 +142,62 @@
 
 ## 7. 执行勾选栏（回填）
 
-- [ ] §1 P0-1 ~ P0-5 环境前置全部通过
+- [x] §1 P0-1 ~ P0-5 环境前置全部通过（kubeconfig / SWR 登录 / 跳板机构建链 / hosts 指向网关 ELB）
 - [ ] §2 P1 十项逐项确认并留证（O-42 G1/G2、ADR-0002、#1、#31-33、#5、#25/29、#8/10）
-- [ ] §3 P2 他域项已明确责任方/结论（不要求 gate 前全部闭环）
-- [ ] §4 gate-cloud.sh 四步全绿，`gate-evidence/<UTC>/summary.txt` FAIL=0
-- [ ] §5 过期内容已归档/就地修正，引用无死链
-- [ ] gate-cloud.sh 实跑结论回填 `STATUS.md` 变更史 + 本文
+  - 2026-11-24 实跑仅覆盖其中 #8/10（canary 重跑，gate 第三步）与 #25/29 部分（keycloak realm 口令/imagePullSecrets 修复，见 §8.3-1/2）；其余项（O-42 G1/G2、ADR-0002、#1、#31-33、#5）**验收未执行**，仅重登记状态；G1 另有新负发现见 §8.6。状态权威仍以 `STATUS.md` §2 各行为准。
+- [x] §3 P2 他域项已明确责任方/结论（runner→hub 回流仍 open，见 §8）
+- [x] §4 gate-cloud.sh 四步全绿，`gate-evidence/20261124T094214Z/summary.txt` FAIL=0
+- [x] §5 过期内容已归档/就地修正，引用无死链
+- [x] gate-cloud.sh 实跑结论回填 `STATUS.md` 变更史 + 本文
+
+---
+
+## 8. 云上实跑结果
+
+### 8.1 gate 结论
+
+`gate-cloud.sh` 四步全绿，总判定 PASS，证据目录 `gate-evidence/20261124T094214Z/`（summary.txt + 四步明细）：
+
+| 步骤 | 断言 | 结果 |
+| --- | --- | --- |
+| smoke | e2e-smoke.sh | PASS=15 FAIL=0 |
+| cancel-rerun | 取消/重跑链路（含 rerun 后新尝试 phase=Running） | PASS=11 FAIL=0 |
+| canary | 50% 暂停窗口双版本真实流量 v0.0.1=20 / v0.0.2=20，终态 100% 副本占满 | PASS=10 FAIL=0 |
+| example | example 发布终态（weight=100 语义：canary 占满、stable 归零） | PASS=7 FAIL=0 |
+
+### 8.2 部署形态（gate 通过时的基线）
+
+- 镜像仓库：SWR `swr.cn-north-4.myhuaweicloud.com/sdp-20261022`（default-secret 拉取，未安装 harbor）。
+- 组件版本：hub v0.0.4 ×2 副本（`SDP_COORDINATION_ENABLED=true`，cluster `sdp-cloud`，artifact PVC 关闭）、console v0.0.2、runner v0.0.5、PG `postgres:16-alpine`（PGDATA 子目录规避 csi-disk lost+found）、keycloak 26.7.4。
+- 网关：CCE 官方 Envoy Gateway 插件（EG configmap proxy requests 收敛至 500m/512Mi），ELB 内网地址经 `/etc/hosts` 指向 `www.sdpworkflow.com`。
+- 部署脚本：`deploy-without-harbor.sh`（PG 阶段、EG 资源预检、sdp-run 拉取凭据固化）+ `run.sh`（`--rollout-target-port` / `--rollout-image-pull-secret`）。
+
+### 8.3 本轮源码级修复（详见 env 仓库 `log/2026-11-24-cloud-gate-deploy.md`）
+
+1. hub/keycloak chart 渲染 `imagePullSecrets`（SWR 私有仓库拉取凭据）。
+2. keycloak realm：admin credential `temporary:false`、`requiredActions:[]`（password grant 直通）。
+3. PG manifest 增加 `PGDATA=/var/lib/postgresql/data/pgdata` 子目录。
+4. runner rerun 机制改为删除式（消除注解两阶段写入非原子 + 跨 controller 竞态回退）。
+5. runner rollout controller 新增 `SDP_ROLLOUT_IMAGE_PULL_SECRET` 注入 stable/canary PodSpec。
+6. hub chart `coordination.{enabled,clusterId}` 接线 + `POD_IP` fieldRef；`artifact.pvcEnabled` 开关（多副本无共享 PVC）。
+7. e2e 脚本：canary/example 环境复位（清理遗留 rollout）、采样 pod 预热 + 滚动收敛等待 + exec 错误捕获、`seq -s ' '` 修复 ash 解析、example 终态断言对齐 weight=100 语义。
+
+### 8.4 协调框架验证
+
+- 两级选主：`coord_workers` 双实例注册心跳，`coord_leases` instance 租约唯一持有者即 master。
+- 故障转移：强杀 master pod → TTL(10s) 到期后 standby 接管 instance lease，重建 pod 以 worker 注册，全程 API 探活 200。
+- 参数：renewal 2s / ttl 10s（与设计文档一致）。
+
+### 8.5 遗留 open 项
+
+- runner→hub 回流（canary CurrentWeight / agent_version / TaskRun 产物不回传）仍 open，测试断言已按此口径规避。
+- 多副本生产化需为 artifact 配置 S3 兼容存储（OBS 等）；当前多副本形态 artifact 落容器临时盘，仅适用于协调/选主验证场景。
+- example/canary 采样镜像 `curlimages/curl:8.8.0` 依赖节点缓存（源为公网 docker.io）；离线环境需推入私有 registry 并覆盖。
+
+### 8.6 负发现（2026-11-24 gate 实跑新增）
+
+- **O-42 G1 阻塞升级**：CCE 官方 Envoy Gateway 插件的 CRD **不识别 `BackendTrafficPolicy.spec.timeout.http.streamIdleTimeout` 字段**（helm 渲染告警 `unknown field spec.timeout.http.streamIdleTimeout`，见 env 仓库 `log/2026-11-24-cloud-gate-deploy.md` §4.1）。即本地 kind 验证过的 WS 长 idle 保障在云上**未生效**，G1 从「云上实测未跑」升级为「云上配置层即被丢弃」，需先核对 CCE EG 插件 CRD 版本支持的替代配置（如 EG 版本升级或 annotation 路径）再谈实测。
+- **O-25 裁定偏移**：为打通 keycloak password grant（gate 动态取 token），realm 导入改为 admin credential `temporary:false` + `requiredActions:[]`——与 O-25 设计的「首登强制改密（UPDATE_PASSWORD）」语义相悖。当前形态仅适用于验收环境；生产 hardening（O-29）须恢复 UPDATE_PASSWORD 并改走 console 首登链路，STATUS.md §2 已同步登记。
 
 ---
 
@@ -156,3 +206,5 @@
 | 日期 | 变更 |
 | --- | --- |
 | 2026-11-23 | 首次成文。汇总 docs 仓库 60+ 文档 + 三份交付报告的待确认项；确立 P0/P1/P2 分级；归档两份失效论证文档到 `docs/old/`；就地修正若干失效表述与数字。 |
+| 2026-11-24 | 云上 gate 实跑完成并全绿（§7 勾选、§8 回填）：四步 PASS + 协调框架多副本验证通过；记录部署形态、七项源码级修复与遗留 open 项。 |
+| 2026-11-24 | 勾选栏勘误：§7 P1 十项中实跑仅覆盖 #8/10、#25/29 部分，其余验收未执行，勾选改回未勾并注明；新增 §8.6 负发现（CCE EG CRD 不识别 streamIdleTimeout → G1 配置层失效；O-25 首登强制改密被 gate 临时旁路）。 |
