@@ -82,6 +82,8 @@ a{color:var(--accent);text-decoration:none;cursor:pointer}
 .nav-item.active{background:var(--rail-active-bg);color:var(--rail-active-fg);font-weight:600}
 .nav-item .ni{width:19px;height:19px;flex:0 0 19px;display:grid;place-items:center}
 .nav-item .ni svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.nav-badge{margin-left:auto;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--warn-bg);color:var(--warn-fg);font-size:11px;font-weight:600;display:grid;place-items:center}
+.rail.collapsed .nav-badge{position:absolute;top:2px;right:2px;min-width:15px;height:15px;font-size:10px;padding:0 3px}
 .rail.collapsed .nlabel,.rail.collapsed .rgroup{display:none}
 .rail.collapsed .nav-item{justify-content:center;padding:9px 0}
 
@@ -390,6 +392,13 @@ const ICON = {
   layers:'<polygon points="12 3 21 8 12 13 3 8"/><polyline points="3 13 12 18 21 13"/>',
   shield:'<path d="M12 3l7 3v6c0 4.6-3 7.9-7 9-4-1.1-7-4.4-7-9V6z"/>',
   cloud:'<path d="M7 18h9.5a3.8 3.8 0 0 0 .3-7.6A5.2 5.2 0 0 0 7 9.4 3.6 3.6 0 0 0 7 18z"/>',
+  check:'<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"/>',
+  list:'<line x1="8" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="8" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>',
+  key:'<circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3m-4 4l3 3m-5 0l3 3"/>',
+  gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9l2.1 2.1m10 10l2.1 2.1m0-14.2L17 7M7 17l-2.1 2.1"/>',
+  arrowup:'<path d="M12 20V4m-6 6l6-6 6 6"/>',
+  lock:'<rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+  server:'<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><line x1="7" y1="7.5" x2="7" y2="7.5"/><line x1="7" y1="16.5" x2="7" y2="16.5"/>',
   sun:'<circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="5" y1="5" x2="7" y2="7"/><line x1="17" y1="17" x2="19" y2="19"/><line x1="5" y1="19" x2="7" y2="17"/><line x1="17" y1="7" x2="19" y2="5"/>',
   moon:'<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
 };
@@ -626,7 +635,19 @@ const MAIN_NAV = [
   ['catalog','服务树','layers'],
   ['runs','运行中心','play'],
 ];
-const ADMIN_NAV = [['admin-perm','用户与权限','shield'],['admin-target','接入管理','cloud']];
+/* 九个管理域按「管的是什么」分两组：平台治理管人与规则，交付前置管部署条件。
+   单一导航源：左栏列全部管理域，页内不再用 Tab 重复枚举。 */
+const ADMIN_NAV = [
+  ['admin-approval','权限审批','check','平台治理'],
+  ['admin-perm','用户与权限','shield'],
+  ['admin-auth','认证设置','key'],
+  ['admin-audit','审计日志','list'],
+  ['admin-settings','平台设置','gear'],
+  ['admin-upgrade','升级审批','arrowup'],
+  ['admin-target','接入管理','cloud','交付前置'],
+  ['admin-credentials','凭据管理','lock'],
+  ['admin-clusterperm','集群权限','server'],
+];
 
 function renderRail(){
   const rail = document.getElementById('rail');
@@ -639,11 +660,13 @@ function renderRail(){
     </div>
     <div class="rail-body">
       ${MAIN_NAV.map(([k,l,ic])=>`<div class="nav-item ${navActive(k)}" data-nav="${k}"><span class="ni">${svg(ic)}</span><span class="nlabel">${l}</span></div>`).join('')}
-      <div class="rgroup nlabel" style="margin-top:16px">平台管理</div>
-      ${ADMIN_NAV.map(([k,l,ic])=>`<div class="nav-item ${navActive(k)}" data-nav="${k}"><span class="ni">${svg(ic)}</span><span class="nlabel">${l}</span></div>`).join('')}
+      ${ADMIN_NAV.map(([k,l,ic,grp])=>{
+        const badge = k==='admin-approval' ? PERM_REQUESTS.filter(r=>r.status==='pending').length : 0;
+        return `${grp?`<div class="rgroup nlabel" style="margin-top:16px">${grp}</div>`:''}<div class="nav-item ${navActive(k)}" data-nav="${k}"><span class="ni">${svg(ic)}</span><span class="nlabel">${l}</span>${badge?`<span class="nav-badge">${badge}</span>`:''}</div>`;
+      }).join('')}
     </div>`;
 }
-/* 左栏规模不变量：条目数 = 3(主区:总览/服务树/运行中心) + 2(平台管理:用户与权限/接入管理) = 恒 5，与组件数量无关 */
+/* 左栏规模不变量：条目数 = 3(主区) + 9(管理:平台治理 6 + 交付前置 3) = 恒 12，与组件数量无关 */
 
 
 /* ============ 设计备注（评审用；与文档附 A 同源，默认不显示） ============ */
@@ -674,7 +697,9 @@ const NOTE = {
                    '<b>「平台底座」角标</b>：单机版下平台底座（hub / console）与目标同集群——注意 <b>runner 是接入侧代理，其组件身份与部署形态无关</b>（docs/hub/DATA-MODEL.md §9.3）。',
                    '<b>凭据页只出现引用名</b>：明文在 hub 侧 Secret，平台 DB 不落明文；被引用计数为 0 的凭据可安全轮转 / 删除。',
                    '缺口（待后端）：统一注册表 <span class="mono">GET /targets</span>（含 <span class="mono">targetKind=host</span>）、<span class="mono">/credentials</span> CRUD、<span class="mono">POST /targets/:id/enroll-token</span>（现网关为全局共享 token + runner 自报目标名，见 API-REFERENCE「接入管理」⚠️）、<span class="mono">POST /environments/:id/test</span>。'],
-  'admin-perm':['§7.14 M1–M6 五分区（用户 / 用户组 / 角色与绑定 / 权限审批 / 审计日志）。用户/组目录经 hub 代理 Keycloak Admin（N-34，前端不持 Admin 凭据）；主体 = token sub；/org: 组织组只读且不作 RBAC 主体；绑定有效期不允许默认永久挂账；权限审批（permission_requests）与运行审批（pipeline_approvals）严格分区。仅平台管理员可见（user:manage）。'],
+  'admin-perm':['§7.14 M1–M4（用户 / 用户组 / 角色与绑定）。用户/组目录经 hub 代理 Keycloak Admin（N-34，前端不持 Admin 凭据）；主体 = token sub；/org: 组织组只读且不作 RBAC 主体；绑定有效期不允许默认永久挂账。仅平台管理员可见（user:manage）。'],
+  'admin-approval':['权限申请 <span class="mono">permission_requests</span> 的审批收件箱；批准后 hub 自动写绑定并带有效期。与运行审批 <span class="mono">pipeline_approvals</span> 严格分区（后者在运行详情页）。<b>提升为一级导航的理由</b>：待办类工作必须有独立可见入口 + 角标，藏在 Tab 后管理员看不到。'],
+  'admin-audit':['平台级审计全局视图；审计覆盖运行 / 凭据 / 目标 / 权限多域，<b>不属于「用户与权限」的子分区</b>（原 Tab 归位）。全部操作由 hub 统一中间件落 <span class="mono">audit_log</span>，前端零手写。'],
 };
 /* 运行中心承载两个视图（运行/发布），备注按当前视图出（评审信息与附 A 同源，一处不落） */
 function noteKey(){
@@ -1480,10 +1505,10 @@ function pageEditor(){
 }
 
 function pageAdminPerm(){
-  /* §7.14 M1–M6 五分区：用户 / 用户组 / 角色与绑定 / 权限审批 / 审计日志（S.pamTab 承载；左栏恒 5 不变）。
+  /* §7.14 M1–M4：用户 / 用户组 / 角色与绑定（S.pamTab 承载）。权限审批与审计日志已提升为左栏独立页。
      主体模型：Keycloak 只做身份、hub 唯一权限权威（主体 = token sub）；用户/组目录经 hub 代理 KC Admin（N-34）。 */
   const tab = S.pamTab || 'users';
-  const tabs = [['users','用户',KC_USERS.length],['groups','用户组',KC_GROUPS.length],['roles','角色与绑定',PLATFORM_BINDINGS.length],['approvals','权限审批',PERM_REQUESTS.filter(r=>r.status==='pending').length],['audit','审计日志',AUDIT_LOGS.length]];
+  const tabs = [['users','用户',KC_USERS.length],['groups','用户组',KC_GROUPS.length],['roles','角色与绑定',PLATFORM_BINDINGS.length]];
   const seg = `<span class="seg">${tabs.map(([k,l,n])=>`<button class="${tab===k?'on':''}" data-act="pam-tab" data-tab="${k}">${l} <span class="mono">${n}</span></button>`).join('')}</span>`;
   let body='';
   if(tab==='users'){
@@ -1539,52 +1564,86 @@ function pageAdminPerm(){
       <div class="card flush"><table class="table">
         <thead><tr><th>主体</th><th>类型</th><th>角色</th><th>有效期</th><th>授权人</th><th>时间</th><th></th></tr></thead>
         <tbody>${bindRows}</tbody></table></div>`;
-  } else if(tab==='approvals'){
-    const pend = PERM_REQUESTS.filter(r=>r.status==='pending');
-    const done = PERM_REQUESTS.filter(r=>r.status!=='pending');
-    const row = r=>`<tr>
-      <td><b>${esc(r.requester)}</b></td>
-      <td><span class="chip mono">${esc(r.role)}</span></td>
-      <td class="mono">${esc(r.target)}</td>
-      <td class="hint" style="white-space:normal">${esc(r.reason)}</td>
-      <td class="mono">${esc(r.expires)}</td>
-      <td class="mono hint">${esc(r.at)}</td>
-      ${r.status==='pending'
-        ?`<td style="text-align:right"><button class="link" data-act="pam-approve" data-i="${r.id}">批准</button> <button class="link" style="color:var(--fail-fg)" data-act="pam-reject" data-i="${r.id}">驳回</button></td>`
-        :`<td><span class="badge ${r.status==='approved'?'b-succ':'b-fail'}">${r.status==='approved'?'已批准':'已驳回'}</span> <span class="hint">${esc(r.decidedBy)} · ${esc(r.decidedAt)}</span></td>`}</tr>`;
-    body = `<div class="h2" style="margin-top:4px">待审批 <span class="hint">（permission_requests · 批准后 hub 自动写绑定并带有效期）</span></div>
-      <div class="card flush"><table class="table">
-        <thead><tr><th>申请人</th><th>申请角色</th><th>目标</th><th>理由</th><th>期望有效期</th><th>申请时间</th><th></th></tr></thead>
-        <tbody>${pend.map(row).join('')||'<tr><td colspan="7" class="hint" style="text-align:center;padding:18px">暂无待审申请</td></tr>'}</tbody></table></div>
-      <div class="h2" style="margin-top:18px">已处理</div>
-      <div class="card flush"><table class="table">
-        <thead><tr><th>申请人</th><th>申请角色</th><th>目标</th><th>理由</th><th>有效期</th><th>申请时间</th><th>结论</th></tr></thead>
-        <tbody>${done.map(row).join('')}</tbody></table></div>
-      <div class="infobar" style="margin-top:14px"><div class="infobar-h">审批是流程，决策是规则</div>
-        <div class="infobar-b">本分区处理「权限申请」（<span class="mono">permission_requests</span>）；运行卡点审批（<span class="mono">pipeline_approvals</span>）在运行详情页处理，两者严格分区。批准 / 驳回写审计；申请人本人不可自审。</div></div>`;
-  } else {
-    const AUDIT_CAT = {all:'全部', approval:'审批', run:'运行', credential:'凭据', target:'目标', role:'权限'};
-    const auditCatOf = a => /approval|perm_request|platform_role|kc_/.test(a.act)?'role':/approval/.test(a.act)?'approval':/target|runner/.test(a.act)?'target':/cancel|trigger|rerun|canary|run/.test(a.act)?'run':/credential/.test(a.act)?'credential':'other';
-    const auditRows = AUDIT_LOGS.filter(a=>S.auditFilter==='all'||auditCatOf(a)===S.auditFilter).map(a=>`<tr>
-      <td class="mono hint" style="white-space:nowrap">${esc(a.at)}</td><td>${esc(a.who)}</td>
-      <td><span class="chip mono">${esc(a.act)}</span></td>
-      <td class="mono">${esc(a.target)}</td><td class="hint" style="white-space:normal">${esc(a.detail)}</td></tr>`).join('');
-    body = `<div class="toolbar2">
-      <span class="h2" style="margin:0">平台审计日志</span>
-      <span class="seg">${Object.entries(AUDIT_CAT).map(([k,l])=>`<button class="${(S.auditFilter||'all')===k?'on':''}" data-act="audit-filter" data-f="${k}">${l}</button>`).join('')}</span>
-      <div class="spacer"></div>
-      <a class="link" data-act="audit-export" style="font-size:12.5px;font-weight:500">导出 CSV →</a></div>
-    <div class="card flush"><table class="table">
-      <thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>详情</th></tr></thead>
-      <tbody>${auditRows}</tbody></table></div>
-    <div class="infobar" style="margin-top:14px"><div class="infobar-h">审计范围</div>
-      <div class="infobar-b">审批（批准 / 驳回）、运行取消、手动执行（<span class="mono">POST /environments/:id/exec</span>，一次一条、逐条审计、需 <span class="mono">target:exec</span>）、凭据轮转 / 创建、目标注册、用户 / 组管理、角色 CRUD、绑定增删、权限审批决策——以上操作在 hub 侧统一中间件落 <span class="mono">audit_log</span>，本页为统一查询视图。</div></div>`;
   }
   return `<div class="wrap">
-    <div class="title">用户与平台权限</div>
+    <div class="title">用户与权限</div>
     <div class="sub">Keycloak 只做身份，hub 唯一权限权威（主体 = token sub）。用户/组目录经 hub 代理 Keycloak Admin（前端不持 Admin 凭据）；仅平台管理员可见（user:manage）。</div>
     <div style="margin-top:14px">${seg}</div>
     <div style="margin-top:14px">${body}</div>
+  </div>`;
+}
+/* 「平台管理 → 权限审批」= permission_requests 的审批收件箱。从「用户与权限」页提升为一级导航项：
+   待办类工作需要有独立可见入口（左栏角标），不能藏在 Tab 后；与运行审批（pipeline_approvals）严格分区。 */
+function pageAdminApproval(){
+  const pend = PERM_REQUESTS.filter(r=>r.status==='pending');
+  const done = PERM_REQUESTS.filter(r=>r.status!=='pending');
+  const row = r=>`<tr>
+    <td><b>${esc(r.requester)}</b></td>
+    <td><span class="chip mono">${esc(r.role)}</span></td>
+    <td class="mono">${esc(r.target)}</td>
+    <td class="hint" style="white-space:normal">${esc(r.reason)}</td>
+    <td class="mono">${esc(r.expires)}</td>
+    <td class="mono hint">${esc(r.at)}</td>
+    ${r.status==='pending'
+      ?`<td style="text-align:right"><button class="link" data-act="pam-approve" data-i="${r.id}">批准</button> <button class="link" style="color:var(--fail-fg)" data-act="pam-reject" data-i="${r.id}">驳回</button></td>`
+      :`<td><span class="badge ${r.status==='approved'?'b-succ':'b-fail'}">${r.status==='approved'?'已批准':'已驳回'}</span> <span class="hint">${esc(r.decidedBy)} · ${esc(r.decidedAt)}</span></td>`}</tr>`;
+  const body = `<div class="h2" style="margin-top:4px">待审批 <span class="badge b-warn">${pend.length}</span> <span class="hint">（permission_requests · 批准后 hub 自动写绑定并带有效期）</span></div>
+    <div class="card flush"><table class="table">
+      <thead><tr><th>申请人</th><th>申请角色</th><th>目标</th><th>理由</th><th>期望有效期</th><th>申请时间</th><th></th></tr></thead>
+      <tbody>${pend.map(row).join('')||'<tr><td colspan="7" class="hint" style="text-align:center;padding:18px">暂无待审申请</td></tr>'}</tbody></table></div>
+    <div class="h2" style="margin-top:18px">已处理</div>
+    <div class="card flush"><table class="table">
+      <thead><tr><th>申请人</th><th>申请角色</th><th>目标</th><th>理由</th><th>有效期</th><th>申请时间</th><th>结论</th></tr></thead>
+      <tbody>${done.map(row).join('')}</tbody></table></div>
+    <div class="infobar" style="margin-top:14px"><div class="infobar-h">审批是流程，决策是规则</div>
+      <div class="infobar-b">本页处理「权限申请」（<span class="mono">permission_requests</span>）；运行卡点审批（<span class="mono">pipeline_approvals</span>）在运行详情页处理，两者严格分区。批准 / 驳回写审计；申请人本人不可自审。</div></div>`;
+  return `<div class="wrap">
+    <div class="title">权限审批</div>
+    <div class="sub">平台级权限申请的统一收件箱，待办数在左栏角标实时可见（user:manage）。</div>
+    <div style="margin-top:14px">${body}</div>
+  </div>`;
+}
+/* 「平台管理 → 审计日志」= 平台级审计的全局查询视图。从「用户与权限」页提升：审计覆盖运行 / 凭据 /
+   目标 / 权限等多域，不属于任一域的子分区。 */
+function pageAdminAudit(){
+  const AUDIT_CAT = {all:'全部', approval:'审批', run:'运行', credential:'凭据', target:'目标', role:'权限'};
+  const auditCatOf = a => /approval|perm_request|platform_role|kc_/.test(a.act)?'role':/approval/.test(a.act)?'approval':/target|runner/.test(a.act)?'target':/cancel|trigger|rerun|canary|run/.test(a.act)?'run':/credential/.test(a.act)?'credential':'other';
+  const auditRows = AUDIT_LOGS.filter(a=>S.auditFilter==='all'||auditCatOf(a)===S.auditFilter).map(a=>`<tr>
+    <td class="mono hint" style="white-space:nowrap">${esc(a.at)}</td><td>${esc(a.who)}</td>
+    <td><span class="chip mono">${esc(a.act)}</span></td>
+    <td class="mono">${esc(a.target)}</td><td class="hint" style="white-space:normal">${esc(a.detail)}</td></tr>`).join('');
+  const body = `<div class="toolbar2">
+    <span class="h2" style="margin:0">平台审计日志</span>
+    <span class="seg">${Object.entries(AUDIT_CAT).map(([k,l])=>`<button class="${(S.auditFilter||'all')===k?'on':''}" data-act="audit-filter" data-f="${k}">${l}</button>`).join('')}</span>
+    <div class="spacer"></div>
+    <a class="link" data-act="audit-export" style="font-size:12.5px;font-weight:500">导出 CSV →</a></div>
+  <div class="card flush"><table class="table">
+    <thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>详情</th></tr></thead>
+    <tbody>${auditRows}</tbody></table></div>
+  <div class="infobar" style="margin-top:14px"><div class="infobar-h">审计范围</div>
+    <div class="infobar-b">审批（批准 / 驳回）、运行取消、手动执行（<span class="mono">POST /environments/:id/exec</span>，一次一条、逐条审计、需 <span class="mono">target:exec</span>）、凭据轮转 / 创建、目标注册、用户 / 组管理、角色 CRUD、绑定增删、权限审批决策——以上操作在 hub 侧统一中间件落 <span class="mono">audit_log</span>，本页为全局统一查询视图。</div></div>`;
+  return `<div class="wrap">
+    <div class="title">审计日志</div>
+    <div class="sub">平台级操作的统一审计视图，覆盖运行 / 凭据 / 目标 / 权限多域（user:manage）。</div>
+    <div style="margin-top:14px">${body}</div>
+  </div>`;
+}
+/* 管理域占位页：原型只承载导航结构与分组判据，这 5 个域的交互实现在 console 源码。
+   不造假数据，明确标注落点，避免把原型占位误读为已设计完的页面。 */
+const ADMIN_PLACEHOLDERS = {
+  'admin-auth':['认证设置','协议层登录模式与身份提供商目录（realmsettings），需平台级 user:manage。'],
+  'admin-settings':['平台设置','平台级特性开关与变更窗口，控制新运行的允许触发时段。'],
+  'admin-upgrade':['升级审批','Runner 升级操作需平台级 ops:manage 审批后方可派发。'],
+  'admin-credentials':['凭据管理','凭据注册与 AES-GCM 信封加密存储，明文不回流前端。'],
+  'admin-clusterperm':['集群权限','kubeconfig 驱动的角色绑定：创建 / 列出 / 吊销 / 删除。'],
+};
+function pageAdminPlaceholder(key){
+  const [title,desc] = ADMIN_PLACEHOLDERS[key];
+  return `<div class="wrap">
+    <div class="title">${title}</div>
+    <div class="sub">${desc}</div>
+    <div class="infobar" style="margin-top:16px"><div class="infobar-h">原型占位</div>
+      <div class="infobar-b">本页承载于左栏导航结构验证；完整交互与真实端点见 console 源码对应视图。原型不伪造该域的列表与数据。</div></div>
   </div>`;
 }
 /* 「平台管理 → 接入管理」= 接入目标的统一注册表（K8s 集群 + 主机 + 凭据）。
@@ -1692,6 +1751,10 @@ function openTargetNote(){
 
 const PAGES = {dashboard:pageDashboard, runs:pageRuns, rundetail:pageRunDetail,
   catalog:pageCatalog, component:pageComponent, editor:pageEditor, 'admin-perm':pageAdminPerm, 'admin-target':pageAdminTarget,
+  'admin-approval':pageAdminApproval, 'admin-audit':pageAdminAudit,
+  'admin-auth':()=>pageAdminPlaceholder('admin-auth'), 'admin-settings':()=>pageAdminPlaceholder('admin-settings'),
+  'admin-upgrade':()=>pageAdminPlaceholder('admin-upgrade'), 'admin-credentials':()=>pageAdminPlaceholder('admin-credentials'),
+  'admin-clusterperm':()=>pageAdminPlaceholder('admin-clusterperm'),
   notif:pageNotifCenter, pat:pagePat, 'artifacts-global':pageGlobalArtifacts};
 
 /* ============ crumb（唯一面包屑；中间层可点，不再在内容区重复一条） ============ */
@@ -1703,8 +1766,15 @@ function renderCrumb(){
   else if(S.page==='rundetail') segs = [['运行中心','runs'],[`运行详情 · <span class="mono">${S.runDetail||''}</span>`]];
   else if(S.page==='runs')      segs = S.runTab==='runs' ? [['运行中心']]
                                       : [['运行中心','runs'],[(RUN_VIEWS.find(v=>v[0]===S.runTab)||[])[1]||'']];
-  else if(S.page==='admin-perm')    segs = [['平台管理'],['用户与权限']];
-  else if(S.page==='admin-target') segs = [['平台管理'],['接入管理']];
+  else if(S.page==='admin-perm')    segs = [['平台治理'],['用户与权限']];
+  else if(S.page==='admin-approval') segs = [['平台治理'],['权限审批']];
+  else if(S.page==='admin-audit')    segs = [['平台治理'],['审计日志']];
+  else if(S.page==='admin-auth')     segs = [['平台治理'],['认证设置']];
+  else if(S.page==='admin-settings') segs = [['平台治理'],['平台设置']];
+  else if(S.page==='admin-upgrade')  segs = [['平台治理'],['升级审批']];
+  else if(S.page==='admin-target')       segs = [['交付前置'],['接入管理']];
+  else if(S.page==='admin-credentials')  segs = [['交付前置'],['凭据管理']];
+  else if(S.page==='admin-clusterperm')  segs = [['交付前置'],['集群权限']];
   else if(S.page==='notif')         segs = [['通知中心']];
   else if(S.page==='pat')           segs = [['个人中心'],['个人访问令牌']];
   else if(S.page==='artifacts-global') segs = [['平台管理'],['全局制品库']];

@@ -25,10 +25,13 @@
 **范围与前提**：
 
 - 本设计只覆盖协调框架本身；具体业务工作（agent_op 派发、升级/审批超时扫描等）经通用 `ShardSource` 接口挂接，首挂对象与分片维度另行裁定（§2.6，待定项）；dispatch_jobs 投递在目标态走「WS 通知 + HTTP 拉取」混合（§2.6），切换后由 runner claim 直取、不经 hub 侧分片消费；
-- 主备两套集群的 hub 连接**同一个共享 PG**——租约跨集群可见是两级选主成立的前提（部署拓扑约定）；
+- 主备两套集群的 hub 连接**同一个共享 PG**——租约跨集群可见是两级选主成立的前提（部署拓扑约定）。共享 PG 自身为主备复制形态：统一对外地址指向可写 primary，后端为主备副本（同一份数据的复制，非两套独立库）；hub 各实例只配统一地址，PG 切换对应用层无感知。**「两套独立库」形态不可用**：租约表不共享则两集群各自持锁脑裂，两级选主失效；
+- 共享 PG failover 三个已知项：① 切换期间连接全断，续约 tick 因 DB 错误降级 standby——全员静默等待，无误动作（§4.2 tick 的错误路径）；② 异步复制 RPO 窗口内丢写的最坏后果是不足一个 TTL（10s）的双主窗口，由租约超时自动收敛；run/dispatch_job 的写入丢失由业务重试兜底；③ 备集群接管 RTO = max(PG failover 耗时, 集群锁 TTL 10s)——PG 切换速度主导整体 RTO，统一地址层的健康检测与切换机制须自身 HA，且切换耗时须经「整集群灭 + PG 切换」组合场景实测；
 - API 请求服务面不在选主范围内：任何实例都可服务 API；gateway 连接表仍是进程本地传输状态（非协调状态），其与分片的亲和问题归业务挂接时裁定。
 
 **定性**：新模块（新增 `internal/coordination` 包 + 2 张表）。
+
+**容灾视图（hub 侧拼图）**：容灾能力由四个平面构成，hub 侧全部就位——**登记面**：API 请求天然双活，任意实例写共享 PG（真相源唯一，无状态原子写无需仲裁）；**推进面**：后台工作由两级选主唯一仲裁，主集群全灭后备集群在 TTL 内接管（接管路径已在单集群多副本形态实测）；**传输面**：runner WS 断线重连自愈，重连触发 `DrainTarget` 补投 pending job；**数据面**：共享 PG 主备复制 + 统一对外地址保障（前提见上文）。入口流量由既有 LB/DNS 双活覆盖，hub 不参与；PG 切换耗时与整集群灭场景的实测、发布结果可信度（runner→hub 回流）不属于本模块——分别归容灾演练 gate 与回流 story。
 
 ## 2. 设计逻辑
 
@@ -187,9 +190,11 @@ flowchart LR
 
 协调框架对业务暴露两个挂接点：`ShardSource`（分片键空间 → 到期行清单，重灌的数据来源）与 `TaskConsumer`（消费一项；失败落重试语义归业务）。分片维度、键空间划分、ListDue 语义由挂接方定义。
 
+**端到端消费链路（页面触发一次 run）**：① console 保存流水线定义 = 纯数据落库，无执行语义；② console 点击运行 = run 创建请求（POST /runs）经网关落在**任意** hub 实例——API 服务面不在选主范围内，运行任务落库与两级选主解耦——该实例创建 run，并按 1 run × N target 扇出 N 条 `dispatch_job`（各自携带完整 spec payload）落库；③ 交付为**双轨**（已落地）：推送轨沿用现状（hub 对连接中的 target 直接 WS 推完整 payload，失败进退避重投）；拉取轨为 runner 对任意实例 `POST {gateway path}/claims` 原子领取到期行（占坑与推送轨共用 `MarkDispatching`，一个 job 只被一轨交付），runner 以低频轮询兜底（`SDP_CLAIM_INTERVAL`，默认 30s，0 关闭）；④ 领取到的 payload 经 runner 既有 apply 通道物化执行；⑤ 执行结果经既有 runner→hub 通道回写。选主/分片框架不参与步骤 ②④——它只约束 hub 侧后台工作（sweep、重投等）的门控与归属，不约束 API 接收与 runner 拉取。A 类扫描门控已接线：dispatch 重投（`SweepPending`）、run 超时与 queued promotion（`RunBackground`）、审批超时（`RunApprovalTimeouts`）、agent_op 升级/审批超时五处 sweep 前置 `Role() == master` 判断，standby 静默跳过、接管后自动恢复；report-only 对账与幂等 GC 不门控（重复执行无害）；cron 触发器已在行级用 `FOR UPDATE SKIP LOCKED` 原子领取，天然多实例安全。
+
 候选首挂对象是 dispatch_jobs 下发重投 sweep（现 15s 全表 `ListDueRetry`）。其每条记录是一个**独立投递工作单元**（把一个 run 的 spec 交付给一个 target 的 runner；1 run 扇出 N target = N 条独立行，redispatch 生成新行，`MarkDispatching` 占坑把并发收敛到单投递），行间无共享资源互斥，语义上适配分片消费。
 
-**投递传输方向裁定（目标态 = 多实例 / 主备集群；切换实施为独立 story，多实例上线前完成，切换前维持现状 WS 推送重投）**：投递采用「WS 通知 + HTTP 拉取」混合——runner 经网关向**任意** hub 实例 POST claim 领取 dispatch_jobs 到期行（PG 单源 + `MarkDispatching` 占坑幂等，批量领取按 runner 容量背压）；WS 下行只发轻量「有活」通知，**丢失无害**（低频轮询兜底，只影响延迟不影响正确性）。据此：WS 连接亲和不再是投递正确性依赖（连接表不参与 claim 路径），分片映射只承担负载分布、不绑定连接归属；切换完成后 dispatch_jobs 由 runner claim 直取，**退出 hub 侧 ShardSource 消费候选**。hub 侧 `ShardSource` 首挂候选为 agent_op 派发、升级/审批超时扫描，首挂对象与分片维度**待后续 story 裁定**，本设计不预设。
+**投递传输方向裁定（目标态 = 多实例 / 主备集群；双轨过渡态已落地——WS 推送轨保留，runner claim 拉取轨上线，两轨经 `MarkDispatching` 占坑互斥并存；轻量通知 + 推送退出为后续切换 story）**：投递采用「WS 通知 + HTTP 拉取」混合——runner 经网关向**任意** hub 实例 POST claim 领取 dispatch_jobs 到期行（PG 单源 + `MarkDispatching` 占坑幂等，批量领取按 runner 容量背压）；WS 下行只发轻量「有活」通知，**丢失无害**（低频轮询兜底，只影响延迟不影响正确性）。据此：WS 连接亲和不再是投递正确性依赖（连接表不参与 claim 路径），分片映射只承担负载分布、不绑定连接归属；切换完成后 dispatch_jobs 由 runner claim 直取，**退出 hub 侧 ShardSource 消费候选**。hub 侧 `ShardSource` 首挂候选为 agent_op 派发、升级/审批超时扫描，首挂对象与分片维度**待后续 story 裁定**，本设计不预设。
 
 ### 2.7 优雅停止（drain）
 
@@ -204,7 +209,7 @@ flowchart LR
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
-| `SDP_COORDINATION_ENABLED` | `false` | 未启用时实例自视为独占 master，行为与现状等价（单实例开发模式） |
+| `ENABLE_DUALCLUSTER` | `false` | 未启用时实例自视为独占 master，行为与现状等价（单实例开发模式） |
 | `SDP_CLUSTER_ID` | 启用时必填 | 集群身份，主备两套部署取不同值 |
 | 续约间隔 / 租约 TTL / 心跳窗 | 2s / 10s / 10s | TTL = 5 个续约周期容忍；接管最坏 ≈12s |
 | 一次性任务租约 | 10min | 不续约 |
@@ -423,3 +428,7 @@ drain 例程（HTTP 与 SIGTERM 共用，固定层级序）：
 |---|---|---|
 | 2026-11-17 | 初版：租约表与抢锁语义、一次性任务锁、两级选主（集群锁/实例锁）与不脑裂论证、心跳注册与分片映射重算、producer 限流队列消费（失败不重入待重灌）、优雅停止（先集群锁后实例锁、删 worker 注册）、ShardSource 业务挂接留白 | hub 由单副本走向多实例水平扩容 + 主备集群容灾，需要"协调状态只存共享库、实例可随时重建"的选主与分片消费框架 |
 | 2026-11-17 | 投递传输方向裁定：目标态（多实例/主备集群）采用「WS 通知 + HTTP 拉取」混合——runner 经网关向任意实例 claim 领取（PG 单源 + `MarkDispatching` 幂等、按容量背压），WS 下行降为可丢通知、低频轮询兜底；WS 连接亲和从投递正确性依赖降级为通知延迟优化（原三套绕行方案作废），分片映射只承担负载分布；dispatch_jobs 切换后由 runner claim 直取、退出 hub 侧 ShardSource 候选（首挂候选改为 agent_op 派发 / 超时扫描）；现状 WS 推送保留至切换 story 完成（§2.6 同步） | 多实例下"target 连接在哪个实例"是推送模式的根本代价；双向钢人论证（评估对象裁定为目标态）：混合拉取在状态单源、故障恢复、背压正确性上占优，通知保住零延迟，批量领取保住吞吐 |
+| 2026-11-25 | §2.6 补端到端消费链路：页面保存流水线 = 纯落库；页面点击运行 = POST /runs 由任意 hub 实例接收并落库 run + 按 target 扇出 dispatch_job（API 服务面不在选主范围）；交付通知与 runner claim 沿用本节传输裁定（现状 WS 推完整 payload，目标态轻量通知 + runner 向任意实例 claim）；明确选主/分片只约束 hub 侧后台工作门控，不约束 API 接收与 runner 拉取 | 用户对消费逻辑的理解确认（期望形态与已裁定目标态一致）；澄清「接收运行请求的实例 = 选主 master」的偏差——API 面强制走 master 会使其成为请求瓶颈且选主抖动放大为 API 不可用，维持任意实例接收 |
+| 2026-11-25 | §1 部署前提补共享 PG 容灾形态：主备复制（统一对外地址指向可写 primary，后端主备副本，数据单份复制），hub 各实例仅配统一地址、PG 切换无感知；明确「两套独立库」形态不可用（租约表不共享 → 两集群各自持锁脑裂，两级选主失效）；补 failover 已知项三条：连接全断 → 续约 tick 降级 standby（§4.2 错误路径）、RPO 丢写 → 不足 TTL 的双主窗口由租约超时收敛、接管 RTO = max(PG failover, TTL 10s) 且统一地址层须自身 HA | 用户确认 PG 形态为主备复制（统一对外地址 + 后端两套副本）；RTO 由 PG 切换速度主导，切换耗时须纳入「整集群灭 + PG 切换」组合场景的容灾演练实测 |
+| 2026-11-25 | §1 补容灾视图：hub 侧四平面（登记面 API 天然双活 / 推进面两级选主仲裁 / 传输面 WS 重连自愈 + DrainTarget 补投 / 数据面 PG 主备复制）全部就位，入口流量由既有 LB/DNS 双活覆盖；§2.8 开关更名 `SDP_COORDINATION_ENABLED` → `ENABLE_DUALCLUSTER`（Go 字段同步 `DualClusterEnabled`，hub 仓 config/启动校验/chart env 同步改名，历史实跑记录中的旧名不回改） | 用户拍板：开关名语义化表达双集群容灾意图；容灾四平面结论经跨领域分析（登记写无需仲裁、唯一性只属后台推进）与用户逐面确认后落档 |
+| 2026-11-25 | §2.6 双轨过渡态落地：① runner claim 拉取轨上线——hub 新增 `POST {gateway path}/claims`（身份沿用 WS 三态鉴权、enroll token 不在 HTTP 上消费，未知 target 404 不自动注册），claim 与推送轨共用 `MarkDispatching` 占坑（领取即标 dispatched，与推送轨「写成功后标记」语义对齐），runner 新增 claim 轮询（`SDP_CLAIM_INTERVAL` 默认 30s、0 关闭；apply handler 未就绪不触 hub，避免领取后无人消费）；② A 类扫描门控接线——五处 sweep 前置 `Role() == master`（report-only 对账与幂等 GC 不门控；cron 触发器经 SKIP LOCKED 行级领取确认天然多实例安全，无需门控）；hub/runner 双仓 build/vet/test/gofmt 全绿，claim 占坑互斥与门控语义有单测 | 实现「WS 通知 + HTTP 拉取」裁定的过渡形态：推送轨保住零延迟，拉取轨兜底推送失败与通知丢失；跨域调研结论（正确性=原子占坑、效率=选主门控）在本轮兑现为代码 |
